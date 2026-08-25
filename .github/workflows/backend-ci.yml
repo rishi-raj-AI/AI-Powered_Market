@@ -1,0 +1,38 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install backend
+        run: pip install .
+
+      - name: Compile Python
+        run: python -m compileall -q app
+
+      - name: Import FastAPI application
+        env:
+          APP_ENV: test
+          DATABASE_URL: postgresql+psycopg://test:test@localhost:5432/test
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: ci-test-secret
+        run: python -c "from app.main import app; print(app.title)"
