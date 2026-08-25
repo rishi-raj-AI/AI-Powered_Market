@@ -50,10 +50,10 @@ jobs:
           cache: pip
 
       - name: Install backend
-        run: pip install .
+        run: pip install ".[dev]"
 
       - name: Compile Python
-        run: python -m compileall -q app
+        run: python -m compileall -q app tests
 
       - name: Import FastAPI application
         run: python -c "from app.main import app; print(app.title)"
@@ -66,3 +66,6 @@ jobs:
 
       - name: Seed development data
         run: python -m app.scripts.seed_dev
+
+      - name: Run backend tests
+        run: pytest -q
