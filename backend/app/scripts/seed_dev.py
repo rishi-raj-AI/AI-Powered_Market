@@ -1,5 +1,3 @@
-from decimal import Decimal
-
 from sqlalchemy import select
 
 from app.core.config import settings
@@ -9,6 +7,20 @@ from app.models.geography import ServiceArea, Village
 from app.models.user import User, UserRole
 
 ADMIN_PHONE = "+919000000001"
+DELIVERY_PHONE = "+919000000002"
+
+
+def _ensure_user(db, phone: str, name: str, role: UserRole) -> User:
+    user = db.scalar(select(User).where(User.phone == phone))
+    if user is None:
+        user = User(phone=phone, full_name=name, role=role, is_active=True, is_verified=True)
+        db.add(user)
+    else:
+        user.full_name = name
+        user.role = role
+        user.is_active = True
+        user.is_verified = True
+    return user
 
 
 def main() -> None:
@@ -17,20 +29,8 @@ def main() -> None:
 
     db = SessionLocal()
     try:
-        admin = db.scalar(select(User).where(User.phone == ADMIN_PHONE))
-        if admin is None:
-            admin = User(
-                phone=ADMIN_PHONE,
-                full_name="GaonOne Dev Admin",
-                role=UserRole.ADMIN,
-                is_active=True,
-                is_verified=True,
-            )
-            db.add(admin)
-        else:
-            admin.role = UserRole.ADMIN
-            admin.is_active = True
-            admin.is_verified = True
+        _ensure_user(db, ADMIN_PHONE, "GaonOne Dev Admin", UserRole.ADMIN)
+        _ensure_user(db, DELIVERY_PHONE, "GaonOne Dev Rider", UserRole.DELIVERY)
 
         village = db.scalar(
             select(Village).where(
@@ -86,19 +86,12 @@ def main() -> None:
                 )
             )
             if exists is None:
-                db.add(
-                    Product(
-                        category_id=categories[category_slug].id,
-                        name=name,
-                        brand=brand,
-                        unit=unit,
-                    )
-                )
+                db.add(Product(category_id=categories[category_slug].id, name=name, brand=brand, unit=unit))
 
         db.commit()
         print("Development seed complete")
-        print(f"Admin phone: {ADMIN_PHONE}")
-        print("OTP: 123456")
+        print(f"Admin: {ADMIN_PHONE} / OTP 123456")
+        print(f"Delivery: {DELIVERY_PHONE} / OTP 123456")
         print(f"Pilot village id: {village.id}")
     finally:
         db.close()
