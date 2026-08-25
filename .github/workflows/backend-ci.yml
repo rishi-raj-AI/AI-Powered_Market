@@ -9,6 +9,32 @@ on:
 jobs:
   backend-check:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: gaonone_ci
+          POSTGRES_USER: gaonone
+          POSTGRES_PASSWORD: gaonone_ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gaonone -d gaonone_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    env:
+      APP_ENV: development
+      DATABASE_URL: postgresql+psycopg://gaonone:gaonone_ci_password@localhost:5432/gaonone_ci
+      REDIS_URL: redis://localhost:6379/0
+      SECRET_KEY: ci-test-secret
+
     defaults:
       run:
         working-directory: backend
@@ -30,9 +56,13 @@ jobs:
         run: python -m compileall -q app
 
       - name: Import FastAPI application
-        env:
-          APP_ENV: test
-          DATABASE_URL: postgresql+psycopg://test:test@localhost:5432/test
-          REDIS_URL: redis://localhost:6379/0
-          SECRET_KEY: ci-test-secret
         run: python -c "from app.main import app; print(app.title)"
+
+      - name: Apply database migrations
+        run: alembic upgrade head
+
+      - name: Verify migration head
+        run: alembic current
+
+      - name: Seed development data
+        run: python -m app.scripts.seed_dev
