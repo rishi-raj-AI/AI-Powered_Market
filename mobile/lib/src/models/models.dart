@@ -114,6 +114,70 @@ class DeliveryModel {
   factory DeliveryModel.fromJson(Map<String, dynamic> j) => DeliveryModel(id: j['id'], orderId: j['order_id'], status: j['status']);
 }
 
+class DeliveryTaskModel {
+  final String id;
+  final String orderId;
+  final String orderNumber;
+  final String status;
+  final String paymentMethod;
+  final String paymentStatus;
+  final String total;
+  final String storeName;
+  final String? storePhone;
+  final String? storeLandmark;
+  final double? storeLatitude;
+  final double? storeLongitude;
+  final String? recipientName;
+  final String? recipientPhone;
+  final String? houseDetails;
+  final String customerLandmark;
+  final String? customerDirections;
+  final double? customerLatitude;
+  final double? customerLongitude;
+  DeliveryTaskModel({
+    required this.id,
+    required this.orderId,
+    required this.orderNumber,
+    required this.status,
+    required this.paymentMethod,
+    required this.paymentStatus,
+    required this.total,
+    required this.storeName,
+    this.storePhone,
+    this.storeLandmark,
+    this.storeLatitude,
+    this.storeLongitude,
+    this.recipientName,
+    this.recipientPhone,
+    this.houseDetails,
+    required this.customerLandmark,
+    this.customerDirections,
+    this.customerLatitude,
+    this.customerLongitude,
+  });
+  factory DeliveryTaskModel.fromJson(Map<String, dynamic> j) => DeliveryTaskModel(
+        id: j['id'],
+        orderId: j['order_id'],
+        orderNumber: j['order_number'],
+        status: j['status'],
+        paymentMethod: j['payment_method'],
+        paymentStatus: j['payment_status'],
+        total: j['total'].toString(),
+        storeName: j['store_name'],
+        storePhone: j['store_phone'],
+        storeLandmark: j['store_landmark'],
+        storeLatitude: (j['store_latitude'] as num?)?.toDouble(),
+        storeLongitude: (j['store_longitude'] as num?)?.toDouble(),
+        recipientName: j['recipient_name'],
+        recipientPhone: j['recipient_phone'],
+        houseDetails: j['house_details'],
+        customerLandmark: j['customer_landmark'],
+        customerDirections: j['customer_directions'],
+        customerLatitude: (j['customer_latitude'] as num?)?.toDouble(),
+        customerLongitude: (j['customer_longitude'] as num?)?.toDouble(),
+      );
+}
+
 class PaymentConfigModel {
   final bool enabled;
   final String provider;
