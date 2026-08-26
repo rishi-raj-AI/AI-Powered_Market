@@ -113,3 +113,45 @@ class DeliveryModel {
   DeliveryModel({required this.id, required this.orderId, required this.status});
   factory DeliveryModel.fromJson(Map<String, dynamic> j) => DeliveryModel(id: j['id'], orderId: j['order_id'], status: j['status']);
 }
+
+class PaymentConfigModel {
+  final bool enabled;
+  final String provider;
+  final String? keyId;
+  PaymentConfigModel({required this.enabled, required this.provider, this.keyId});
+  factory PaymentConfigModel.fromJson(Map<String, dynamic> j) => PaymentConfigModel(enabled: j['enabled'] ?? false, provider: j['provider'] ?? 'razorpay', keyId: j['key_id']);
+}
+
+class PaymentIntentModel {
+  final String paymentAttemptId;
+  final String providerOrderId;
+  final int amountSubunits;
+  final String currency;
+  final String keyId;
+  PaymentIntentModel({required this.paymentAttemptId, required this.providerOrderId, required this.amountSubunits, required this.currency, required this.keyId});
+  factory PaymentIntentModel.fromJson(Map<String, dynamic> j) => PaymentIntentModel(
+        paymentAttemptId: j['payment_attempt_id'],
+        providerOrderId: j['provider_order_id'],
+        amountSubunits: j['amount_subunits'],
+        currency: j['currency'],
+        keyId: j['key_id'],
+      );
+}
+
+class NotificationEventModel {
+  final String id;
+  final String eventType;
+  final String title;
+  final String body;
+  final String status;
+  final String createdAt;
+  NotificationEventModel({required this.id, required this.eventType, required this.title, required this.body, required this.status, required this.createdAt});
+  factory NotificationEventModel.fromJson(Map<String, dynamic> j) => NotificationEventModel(
+        id: j['id'],
+        eventType: j['event_type'],
+        title: j['title'],
+        body: j['body'],
+        status: j['status'],
+        createdAt: j['created_at'],
+      );
+}
