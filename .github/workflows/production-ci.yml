@@ -21,6 +21,9 @@ jobs:
           sed -i 's/REPLACE_WITH_STRONG_DATABASE_PASSWORD/ci_strong_database_password_123456789/g' .env.production
           sed -i 's/REPLACE_WITH_AT_LEAST_32_RANDOM_BYTES/ci_secret_key_0123456789abcdef0123456789abcdef/g' .env.production
 
+      - name: Validate production environment
+        run: python3 deploy/validate_env.py
+
       - name: Validate production Compose
         run: docker compose --env-file .env.production -f docker-compose.prod.yml config >/dev/null
 
