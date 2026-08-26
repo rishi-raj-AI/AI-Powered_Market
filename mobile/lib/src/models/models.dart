@@ -22,8 +22,29 @@ class StoreModel {
   final String? description;
   final String? landmark;
   final bool deliveryEnabled;
-  StoreModel({required this.id, required this.name, this.description, this.landmark, required this.deliveryEnabled});
-  factory StoreModel.fromJson(Map<String, dynamic> j) => StoreModel(id: j['id'], name: j['name'], description: j['description'], landmark: j['landmark'], deliveryEnabled: j['delivery_enabled'] ?? false);
+  final double? latitude;
+  final double? longitude;
+  final double? distanceKm;
+  StoreModel({
+    required this.id,
+    required this.name,
+    this.description,
+    this.landmark,
+    required this.deliveryEnabled,
+    this.latitude,
+    this.longitude,
+    this.distanceKm,
+  });
+  factory StoreModel.fromJson(Map<String, dynamic> j) => StoreModel(
+        id: j['id'],
+        name: j['name'],
+        description: j['description'],
+        landmark: j['landmark'],
+        deliveryEnabled: j['delivery_enabled'] ?? false,
+        latitude: (j['latitude'] as num?)?.toDouble(),
+        longitude: (j['longitude'] as num?)?.toDouble(),
+        distanceKm: (j['distance_km'] as num?)?.toDouble(),
+      );
 }
 
 class StoreProduct {
@@ -59,8 +80,18 @@ class AddressModel {
   final String label;
   final String landmark;
   final String? houseDetails;
-  AddressModel({required this.id, required this.villageId, required this.label, required this.landmark, this.houseDetails});
-  factory AddressModel.fromJson(Map<String, dynamic> j) => AddressModel(id: j['id'], villageId: j['village_id'], label: j['label'], landmark: j['landmark'], houseDetails: j['house_details']);
+  final double? latitude;
+  final double? longitude;
+  AddressModel({required this.id, required this.villageId, required this.label, required this.landmark, this.houseDetails, this.latitude, this.longitude});
+  factory AddressModel.fromJson(Map<String, dynamic> j) => AddressModel(
+        id: j['id'],
+        villageId: j['village_id'],
+        label: j['label'],
+        landmark: j['landmark'],
+        houseDetails: j['house_details'],
+        latitude: (j['latitude'] as num?)?.toDouble(),
+        longitude: (j['longitude'] as num?)?.toDouble(),
+      );
 }
 
 class OrderModel {
