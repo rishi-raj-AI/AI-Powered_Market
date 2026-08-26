@@ -233,14 +233,14 @@ class GaonApi {
     return OrderModel.fromJson(_decode(r));
   }
 
-  static Future<List<DeliveryModel>> availableDeliveries() async {
-    final r = await _get(Uri.parse('$baseUrl/delivery/available'));
-    return (_decode(r) as List<dynamic>).map((e) => DeliveryModel.fromJson(e)).toList();
+  static Future<List<DeliveryTaskModel>> availableDeliveryTasks() async {
+    final r = await _get(Uri.parse('$baseUrl/delivery/tasks/available'));
+    return (_decode(r) as List<dynamic>).map((e) => DeliveryTaskModel.fromJson(e)).toList();
   }
 
-  static Future<List<DeliveryModel>> myDeliveries() async {
-    final r = await _get(Uri.parse('$baseUrl/delivery/me'));
-    return (_decode(r) as List<dynamic>).map((e) => DeliveryModel.fromJson(e)).toList();
+  static Future<List<DeliveryTaskModel>> myDeliveryTasks() async {
+    final r = await _get(Uri.parse('$baseUrl/delivery/tasks/me'));
+    return (_decode(r) as List<dynamic>).map((e) => DeliveryTaskModel.fromJson(e)).toList();
   }
 
   static Future<DeliveryModel> claimDelivery(String id) async {
