@@ -1,3 +1,12 @@
+class UserModel {
+  final String id;
+  final String phone;
+  final String? fullName;
+  final String role;
+  UserModel({required this.id, required this.phone, this.fullName, required this.role});
+  factory UserModel.fromJson(Map<String, dynamic> j) => UserModel(id: j['id'], phone: j['phone'], fullName: j['full_name'], role: j['role']);
+}
+
 class Village {
   final String id;
   final String name;
@@ -25,4 +34,51 @@ class StoreProduct {
   final int stock;
   StoreProduct({required this.id, required this.name, required this.unit, required this.price, required this.stock});
   factory StoreProduct.fromJson(Map<String, dynamic> j) => StoreProduct(id: j['id'], name: j['product']['name'], unit: j['product']['unit'], price: j['price'].toString(), stock: j['stock_quantity'] ?? 0);
+}
+
+class CartItemModel {
+  final String id;
+  final int quantity;
+  final StoreProduct product;
+  CartItemModel({required this.id, required this.quantity, required this.product});
+  factory CartItemModel.fromJson(Map<String, dynamic> j) => CartItemModel(id: j['id'], quantity: j['quantity'], product: StoreProduct.fromJson(j['store_product']));
+}
+
+class CartModel {
+  final String id;
+  final String? storeId;
+  final List<CartItemModel> items;
+  final String subtotal;
+  CartModel({required this.id, this.storeId, required this.items, required this.subtotal});
+  factory CartModel.fromJson(Map<String, dynamic> j) => CartModel(id: j['id'], storeId: j['store_id'], items: (j['items'] as List<dynamic>).map((e) => CartItemModel.fromJson(e)).toList(), subtotal: j['subtotal'].toString());
+}
+
+class AddressModel {
+  final String id;
+  final String villageId;
+  final String label;
+  final String landmark;
+  final String? houseDetails;
+  AddressModel({required this.id, required this.villageId, required this.label, required this.landmark, this.houseDetails});
+  factory AddressModel.fromJson(Map<String, dynamic> j) => AddressModel(id: j['id'], villageId: j['village_id'], label: j['label'], landmark: j['landmark'], houseDetails: j['house_details']);
+}
+
+class OrderModel {
+  final String id;
+  final String orderNumber;
+  final String status;
+  final String paymentMethod;
+  final String paymentStatus;
+  final String total;
+  final String createdAt;
+  OrderModel({required this.id, required this.orderNumber, required this.status, required this.paymentMethod, required this.paymentStatus, required this.total, required this.createdAt});
+  factory OrderModel.fromJson(Map<String, dynamic> j) => OrderModel(id: j['id'], orderNumber: j['order_number'], status: j['status'], paymentMethod: j['payment_method'], paymentStatus: j['payment_status'], total: j['total'].toString(), createdAt: j['created_at']);
+}
+
+class DeliveryModel {
+  final String id;
+  final String orderId;
+  final String status;
+  DeliveryModel({required this.id, required this.orderId, required this.status});
+  factory DeliveryModel.fromJson(Map<String, dynamic> j) => DeliveryModel(id: j['id'], orderId: j['order_id'], status: j['status']);
 }
