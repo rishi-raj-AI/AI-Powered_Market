@@ -1,4 +1,4 @@
-"""payment attempts and device registrations
+"""payment attempts, notification devices and notification outbox
 
 Revision ID: 0004_integrations
 Revises: 0003_orders_delivery
@@ -35,6 +35,27 @@ def upgrade() -> None:
     op.create_index("ix_device_registrations_user_id", "device_registrations", ["user_id"])
 
     op.create_table(
+        "notification_events",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column(
+            "user_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column("event_type", sa.String(80), nullable=False),
+        sa.Column("title", sa.String(160), nullable=False),
+        sa.Column("body", sa.Text(), nullable=False),
+        sa.Column("data", sa.JSON(), nullable=False),
+        sa.Column("status", sa.String(30), server_default="pending", nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column("sent_at", sa.DateTime(timezone=True)),
+    )
+    op.create_index("ix_notification_events_user_id", "notification_events", ["user_id"])
+    op.create_index("ix_notification_events_event_type", "notification_events", ["event_type"])
+    op.create_index("ix_notification_events_status", "notification_events", ["status"])
+
+    op.create_table(
         "payment_attempts",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column(
@@ -64,5 +85,11 @@ def downgrade() -> None:
     op.drop_index("ix_payment_attempts_provider_order_id", table_name="payment_attempts")
     op.drop_index("ix_payment_attempts_order_id", table_name="payment_attempts")
     op.drop_table("payment_attempts")
+
+    op.drop_index("ix_notification_events_status", table_name="notification_events")
+    op.drop_index("ix_notification_events_event_type", table_name="notification_events")
+    op.drop_index("ix_notification_events_user_id", table_name="notification_events")
+    op.drop_table("notification_events")
+
     op.drop_index("ix_device_registrations_user_id", table_name="device_registrations")
     op.drop_table("device_registrations")
