@@ -56,6 +56,7 @@ class _GaonOneAppState extends State<GaonOneApp> {
     return switch (role) {
       'merchant' => MerchantWorkspace(onLogout: _logout),
       'delivery' => DeliveryWorkspace(onLogout: _logout),
+      'admin' => AdminWorkspace(onLogout: _logout),
       _ => CustomerShell(onLogout: _logout),
     };
   }
