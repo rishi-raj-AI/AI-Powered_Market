@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gaonone-backend"
-version = "0.1.0"
+version = "0.4.0"
 description = "Backend API for the GaonOne rural commerce platform"
 requires-python = ">=3.12"
 dependencies = [
@@ -16,6 +16,7 @@ dependencies = [
   "alembic>=1.16,<2.0",
   "redis>=6.0,<7.0",
   "PyJWT>=2.10,<3.0",
+  "python-multipart>=0.0.20,<1.0",
 ]
 
 [project.optional-dependencies]
