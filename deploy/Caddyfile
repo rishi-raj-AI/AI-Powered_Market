@@ -1,0 +1,33 @@
+{
+    email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+    encode zstd gzip
+
+    @api path /api/* /docs* /redoc* /openapi.json
+    handle @api {
+        reverse_proxy api:8000
+    }
+
+    @media path /media/*
+    handle @media {
+        reverse_proxy api:8000
+    }
+
+    handle {
+        reverse_proxy web:3000
+    }
+
+    header {
+        -Server
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(), microphone=(), geolocation=(self)"
+    }
+
+    log {
+        output stdout
+        format json
+    }
+}
