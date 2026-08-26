@@ -1,6 +1,7 @@
 # Python
 __pycache__/
 *.py[cod]
+*.egg-info/
 .venv/
 venv/
 .pytest_cache/
@@ -28,6 +29,13 @@ out/
 build/
 .flutter-plugins
 .flutter-plugins-dependencies
+
+# Android/iOS signing material
+*.jks
+*.keystore
+key.properties
+*.p12
+*.mobileprovision
 
 # Logs
 *.log
