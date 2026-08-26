@@ -1,0 +1,31 @@
+name: Production CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  production-compose-and-images:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare production env
+        run: |
+          cp .env.production.example .env.production
+          sed -i 's/example.com/gaonone.example/g' .env.production
+          sed -i 's/admin@gaonone.example/admin@gaonone.example/g' .env.production
+          sed -i 's/REPLACE_WITH_STRONG_DATABASE_PASSWORD/ci_strong_database_password_123456789/g' .env.production
+          sed -i 's/REPLACE_WITH_AT_LEAST_32_RANDOM_BYTES/ci_secret_key_0123456789abcdef0123456789abcdef/g' .env.production
+
+      - name: Validate production Compose
+        run: docker compose --env-file .env.production -f docker-compose.prod.yml config >/dev/null
+
+      - name: Build production backend image
+        run: docker build -f backend/Dockerfile.prod -t gaonone-api:ci backend
+
+      - name: Build production web image
+        run: docker build -f web/Dockerfile.prod --build-arg NEXT_PUBLIC_API_URL=/api/v1 -t gaonone-web:ci web
