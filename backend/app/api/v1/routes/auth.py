@@ -3,34 +3,29 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.core.config import settings
 from app.core.security import create_access_token
 from app.models.user import User
 from app.schemas.auth import OTPRequest, OTPRequestResponse, OTPVerifyRequest, TokenResponse
+from app.services.otp import otp_service
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
-DEV_OTP = "123456"
 
 
 @router.post("/request-otp", response_model=OTPRequestResponse)
 def request_otp(payload: OTPRequest) -> OTPRequestResponse:
-    if settings.APP_ENV != "development":
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="SMS OTP provider is not configured yet",
-        )
-    return OTPRequestResponse(message="Development OTP generated", dev_otp=DEV_OTP)
+    try:
+        result = otp_service.issue(payload.phone)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    return OTPRequestResponse(message=result.message, dev_otp=result.dev_otp)
 
 
 @router.post("/verify-otp", response_model=TokenResponse)
 def verify_otp(payload: OTPVerifyRequest, db: Session = Depends(get_db)) -> TokenResponse:
-    if settings.APP_ENV != "development":
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="SMS OTP provider is not configured yet",
-        )
-    if payload.otp != DEV_OTP:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OTP")
+    if not otp_service.verify(payload.phone, payload.otp):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired OTP")
 
     user = db.scalar(select(User).where(User.phone == payload.phone))
     if user is None:
@@ -39,6 +34,8 @@ def verify_otp(payload: OTPVerifyRequest, db: Session = Depends(get_db)) -> Toke
         db.commit()
         db.refresh(user)
     else:
+        if not user.is_active:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled")
         if payload.full_name and not user.full_name:
             user.full_name = payload.full_name
         user.is_verified = True
