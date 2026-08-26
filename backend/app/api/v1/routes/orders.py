@@ -160,6 +160,12 @@ def available_deliveries(db: Session = Depends(get_db), _: User = Depends(requir
     return db.scalars(stmt).all()
 
 
+@router.get("/delivery/me", response_model=list[DeliveryRead])
+def my_deliveries(db: Session = Depends(get_db), user: User = Depends(require_roles(UserRole.DELIVERY, UserRole.ADMIN))):
+    stmt = select(Delivery).where(Delivery.delivery_partner_id == user.id).order_by(Delivery.updated_at.desc())
+    return db.scalars(stmt).all()
+
+
 @router.post("/delivery/{delivery_id}/claim", response_model=DeliveryRead)
 def claim_delivery(delivery_id: uuid.UUID, db: Session = Depends(get_db), user: User = Depends(require_roles(UserRole.DELIVERY))):
     delivery = db.get(Delivery, delivery_id)
@@ -184,6 +190,12 @@ def update_delivery_status(delivery_id: uuid.UUID, payload: DeliveryStatusUpdate
         raise HTTPException(status_code=404, detail="Delivery not found")
     if user.role != UserRole.ADMIN and delivery.delivery_partner_id != user.id:
         raise HTTPException(status_code=403, detail="Delivery is not assigned to you")
+    allowed = {
+        DeliveryStatus.ASSIGNED: {DeliveryStatus.PICKED_UP},
+        DeliveryStatus.PICKED_UP: {DeliveryStatus.DELIVERED},
+    }
+    if payload.status not in allowed.get(delivery.status, set()):
+        raise HTTPException(status_code=409, detail=f"Invalid delivery transition from {delivery.status.value} to {payload.status.value}")
     order = db.get(Order, delivery.order_id)
     if payload.status == DeliveryStatus.PICKED_UP:
         delivery.picked_up_at = datetime.now(timezone.utc)
