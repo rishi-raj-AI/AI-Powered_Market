@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: dev-up dev-down seed test-backend web mobile-ios mobile-check
+.PHONY: dev-up dev-down seed test-backend web mobile-ios mobile-check prod-check prod-build prod-migrate prod-up prod-down prod-logs prod-status
 
 dev-up:
 	docker compose up --build -d
@@ -24,3 +24,26 @@ mobile-check:
 
 mobile-ios:
 	bash mobile/scripts/run_ios.sh
+
+prod-check:
+	@test -f .env.production || (echo "Missing .env.production. Copy .env.production.example and fill real values." && exit 1)
+	docker compose --env-file .env.production -f docker-compose.prod.yml config >/dev/null
+	@echo "Production compose configuration is valid."
+
+prod-build: prod-check
+	docker compose --env-file .env.production -f docker-compose.prod.yml build
+
+prod-migrate: prod-check
+	docker compose --env-file .env.production -f docker-compose.prod.yml --profile ops run --rm migrate
+
+prod-up: prod-check
+	docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+
+prod-down:
+	docker compose --env-file .env.production -f docker-compose.prod.yml down
+
+prod-logs:
+	docker compose --env-file .env.production -f docker-compose.prod.yml logs -f --tail=200
+
+prod-status:
+	docker compose --env-file .env.production -f docker-compose.prod.yml ps
