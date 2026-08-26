@@ -5,6 +5,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.orders import DeliveryStatus, OrderStatus, PaymentMethod, PaymentStatus
+from app.schemas.commerce import StoreProductRead
 
 
 class CartItemUpsert(BaseModel):
@@ -17,6 +18,7 @@ class CartItemRead(BaseModel):
     id: uuid.UUID
     store_product_id: uuid.UUID
     quantity: int
+    store_product: StoreProductRead
 
 
 class CartRead(BaseModel):
