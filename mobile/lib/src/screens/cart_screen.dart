@@ -148,7 +148,7 @@ class _CartScreenState extends State<CartScreen> {
       final order = await GaonApi.checkout(address.id, payment);
       if (!mounted) return;
       if (payment == 'upi') {
-        final paid = await GaonApi.openRazorpayCheckout(context, order);
+        final paid = await GaonApi.openRazorpayCheckout(order);
         if (!mounted) return;
         if (!paid) {
           _snack('Order placed, but online payment is still pending. You can retry from Orders.');
