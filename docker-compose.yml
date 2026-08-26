@@ -12,6 +12,19 @@ services:
       - db
       - redis
 
+  web:
+    build:
+      context: ./web
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+    depends_on:
+      - api
+
   db:
     image: postgis/postgis:16-3.4
     environment:
