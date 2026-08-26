@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -19,11 +21,24 @@ def auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def _unique_test_identity() -> tuple[str, str, str, str]:
+    suffix = uuid4().hex[:8]
+    numeric = int(suffix, 16) % 1_000_000_000
+    customer_phone = f"+919{numeric:09d}"
+    merchant_phone = f"+918{numeric:09d}"
+    return customer_phone, merchant_phone, suffix, f"phase-one-kirana-{suffix}"
+
+
 def test_complete_marketplace_flow() -> None:
+    customer_phone, merchant_phone, suffix, store_slug = _unique_test_identity()
+    customer_name = f"Phase One Customer {suffix}"
+    merchant_name = f"Phase One Merchant {suffix}"
+    store_name = f"Phase One Kirana {suffix}"
+
     admin_token = token_for("+919000000001")
     delivery_token = token_for("+919000000002")
-    customer_token = token_for("+919000000010", "Phase One Customer")
-    merchant_token = token_for("+919000000011", "Phase One Merchant")
+    customer_token = token_for(customer_phone, customer_name)
+    merchant_token = token_for(merchant_phone, merchant_name)
 
     villages = client.get("/api/v1/villages")
     assert villages.status_code == 200
@@ -36,8 +51,8 @@ def test_complete_marketplace_flow() -> None:
         json={
             "village_id": village_id,
             "label": "Home",
-            "recipient_name": "Phase One Customer",
-            "phone": "+919000000010",
+            "recipient_name": customer_name,
+            "phone": customer_phone,
             "house_details": "House 1",
             "landmark": "Near Gram Panchayat",
             "directions": "Main road",
@@ -52,7 +67,7 @@ def test_complete_marketplace_flow() -> None:
     merchant = client.post(
         "/api/v1/merchants/apply",
         headers=auth(merchant_token),
-        json={"business_name": "Phase One Kirana", "gstin": None},
+        json={"business_name": store_name, "gstin": None},
     )
     assert merchant.status_code == 201, merchant.text
     merchant_id = merchant.json()["id"]
@@ -75,10 +90,10 @@ def test_complete_marketplace_flow() -> None:
         json={
             "village_id": village_id,
             "service_area_id": service_area_id,
-            "name": "Phase One Kirana",
-            "slug": "phase-one-kirana",
+            "name": store_name,
+            "slug": store_slug,
             "description": "Pilot local grocery store",
-            "phone": "+919000000011",
+            "phone": merchant_phone,
             "landmark": "Village square",
             "latitude": 18.5204,
             "longitude": 73.8567,
