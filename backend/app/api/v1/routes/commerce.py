@@ -26,6 +26,14 @@ def apply_as_merchant(payload: MerchantCreate, db: Session = Depends(get_db), us
     return merchant
 
 
+@router.get("/merchants", response_model=list[MerchantRead])
+def list_merchants(status_filter: MerchantStatus | None = None, db: Session = Depends(get_db), _: User = Depends(require_roles(UserRole.ADMIN))):
+    stmt = select(Merchant).order_by(Merchant.created_at.desc())
+    if status_filter is not None:
+        stmt = stmt.where(Merchant.status == status_filter)
+    return db.scalars(stmt).all()
+
+
 @router.get("/merchants/me", response_model=MerchantRead)
 def get_my_merchant(db: Session = Depends(get_db), user: User = Depends(require_roles(UserRole.MERCHANT, UserRole.ADMIN))):
     merchant = db.scalar(select(Merchant).where(Merchant.owner_user_id == user.id))
@@ -148,5 +156,4 @@ def upsert_store_product(store_id: uuid.UUID, payload: StoreProductCreate, db: S
 def list_store_products(store_id: uuid.UUID, db: Session = Depends(get_db)):
     if db.get(Store, store_id) is None:
         raise HTTPException(status_code=404, detail="Store not found")
-    stmt = select(StoreProduct).where(StoreProduct.store_id == store_id, StoreProduct.is_available.is_(True)).order_by(StoreProduct.updated_at.desc())
-    return db.scalars(stmt).all()
+    return db.scalars(select(StoreProduct).where(StoreProduct.store_id == store_id, StoreProduct.is_available.is_(True)).order_by(StoreProduct.updated_at.desc())).all()
