@@ -30,10 +30,10 @@ class GaonApi {
     return body;
   }
 
-  static Future<http.Response> _get(Uri uri) async => (await http.get(uri, headers: await _headers())).timeout(timeout);
-  static Future<http.Response> _post(Uri uri, {Object? body}) async => (await http.post(uri, headers: await _headers(), body: body)).timeout(timeout);
-  static Future<http.Response> _patch(Uri uri, {Object? body}) async => (await http.patch(uri, headers: await _headers(), body: body)).timeout(timeout);
-  static Future<http.Response> _delete(Uri uri) async => (await http.delete(uri, headers: await _headers())).timeout(timeout);
+  static Future<http.Response> _get(Uri uri) async => http.get(uri, headers: await _headers()).timeout(timeout);
+  static Future<http.Response> _post(Uri uri, {Object? body}) async => http.post(uri, headers: await _headers(), body: body).timeout(timeout);
+  static Future<http.Response> _patch(Uri uri, {Object? body}) async => http.patch(uri, headers: await _headers(), body: body).timeout(timeout);
+  static Future<http.Response> _delete(Uri uri) async => http.delete(uri, headers: await _headers()).timeout(timeout);
 
   static Future<String?> requestOtp(String phone) async {
     final r = await _post(Uri.parse('$baseUrl/auth/request-otp'), body: jsonEncode({'phone': phone}));
