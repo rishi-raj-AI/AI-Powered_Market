@@ -1,6 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
+
 import 'package:http/http.dart' as http;
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/models.dart';
 
 class GaonApi {
@@ -84,8 +88,8 @@ class GaonApi {
     return CartModel.fromJson(_decode(r));
   }
 
-  static Future<CartModel> removeCartItem(String id) async {
-    final r = await _delete(Uri.parse('$baseUrl/cart/items/$id'));
+  static Future<CartModel> removeCartItem(String storeProductId) async {
+    final r = await _delete(Uri.parse('$baseUrl/cart/items/$storeProductId'));
     return CartModel.fromJson(_decode(r));
   }
 
@@ -129,6 +133,94 @@ class GaonApi {
   static Future<List<OrderModel>> orders() async {
     final r = await _get(Uri.parse('$baseUrl/orders/me'));
     return (_decode(r) as List<dynamic>).map((e) => OrderModel.fromJson(e)).toList();
+  }
+
+  static Future<PaymentConfigModel> paymentConfig() async {
+    final r = await _get(Uri.parse('$baseUrl/payments/config'));
+    return PaymentConfigModel.fromJson(_decode(r));
+  }
+
+  static Future<PaymentIntentModel> paymentIntent(String orderId) async {
+    final r = await _post(Uri.parse('$baseUrl/payments/orders/$orderId/intent'));
+    return PaymentIntentModel.fromJson(_decode(r));
+  }
+
+  static Future<void> verifyOnlinePayment({
+    required String paymentAttemptId,
+    required String paymentId,
+    required String signature,
+  }) async {
+    final r = await _post(Uri.parse('$baseUrl/payments/verify'), body: jsonEncode({
+      'payment_attempt_id': paymentAttemptId,
+      'razorpay_payment_id': paymentId,
+      'razorpay_signature': signature,
+    }));
+    _decode(r);
+  }
+
+  static Future<bool> openRazorpayCheckout(OrderModel order) async {
+    final config = await paymentConfig();
+    if (!config.enabled || config.keyId == null) {
+      throw Exception('Online payments are not configured yet. Use cash on delivery for the pilot.');
+    }
+    final intent = await paymentIntent(order.id);
+    final customer = await me();
+    final completer = Completer<bool>();
+    final razorpay = Razorpay();
+
+    Future<void> completeSuccess(PaymentSuccessResponse response) async {
+      try {
+        final paymentId = response.paymentId;
+        final signature = response.signature;
+        if (paymentId == null || signature == null) {
+          throw Exception('Payment confirmation was incomplete.');
+        }
+        await verifyOnlinePayment(
+          paymentAttemptId: intent.paymentAttemptId,
+          paymentId: paymentId,
+          signature: signature,
+        );
+        if (!completer.isCompleted) completer.complete(true);
+      } catch (_) {
+        if (!completer.isCompleted) completer.complete(false);
+      } finally {
+        razorpay.clear();
+      }
+    }
+
+    void completeFailure(PaymentFailureResponse _) {
+      if (!completer.isCompleted) completer.complete(false);
+      razorpay.clear();
+    }
+
+    void completeWallet(ExternalWalletResponse _) {
+      if (!completer.isCompleted) completer.complete(false);
+      razorpay.clear();
+    }
+
+    razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, completeSuccess);
+    razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, completeFailure);
+    razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, completeWallet);
+    razorpay.open({
+      'key': intent.keyId,
+      'amount': intent.amountSubunits,
+      'currency': intent.currency,
+      'name': 'GaonOne',
+      'description': 'Order ${order.orderNumber}',
+      'order_id': intent.providerOrderId,
+      'prefill': {'contact': customer.phone, 'name': customer.fullName ?? ''},
+      'retry': {'enabled': true, 'max_count': 4},
+      'timeout': 180,
+    });
+    return completer.future.timeout(const Duration(minutes: 5), onTimeout: () {
+      razorpay.clear();
+      return false;
+    });
+  }
+
+  static Future<List<NotificationEventModel>> notifications() async {
+    final r = await _get(Uri.parse('$baseUrl/notifications/me'));
+    return (_decode(r) as List<dynamic>).map((e) => NotificationEventModel.fromJson(e)).toList();
   }
 
   static Future<List<OrderModel>> merchantOrders() async {
