@@ -1,26 +1,31 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.core.middleware import RequestContextMiddleware
+
+is_production = settings.APP_ENV == "production"
 
 app = FastAPI(
     title=settings.APP_NAME,
-    version="0.2.0",
+    version=settings.APP_VERSION,
     debug=settings.APP_DEBUG,
+    docs_url=None if is_production else "/docs",
+    redoc_url=None if is_production else "/redoc",
+    openapi_url=None if is_production else "/openapi.json",
 )
 
-allowed_origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
-
+app.add_middleware(RequestContextMiddleware)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+    expose_headers=["X-Request-ID"],
 )
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
@@ -31,5 +36,6 @@ def root() -> dict[str, str]:
     return {
         "name": settings.APP_NAME,
         "status": "running",
-        "version": "0.2.0",
+        "version": settings.APP_VERSION,
+        "environment": settings.APP_ENV,
     }
