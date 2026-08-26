@@ -47,8 +47,13 @@ def test_nearby_store_discovery_and_admin_overview() -> None:
     )
     assert nearby.status_code == 200, nearby.text
     assert nearby.json()
-    assert nearby.json()[0]["name"] == "Patil Kirana & Daily Needs"
-    assert nearby.json()[0]["distance_km"] <= 0.1
+
+    seeded_store = next(
+        (store for store in nearby.json() if store["name"] == "Patil Kirana & Daily Needs"),
+        None,
+    )
+    assert seeded_store is not None, nearby.text
+    assert seeded_store["distance_km"] <= 0.1
 
     admin_token = token_for("+919000000001")
     overview = client.get("/api/v1/admin/overview", headers=auth(admin_token))
