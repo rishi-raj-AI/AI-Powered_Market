@@ -45,6 +45,10 @@ class StoreRead(StoreCreate):
     created_at: datetime
 
 
+class NearbyStoreRead(StoreRead):
+    distance_km: float
+
+
 class CategoryCreate(BaseModel):
     name: str
     slug: str
