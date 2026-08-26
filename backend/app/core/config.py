@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
     TRUSTED_HOSTS: str = "localhost,127.0.0.1,testserver"
     PUBLIC_BASE_URL: str = "http://localhost:8000"
-    UPLOAD_DIR: str = "/app/data/uploads"
+    UPLOAD_DIR: str = "data/uploads"
     MAX_UPLOAD_MB: int = 8
 
     DEV_OTP: str = "123456"
