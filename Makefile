@@ -27,6 +27,7 @@ mobile-ios:
 
 prod-check:
 	@test -f .env.production || (echo "Missing .env.production. Copy .env.production.example and fill real values." && exit 1)
+	python3 deploy/validate_env.py
 	docker compose --env-file .env.production -f docker-compose.prod.yml config >/dev/null
 	@echo "Production compose configuration is valid."
 
