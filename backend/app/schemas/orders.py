@@ -66,5 +66,27 @@ class DeliveryRead(BaseModel):
     updated_at: datetime
 
 
+class DeliveryTaskRead(BaseModel):
+    id: uuid.UUID
+    order_id: uuid.UUID
+    order_number: str
+    status: DeliveryStatus
+    payment_method: PaymentMethod
+    payment_status: PaymentStatus
+    total: Decimal
+    store_name: str
+    store_phone: str | None = None
+    store_landmark: str | None = None
+    store_latitude: float | None = None
+    store_longitude: float | None = None
+    recipient_name: str | None = None
+    recipient_phone: str | None = None
+    house_details: str | None = None
+    customer_landmark: str
+    customer_directions: str | None = None
+    customer_latitude: float | None = None
+    customer_longitude: float | None = None
+
+
 class DeliveryStatusUpdate(BaseModel):
     status: DeliveryStatus
