@@ -20,6 +20,24 @@ class DeviceRegistrationRead(DeviceRegistrationCreate):
     updated_at: datetime
 
 
+class NotificationConfigResponse(BaseModel):
+    enabled: bool
+    provider: str = "firebase"
+
+
+class NotificationEventRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    user_id: uuid.UUID
+    event_type: str
+    title: str
+    body: str
+    data: dict
+    status: str
+    created_at: datetime
+    sent_at: datetime | None = None
+
+
 class PaymentConfigResponse(BaseModel):
     enabled: bool
     provider: str
