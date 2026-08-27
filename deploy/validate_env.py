@@ -73,6 +73,20 @@ def main() -> int:
     if env.get('DEV_OTP'):
         fail('DEV_OTP must be empty in production', errors)
 
+    auth_provider = env.get('AUTH_PROVIDER', '').strip().lower()
+    if auth_provider not in {'local_otp', 'msg91_widget'}:
+        fail('AUTH_PROVIDER must be local_otp or msg91_widget', errors)
+    if auth_provider == 'msg91_widget':
+        widget_auth_key = env.get('MSG91_WIDGET_AUTH_KEY', '').strip()
+        widget_id = env.get('NEXT_PUBLIC_MSG91_WIDGET_ID', '').strip()
+        widget_token = env.get('NEXT_PUBLIC_MSG91_WIDGET_TOKEN', '').strip()
+        if not widget_auth_key or widget_auth_key.startswith('REPLACE_'):
+            fail('MSG91_WIDGET_AUTH_KEY is required for MSG91 widget auth', errors)
+        if not widget_id or widget_id.startswith('REPLACE_'):
+            fail('NEXT_PUBLIC_MSG91_WIDGET_ID is required for MSG91 widget auth', errors)
+        if not widget_token or widget_token.startswith('REPLACE_'):
+            fail('NEXT_PUBLIC_MSG91_WIDGET_TOKEN is required for MSG91 widget auth', errors)
+
     sms_provider = env.get('SMS_PROVIDER', 'none').strip().lower()
     if sms_provider not in {'none', 'msg91'}:
         fail('SMS_PROVIDER must be none or msg91', errors)
