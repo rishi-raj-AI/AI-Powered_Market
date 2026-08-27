@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 from urllib.parse import urlparse
@@ -73,6 +72,15 @@ def main() -> int:
 
     if env.get('DEV_OTP'):
         fail('DEV_OTP must be empty in production', errors)
+
+    sms_provider = env.get('SMS_PROVIDER', 'none').strip().lower()
+    if sms_provider not in {'none', 'msg91'}:
+        fail('SMS_PROVIDER must be none or msg91', errors)
+    if sms_provider == 'msg91':
+        if not env.get('MSG91_AUTH_KEY', '').strip():
+            fail('MSG91_AUTH_KEY is required when SMS_PROVIDER=msg91', errors)
+        if not env.get('MSG91_TEMPLATE_ID', '').strip():
+            fail('MSG91_TEMPLATE_ID is required when SMS_PROVIDER=msg91', errors)
 
     email = env.get('ACME_EMAIL', '')
     if '@' not in email or email.endswith('@example.com'):
