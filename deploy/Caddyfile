@@ -18,6 +18,9 @@ www.{$DOMAIN} {
     }
     respond @unexpectedRootPost "Method Not Allowed" 405
 
+    @favicon path /favicon.ico
+    rewrite @favicon /icon.svg
+
     @api path /api/* /docs* /redoc* /openapi.json
     handle @api {
         reverse_proxy api:8000
