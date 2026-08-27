@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 
 import httpx
 
 from app.core.config import settings
 
 VERIFY_ACCESS_TOKEN_URL = "https://control.msg91.com/api/v5/widget/verifyAccessToken"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -62,6 +64,31 @@ def _provider_message(payload: dict, fallback: str) -> str:
     return fallback
 
 
+def _safe_provider_diagnostic(payload: object) -> object:
+    """Keep provider diagnostics useful without ever logging credentials or tokens."""
+    if not isinstance(payload, dict):
+        return {"response_type": type(payload).__name__}
+
+    safe: dict[str, object] = {}
+    for key in ("type", "message", "error", "detail", "msg", "status", "code"):
+        value = payload.get(key)
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            safe[key] = value
+
+    data = payload.get("data")
+    if isinstance(data, dict):
+        safe_data: dict[str, object] = {}
+        for key in ("type", "message", "error", "detail", "msg", "status", "code"):
+            value = data.get(key)
+            if isinstance(value, (str, int, float, bool)) or value is None:
+                safe_data[key] = value
+        if safe_data:
+            safe["data"] = safe_data
+
+    safe["response_keys"] = sorted(str(key) for key in payload.keys())
+    return safe
+
+
 def verify_widget_access_token(access_token: str) -> VerifiedWidgetIdentity:
     if not settings.MSG91_AUTH_KEY:
         raise RuntimeError("MSG91 server auth key is not configured")
@@ -77,12 +104,25 @@ def verify_widget_access_token(access_token: str) -> VerifiedWidgetIdentity:
             timeout=settings.SMS_HTTP_TIMEOUT_SECONDS,
         )
     except httpx.HTTPError as exc:
+        logger.warning("MSG91 verifyAccessToken network failure: %s", type(exc).__name__)
         raise RuntimeError("MSG91 verification service is unavailable") from exc
 
     try:
         payload = response.json()
     except ValueError as exc:
+        logger.warning(
+            "MSG91 verifyAccessToken invalid JSON: status=%s content_type=%s",
+            response.status_code,
+            response.headers.get("content-type"),
+        )
         raise RuntimeError("MSG91 returned an invalid verification response") from exc
+
+    if response.status_code >= 400:
+        logger.warning(
+            "MSG91 verifyAccessToken rejected: status=%s diagnostic=%r",
+            response.status_code,
+            _safe_provider_diagnostic(payload),
+        )
 
     if response.status_code >= 500:
         raise RuntimeError(_provider_message(payload, "MSG91 verification service is unavailable"))
@@ -91,6 +131,11 @@ def verify_widget_access_token(access_token: str) -> VerifiedWidgetIdentity:
 
     identifier = _extract_identifier(payload)
     if identifier is None:
+        logger.warning(
+            "MSG91 verifyAccessToken missing identifier: status=%s diagnostic=%r",
+            response.status_code,
+            _safe_provider_diagnostic(payload),
+        )
         raise ValueError(_provider_message(payload, "MSG91 verification response did not contain a verified identifier"))
 
     return VerifiedWidgetIdentity(identifier=_normalize_indian_phone(identifier), raw=payload)
