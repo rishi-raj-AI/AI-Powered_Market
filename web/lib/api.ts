@@ -7,6 +7,7 @@ export async function api<T>(path:string,init:RequestInit={}):Promise<T>{const t
 export const gaonApi={
 requestOtp:(phone:string)=>api<{message:string;dev_otp?:string}>('/auth/request-otp',{method:'POST',body:JSON.stringify({phone})}),
 verifyOtp:(phone:string,otp:string,full_name?:string)=>api<{access_token:string;token_type:string}>('/auth/verify-otp',{method:'POST',body:JSON.stringify({phone,otp,full_name})}),
+exchangeWidgetToken:(access_token:string,full_name?:string)=>api<{access_token:string;token_type:string}>('/auth/widget/exchange',{method:'POST',body:JSON.stringify({access_token,full_name})}),
 me:()=>api<User>('/users/me'),villages:()=>api<Village[]>('/villages'),serviceAreas:()=>api<ServiceArea[]>('/service-areas'),categories:()=>api<Category[]>('/categories'),products:()=>api<Product[]>('/products'),
 stores:(villageId?:string)=>api<Store[]>(`/stores${villageId?`?village_id=${villageId}`:''}`),nearbyStores:(lat:number,lng:number,radiusKm=15)=>api<NearbyStore[]>(`/stores/nearby?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}&radius_km=${encodeURIComponent(radiusKm)}`),store:(id:string)=>api<Store>(`/stores/${id}`),storeProducts:(id:string)=>api<StoreProduct[]>(`/stores/${id}/products`),myStores:()=>api<Store[]>('/stores/mine'),
 cart:()=>api<Cart>('/cart'),addCart:(store_product_id:string,quantity:number)=>api<Cart>('/cart/items',{method:'POST',body:JSON.stringify({store_product_id,quantity})}),removeCart:(storeProductId:string)=>api<Cart>(`/cart/items/${storeProductId}`,{method:'DELETE'}),
