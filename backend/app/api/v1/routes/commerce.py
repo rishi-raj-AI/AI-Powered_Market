@@ -2,7 +2,7 @@ import math
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, require_roles
@@ -14,6 +14,7 @@ from app.schemas.commerce import (
     CategoryRead,
     MerchantCreate,
     MerchantRead,
+    MerchantStatusUpdate,
     NearbyStoreRead,
     ProductCreate,
     ProductRead,
@@ -21,6 +22,7 @@ from app.schemas.commerce import (
     StoreProductCreate,
     StoreProductRead,
     StoreRead,
+    StoreUpdate,
 )
 
 router = APIRouter(tags=["Commerce"])
@@ -36,6 +38,33 @@ def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
         + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
     )
     return earth_radius_km * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _merchant_for_store(db: Session, store: Store) -> Merchant | None:
+    return db.get(Merchant, store.merchant_id)
+
+
+def _require_store_owner(db: Session, store: Store, user: User) -> Merchant | None:
+    merchant = _merchant_for_store(db, store)
+    if user.role != UserRole.ADMIN and (merchant is None or merchant.owner_user_id != user.id):
+        raise HTTPException(status_code=403, detail="You do not own this store")
+    return merchant
+
+
+def _public_store_stmt():
+    return (
+        select(Store)
+        .join(Merchant, Store.merchant_id == Merchant.id)
+        .where(Store.is_active.is_(True), Merchant.status == MerchantStatus.APPROVED)
+    )
+
+
+def _set_merchant_status(db: Session, merchant: Merchant, target: MerchantStatus) -> None:
+    merchant.status = target
+    if target == MerchantStatus.SUSPENDED:
+        db.execute(update(Store).where(Store.merchant_id == merchant.id).values(is_active=False))
+    elif target == MerchantStatus.APPROVED:
+        db.execute(update(Store).where(Store.merchant_id == merchant.id).values(is_active=True))
 
 
 @router.post("/merchants/apply", response_model=MerchantRead, status_code=status.HTTP_201_CREATED)
@@ -87,7 +116,23 @@ def approve_merchant(
     merchant = db.get(Merchant, merchant_id)
     if merchant is None:
         raise HTTPException(status_code=404, detail="Merchant not found")
-    merchant.status = MerchantStatus.APPROVED
+    _set_merchant_status(db, merchant, MerchantStatus.APPROVED)
+    db.commit()
+    db.refresh(merchant)
+    return merchant
+
+
+@router.patch("/merchants/{merchant_id}/status", response_model=MerchantRead)
+def update_merchant_status(
+    merchant_id: uuid.UUID,
+    payload: MerchantStatusUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(UserRole.ADMIN)),
+):
+    merchant = db.get(Merchant, merchant_id)
+    if merchant is None:
+        raise HTTPException(status_code=404, detail="Merchant not found")
+    _set_merchant_status(db, merchant, payload.status)
     db.commit()
     db.refresh(merchant)
     return merchant
@@ -102,7 +147,7 @@ def create_store(
     merchant = db.scalar(select(Merchant).where(Merchant.owner_user_id == user.id))
     if merchant is None:
         raise HTTPException(status_code=404, detail="Merchant profile not found")
-    if merchant.status != MerchantStatus.APPROVED and user.role != UserRole.ADMIN:
+    if merchant.status != MerchantStatus.APPROVED:
         raise HTTPException(status_code=403, detail="Merchant approval required")
     if db.get(Village, payload.village_id) is None:
         raise HTTPException(status_code=404, detail="Village not found")
@@ -124,7 +169,7 @@ def list_stores(
     delivery: bool | None = None,
     db: Session = Depends(get_db),
 ):
-    stmt = select(Store).where(Store.is_active.is_(True)).order_by(Store.name)
+    stmt = _public_store_stmt().order_by(Store.name)
     if village_id:
         stmt = stmt.where(Store.village_id == village_id)
     if q:
@@ -142,8 +187,7 @@ def nearby_stores(
     delivery: bool | None = None,
     db: Session = Depends(get_db),
 ):
-    stmt = select(Store).where(
-        Store.is_active.is_(True),
+    stmt = _public_store_stmt().where(
         Store.latitude.is_not(None),
         Store.longitude.is_not(None),
     )
@@ -174,9 +218,29 @@ def my_stores(
 
 @router.get("/stores/{store_id}", response_model=StoreRead)
 def get_store(store_id: uuid.UUID, db: Session = Depends(get_db)):
-    store = db.get(Store, store_id)
-    if store is None or not store.is_active:
+    store = db.scalar(_public_store_stmt().where(Store.id == store_id))
+    if store is None:
         raise HTTPException(status_code=404, detail="Store not found")
+    return store
+
+
+@router.patch("/stores/{store_id}", response_model=StoreRead)
+def update_store(
+    store_id: uuid.UUID,
+    payload: StoreUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles(UserRole.MERCHANT, UserRole.ADMIN)),
+):
+    store = db.get(Store, store_id)
+    if store is None:
+        raise HTTPException(status_code=404, detail="Store not found")
+    merchant = _require_store_owner(db, store, user)
+    if user.role != UserRole.ADMIN and merchant and merchant.status != MerchantStatus.APPROVED:
+        raise HTTPException(status_code=403, detail="Merchant is not active")
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(store, key, value)
+    db.commit()
+    db.refresh(store)
     return store
 
 
@@ -247,9 +311,9 @@ def upsert_store_product(
     store = db.get(Store, store_id)
     if store is None:
         raise HTTPException(status_code=404, detail="Store not found")
-    merchant = db.get(Merchant, store.merchant_id)
-    if user.role != UserRole.ADMIN and (merchant is None or merchant.owner_user_id != user.id):
-        raise HTTPException(status_code=403, detail="You do not own this store")
+    merchant = _require_store_owner(db, store, user)
+    if user.role != UserRole.ADMIN and (merchant is None or merchant.status != MerchantStatus.APPROVED):
+        raise HTTPException(status_code=403, detail="Merchant is not active")
     if db.get(Product, payload.product_id) is None:
         raise HTTPException(status_code=404, detail="Product not found")
     listing = db.scalar(
@@ -269,12 +333,34 @@ def upsert_store_product(
     return listing
 
 
+@router.get("/stores/{store_id}/inventory", response_model=list[StoreProductRead])
+def store_inventory(
+    store_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles(UserRole.MERCHANT, UserRole.ADMIN)),
+):
+    store = db.get(Store, store_id)
+    if store is None:
+        raise HTTPException(status_code=404, detail="Store not found")
+    _require_store_owner(db, store, user)
+    return db.scalars(
+        select(StoreProduct)
+        .where(StoreProduct.store_id == store_id)
+        .order_by(StoreProduct.updated_at.desc())
+    ).all()
+
+
 @router.get("/stores/{store_id}/products", response_model=list[StoreProductRead])
 def list_store_products(store_id: uuid.UUID, db: Session = Depends(get_db)):
-    if db.get(Store, store_id) is None:
+    store = db.scalar(_public_store_stmt().where(Store.id == store_id))
+    if store is None:
         raise HTTPException(status_code=404, detail="Store not found")
     return db.scalars(
         select(StoreProduct)
-        .where(StoreProduct.store_id == store_id, StoreProduct.is_available.is_(True))
+        .where(
+            StoreProduct.store_id == store_id,
+            StoreProduct.is_available.is_(True),
+            StoreProduct.stock_quantity > 0,
+        )
         .order_by(StoreProduct.updated_at.desc())
     ).all()
