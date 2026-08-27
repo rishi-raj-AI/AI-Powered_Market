@@ -11,6 +11,7 @@ declare global {
     initSendOTP?: (configuration: Record<string, unknown>) => void;
     sendOtp?: (identifier: string, success?: (data: unknown) => void, failure?: (error: unknown) => void) => void;
     verifyOtp?: (otp: string | number, success?: (data: unknown) => void, failure?: (error: unknown) => void) => void;
+    isCaptchaVerified?: () => boolean;
   }
 }
 
@@ -18,6 +19,7 @@ declare global {
 // The private account Authkey is NEVER placed here; it remains server-side only.
 const MSG91_WIDGET_ID='366841725756303030313539';
 const MSG91_WIDGET_TOKEN='565081TwccrS3r6a90922dP1';
+const MSG91_CAPTCHA_RENDER_ID='msg91-captcha';
 
 function providerMessage(error:unknown):string{
   if(error instanceof Error)return error.message;
@@ -88,6 +90,7 @@ export default function Login(){
       widgetId:MSG91_WIDGET_ID,
       tokenAuth:MSG91_WIDGET_TOKEN,
       exposeMethods:true,
+      captchaRenderId:MSG91_CAPTCHA_RENDER_ID,
       success:async(data:unknown)=>{
         const token=accessToken(data);
         if(!token){setMessage('MSG91 verified the OTP but did not return an access token.');return;}
@@ -104,6 +107,9 @@ export default function Login(){
       if(!sdkReady||!window.sendOtp)throw new Error('OTP service is still loading. Please retry in a moment.');
       const identifier=normalizeIdentifier(phone);
       if(!/^91\d{10}$/.test(identifier))throw new Error('Enter a valid 10-digit Indian mobile number.');
+      if(window.isCaptchaVerified&&window.isCaptchaVerified()===false){
+        throw new Error('Complete the CAPTCHA verification, then press Send OTP.');
+      }
       await new Promise<void>((resolve,reject)=>window.sendOtp!(identifier,()=>resolve(),reject));
       setMessage('OTP sent to your mobile number.');
       setStep(2);
@@ -132,6 +138,7 @@ export default function Login(){
       <span className="eyebrow">Secure passwordless login</span>
       <h1>{step===1?'Enter your mobile number':'Verify OTP'}</h1>
       <p className="muted">OTP verification secured by MSG91.</p>
+      {step===1&&<div id={MSG91_CAPTCHA_RENDER_ID}/>} 
       {step===1?<form className="form" onSubmit={request}>
         <div className="field"><label>Mobile number</label><input value={phone} onChange={e=>setPhone(e.target.value)} required inputMode="tel"/></div>
         <div className="field"><label>Name (first login)</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="Your name"/></div>
