@@ -1,7 +1,7 @@
 'use client';
 
 import Script from 'next/script';
-import {FormEvent,useState} from 'react';
+import {FormEvent,useRef,useState} from 'react';
 import {useRouter} from 'next/navigation';
 import {gaonApi,setToken} from '@/lib/api';
 import {Nav} from '@/components/Nav';
@@ -66,14 +66,22 @@ export default function Login(){
   const [message,setMessage]=useState('');
   const [sdkReady,setSdkReady]=useState(false);
   const [busy,setBusy]=useState(false);
+  const loginStarted=useRef(false);
   const router=useRouter();
 
   async function finishLogin(token:string){
-    const result=await gaonApi.exchangeWidgetToken(token,name||undefined);
-    setToken(result.access_token);
-    const me=await gaonApi.me();
-    const route={merchant:'/merchant',admin:'/admin',delivery:'/delivery',customer:'/market'}[me.role]||'/market';
-    router.push(route);
+    if(loginStarted.current)return;
+    loginStarted.current=true;
+    try{
+      const result=await gaonApi.exchangeWidgetToken(token,name||undefined);
+      setToken(result.access_token);
+      const me=await gaonApi.me();
+      const route={merchant:'/merchant',admin:'/admin',delivery:'/delivery',customer:'/market'}[me.role]||'/market';
+      router.replace(route);
+    }catch(error){
+      loginStarted.current=false;
+      throw error;
+    }
   }
 
   function fail(error:unknown){
@@ -86,23 +94,20 @@ export default function Login(){
       setMessage('MSG91 OTP SDK failed to load. Please reload the page.');
       return;
     }
+    // With exposed custom UI methods, MSG91 recommends listening to the
+    // sendOtp/verifyOtp callbacks only. Registering both configuration-level
+    // success/failure callbacks and verifyOtp callbacks causes duplicate events.
     window.initSendOTP({
       widgetId:MSG91_WIDGET_ID,
       tokenAuth:MSG91_WIDGET_TOKEN,
       exposeMethods:true,
       captchaRenderId:MSG91_CAPTCHA_RENDER_ID,
-      success:async(data:unknown)=>{
-        const token=accessToken(data);
-        if(!token){setMessage('MSG91 verified the OTP but did not return an access token.');return;}
-        try{setBusy(true);await finishLogin(token)}catch(error){setMessage(providerMessage(error))}finally{setBusy(false)}
-      },
-      failure:fail,
     });
     setSdkReady(true);
   }
 
   async function request(e:FormEvent){
-    e.preventDefault();setMessage('');setBusy(true);
+    e.preventDefault();setMessage('');setBusy(true);loginStarted.current=false;
     try{
       if(!sdkReady||!window.sendOtp)throw new Error('OTP service is still loading. Please retry in a moment.');
       const identifier=normalizeIdentifier(phone);
@@ -146,7 +151,7 @@ export default function Login(){
       </form>:<form className="form" onSubmit={verify}>
         <div className="field"><label>OTP</label><input value={otp} onChange={e=>setOtp(e.target.value.replace(/\D/g,''))} inputMode="numeric" autoComplete="one-time-code" minLength={4} maxLength={8} required/></div>
         <button className="btn" disabled={busy}>{busy?'Verifying…':'Verify & continue'}</button>
-        <button type="button" className="btn ghost" disabled={busy} onClick={()=>{setOtp('');setMessage('');setStep(1)}}>Change number</button>
+        <button type="button" className="btn ghost" disabled={busy} onClick={()=>{setOtp('');setMessage('');setStep(1);loginStarted.current=false}}>Change number</button>
       </form>}
       {message&&<p className="notice">{message}</p>}
     </div></div>
