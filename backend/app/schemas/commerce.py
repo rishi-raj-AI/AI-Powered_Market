@@ -12,6 +12,10 @@ class MerchantCreate(BaseModel):
     gstin: str | None = None
 
 
+class MerchantStatusUpdate(BaseModel):
+    status: MerchantStatus
+
+
 class MerchantRead(MerchantCreate):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
@@ -35,6 +39,20 @@ class StoreCreate(BaseModel):
     closes_at: time | None = None
     delivery_enabled: bool = True
     pickup_enabled: bool = True
+
+
+class StoreUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=160)
+    description: str | None = None
+    phone: str | None = None
+    landmark: str | None = None
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    opens_at: time | None = None
+    closes_at: time | None = None
+    delivery_enabled: bool | None = None
+    pickup_enabled: bool | None = None
+    is_active: bool | None = None
 
 
 class StoreRead(StoreCreate):
