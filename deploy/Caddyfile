@@ -9,30 +9,32 @@ www.{$DOMAIN} {
 {$DOMAIN} {
     encode zstd gzip
 
-    @sensitive path /.env* /.git* /.aws* /.ssh* /wp-config.php
-    respond @sensitive 404
+    route {
+        @sensitive path /.env* /.git* /.aws* /.ssh* /wp-config.php
+        respond @sensitive 404
 
-    @unexpectedRootPost {
-        method POST
-        path /
-    }
-    respond @unexpectedRootPost "Method Not Allowed" 405
+        @unexpectedRootPost {
+            method POST
+            path /
+        }
+        respond @unexpectedRootPost "Method Not Allowed" 405
 
-    @favicon path /favicon.ico
-    rewrite @favicon /icon.svg
+        @favicon path /favicon.ico
+        rewrite @favicon /icon.svg
 
-    @api path /api/* /docs* /redoc* /openapi.json
-    handle @api {
-        reverse_proxy api:8000
-    }
+        @api path /api/* /docs* /redoc* /openapi.json
+        handle @api {
+            reverse_proxy api:8000
+        }
 
-    @media path /media/*
-    handle @media {
-        reverse_proxy api:8000
-    }
+        @media path /media/*
+        handle @media {
+            reverse_proxy api:8000
+        }
 
-    handle {
-        reverse_proxy web:3000
+        handle {
+            reverse_proxy web:3000
+        }
     }
 
     header {
