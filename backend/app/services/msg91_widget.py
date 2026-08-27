@@ -16,7 +16,6 @@ class VerifiedWidgetIdentity:
 
 
 def _extract_identifier(payload: dict) -> str | None:
-    """Extract the verified identifier across MSG91 response variants."""
     candidates = [
         payload.get("identifier"),
         payload.get("mobile"),
@@ -41,10 +40,7 @@ def _extract_identifier(payload: dict) -> str | None:
 
 def _normalize_indian_phone(identifier: str) -> str:
     value = identifier.strip().replace(" ", "").replace("-", "")
-    if value.startswith("+"):
-        digits = value[1:]
-    else:
-        digits = value
+    digits = value[1:] if value.startswith("+") else value
     if digits.startswith("91") and len(digits) == 12:
         return f"+{digits}"
     if len(digits) == 10:
@@ -52,15 +48,29 @@ def _normalize_indian_phone(identifier: str) -> str:
     raise ValueError("MSG91 returned an unsupported mobile identifier")
 
 
+def _provider_message(payload: dict, fallback: str) -> str:
+    for key in ("message", "error", "detail", "msg"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    data = payload.get("data")
+    if isinstance(data, dict):
+        for key in ("message", "error", "detail", "msg"):
+            value = data.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return fallback
+
+
 def verify_widget_access_token(access_token: str) -> VerifiedWidgetIdentity:
-    if not settings.MSG91_WIDGET_AUTH_KEY:
-        raise RuntimeError("MSG91 widget server auth key is not configured")
+    if not settings.MSG91_AUTH_KEY:
+        raise RuntimeError("MSG91 server auth key is not configured")
 
     try:
         response = httpx.post(
             VERIFY_ACCESS_TOKEN_URL,
             json={
-                "authkey": settings.MSG91_WIDGET_AUTH_KEY,
+                "authkey": settings.MSG91_AUTH_KEY,
                 "access-token": access_token,
             },
             headers={"Content-Type": "application/json"},
@@ -75,12 +85,12 @@ def verify_widget_access_token(access_token: str) -> VerifiedWidgetIdentity:
         raise RuntimeError("MSG91 returned an invalid verification response") from exc
 
     if response.status_code >= 500:
-        raise RuntimeError("MSG91 verification service is unavailable")
+        raise RuntimeError(_provider_message(payload, "MSG91 verification service is unavailable"))
     if response.status_code >= 400:
-        raise ValueError("MSG91 access token is invalid or expired")
+        raise ValueError(_provider_message(payload, "MSG91 access token is invalid or expired"))
 
     identifier = _extract_identifier(payload)
     if identifier is None:
-        raise ValueError("MSG91 verification response did not contain a verified identifier")
+        raise ValueError(_provider_message(payload, "MSG91 verification response did not contain a verified identifier"))
 
     return VerifiedWidgetIdentity(identifier=_normalize_indian_phone(identifier), raw=payload)
