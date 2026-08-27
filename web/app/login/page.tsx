@@ -38,15 +38,29 @@ function providerMessage(error:unknown):string{
   return 'MSG91 authentication failed.';
 }
 
+function looksLikeJwt(value:unknown):value is string{
+  return typeof value==='string'&&value.split('.').length===3&&value.length>20;
+}
+
 function accessToken(data:unknown):string|null{
-  if(typeof data==='string')return data.split('.').length===3?data:null;
+  if(looksLikeJwt(data))return data;
   if(!data||typeof data!=='object')return null;
   const value=data as Record<string,unknown>;
-  for(const key of ['access-token','access_token','token','jwt']){
-    if(typeof value[key]==='string'&&(value[key] as string).length>20)return value[key] as string;
+
+  // MSG91 Web/Mobile Widget responses may expose the verified JWT in
+  // access-token/access_token/token/jwt or in `message` on success.
+  for(const key of ['access-token','access_token','token','jwt','message']){
+    if(looksLikeJwt(value[key]))return value[key] as string;
   }
-  const nested=value.data;
-  return nested&&typeof nested==='object'?accessToken(nested):null;
+
+  for(const key of ['data','result','response']){
+    const nested=value[key];
+    if(nested&&typeof nested==='object'){
+      const token=accessToken(nested);
+      if(token)return token;
+    }
+  }
+  return null;
 }
 
 function loadMsg91Sdk():Promise<void>{
@@ -114,7 +128,7 @@ export default function Login(){
         success:async(data:unknown)=>{
           try{
             const token=accessToken(data);
-            if(!token)throw new Error('MSG91 verified the OTP but did not return an access token.');
+            if(!token)throw new Error('MSG91 verified the OTP but the access token response was not recognized.');
             setMessage('Phone verified. Signing you in…');
             await finishLogin(token);
           }catch(error){
@@ -131,7 +145,6 @@ export default function Login(){
       });
 
       // The MSG91 default widget owns the phone, CAPTCHA, send/resend and verify UI.
-      // Do not wait for exposed sendOtp/verifyOtp methods here.
       setBusy(false);
     }catch(error){
       console.error('MSG91 initialization failure',error);
