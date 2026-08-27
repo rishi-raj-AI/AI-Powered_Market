@@ -50,6 +50,39 @@ class OrderRead(BaseModel):
     updated_at: datetime
 
 
+class OrderItemRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    product_id: uuid.UUID
+    product_name: str
+    unit: str
+    unit_price: Decimal
+    quantity: int
+    line_total: Decimal
+
+
+class DeliverySummaryRead(BaseModel):
+    id: uuid.UUID
+    delivery_partner_id: uuid.UUID | None
+    status: DeliveryStatus
+    assigned_at: datetime | None
+    picked_up_at: datetime | None
+    delivered_at: datetime | None
+
+
+class OrderDetailRead(OrderRead):
+    store_name: str
+    store_phone: str | None = None
+    store_landmark: str | None = None
+    recipient_name: str | None = None
+    recipient_phone: str | None = None
+    house_details: str | None = None
+    customer_landmark: str
+    customer_directions: str | None = None
+    items: list[OrderItemRead]
+    delivery: DeliverySummaryRead | None = None
+
+
 class OrderStatusUpdate(BaseModel):
     status: OrderStatus
 
