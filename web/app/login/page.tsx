@@ -1,7 +1,6 @@
 'use client';
 
-import Script from 'next/script';
-import {FormEvent,useRef,useState} from 'react';
+import {FormEvent,useEffect,useRef,useState} from 'react';
 import {useRouter} from 'next/navigation';
 import {gaonApi,setToken} from '@/lib/api';
 import {Nav} from '@/components/Nav';
@@ -20,8 +19,8 @@ declare global {
 const MSG91_WIDGET_ID='366841725756303030313539';
 const MSG91_WIDGET_TOKEN='565081TwccrS3r6a90922dP1';
 const MSG91_CAPTCHA_RENDER_ID='msg91-captcha';
-const SDK_READY_RETRIES=50;
-const SDK_READY_DELAY_MS=100;
+const MSG91_SCRIPT_ID='msg91-otp-provider';
+const MSG91_SCRIPT_SRC='https://verify.msg91.com/otp-provider.js';
 
 function providerMessage(error:unknown):string{
   if(error instanceof Error)return error.message;
@@ -69,7 +68,82 @@ export default function Login(){
   const [sdkReady,setSdkReady]=useState(false);
   const [busy,setBusy]=useState(false);
   const loginStarted=useRef(false);
+  const widgetInitialized=useRef(false);
   const router=useRouter();
+
+  useEffect(()=>{
+    let cancelled=false;
+    let initTimer:number|undefined;
+    let methodTimer:number|undefined;
+
+    function waitForMethods(attempt=0){
+      if(cancelled)return;
+      if(window.sendOtp&&window.verifyOtp){
+        setSdkReady(true);
+        setMessage('');
+        return;
+      }
+      if(attempt>=200){
+        setSdkReady(false);
+        setMessage('MSG91 OTP service did not initialize. Reload the page and try again.');
+        return;
+      }
+      methodTimer=window.setTimeout(()=>waitForMethods(attempt+1),100);
+    }
+
+    function initialize(){
+      if(cancelled||widgetInitialized.current)return;
+      if(!window.initSendOTP){
+        setMessage('MSG91 OTP SDK loaded but its initializer is unavailable.');
+        return;
+      }
+      widgetInitialized.current=true;
+      try{
+        window.initSendOTP({
+          widgetId:MSG91_WIDGET_ID,
+          tokenAuth:MSG91_WIDGET_TOKEN,
+          exposeMethods:true,
+          captchaRenderId:MSG91_CAPTCHA_RENDER_ID,
+        });
+        waitForMethods();
+      }catch(error){
+        widgetInitialized.current=false;
+        setMessage(providerMessage(error));
+      }
+    }
+
+    function waitForInitializer(attempt=0){
+      if(cancelled)return;
+      if(window.initSendOTP){initialize();return;}
+      if(attempt>=200){
+        setMessage('MSG91 OTP SDK did not load. Check the connection and reload the page.');
+        return;
+      }
+      initTimer=window.setTimeout(()=>waitForInitializer(attempt+1),100);
+    }
+
+    setSdkReady(false);
+    setMessage('');
+
+    const existing=document.getElementById(MSG91_SCRIPT_ID) as HTMLScriptElement|null;
+    if(existing){
+      waitForInitializer();
+    }else{
+      const script=document.createElement('script');
+      script.id=MSG91_SCRIPT_ID;
+      script.src=MSG91_SCRIPT_SRC;
+      script.async=true;
+      script.onload=()=>waitForInitializer();
+      script.onerror=()=>setMessage('MSG91 OTP SDK failed to load. Reload the page and try again.');
+      document.body.appendChild(script);
+    }
+
+    return()=>{
+      cancelled=true;
+      if(initTimer)window.clearTimeout(initTimer);
+      if(methodTimer)window.clearTimeout(methodTimer);
+    };
+  },[]);
 
   async function finishLogin(token:string){
     if(loginStarted.current)return;
@@ -89,35 +163,6 @@ export default function Login(){
   function fail(error:unknown){
     console.error('MSG91 OTP failure',error);
     setMessage(providerMessage(error));
-  }
-
-  function waitForSdkMethods(attempt=0){
-    if(window.sendOtp&&window.verifyOtp){
-      setSdkReady(true);
-      setMessage('');
-      return;
-    }
-    if(attempt>=SDK_READY_RETRIES){
-      setSdkReady(false);
-      setMessage('MSG91 OTP service did not initialize. Reload the page and try again.');
-      return;
-    }
-    window.setTimeout(()=>waitForSdkMethods(attempt+1),SDK_READY_DELAY_MS);
-  }
-
-  function initializeWidget(){
-    if(!window.initSendOTP){
-      setMessage('MSG91 OTP SDK failed to load. Please reload the page.');
-      return;
-    }
-    setSdkReady(false);
-    window.initSendOTP({
-      widgetId:MSG91_WIDGET_ID,
-      tokenAuth:MSG91_WIDGET_TOKEN,
-      exposeMethods:true,
-      captchaRenderId:MSG91_CAPTCHA_RENDER_ID,
-    });
-    waitForSdkMethods();
   }
 
   async function request(e:FormEvent){
@@ -151,7 +196,6 @@ export default function Login(){
   }
 
   return <>
-    <Script src="https://verify.msg91.com/otp-provider.js" strategy="afterInteractive" onLoad={initializeWidget}/>
     <Nav/>
     <div className="authWrap"><div className="panel authCard">
       <span className="eyebrow">Secure passwordless login</span>
