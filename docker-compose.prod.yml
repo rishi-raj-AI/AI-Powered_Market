@@ -54,8 +54,6 @@ services:
       dockerfile: Dockerfile.prod
       args:
         NEXT_PUBLIC_API_URL: /api/v1
-        NEXT_PUBLIC_MSG91_WIDGET_ID: ${NEXT_PUBLIC_MSG91_WIDGET_ID:-}
-        NEXT_PUBLIC_MSG91_WIDGET_TOKEN: ${NEXT_PUBLIC_MSG91_WIDGET_TOKEN:-}
     restart: unless-stopped
     environment:
       NODE_ENV: production
