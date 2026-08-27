@@ -24,6 +24,12 @@ def _extract_identifier(payload: dict) -> str | None:
         payload.get("phone"),
         payload.get("mobile_number"),
     ]
+
+    # MSG91 verifyAccessToken currently returns successful verification as:
+    # {"type": "success", "message": "<verified mobile number>"}
+    if str(payload.get("type", "")).lower() == "success":
+        candidates.append(payload.get("message"))
+
     data = payload.get("data")
     if isinstance(data, dict):
         candidates.extend(
@@ -34,6 +40,9 @@ def _extract_identifier(payload: dict) -> str | None:
                 data.get("mobile_number"),
             ]
         )
+        if str(data.get("type", "")).lower() == "success":
+            candidates.append(data.get("message"))
+
     for value in candidates:
         if isinstance(value, str) and value.strip():
             return value.strip()
@@ -89,6 +98,14 @@ def _safe_provider_diagnostic(payload: object) -> object:
     return safe
 
 
+def _provider_declared_error(payload: dict) -> bool:
+    provider_type = str(payload.get("type", "")).strip().lower()
+    if provider_type == "error":
+        return True
+    data = payload.get("data")
+    return isinstance(data, dict) and str(data.get("type", "")).strip().lower() == "error"
+
+
 def verify_widget_access_token(access_token: str) -> VerifiedWidgetIdentity:
     if not settings.MSG91_AUTH_KEY:
         raise RuntimeError("MSG91 server auth key is not configured")
@@ -117,7 +134,7 @@ def verify_widget_access_token(access_token: str) -> VerifiedWidgetIdentity:
         )
         raise RuntimeError("MSG91 returned an invalid verification response") from exc
 
-    if response.status_code >= 400:
+    if response.status_code >= 400 or _provider_declared_error(payload):
         logger.warning(
             "MSG91 verifyAccessToken rejected: status=%s diagnostic=%r",
             response.status_code,
@@ -126,7 +143,7 @@ def verify_widget_access_token(access_token: str) -> VerifiedWidgetIdentity:
 
     if response.status_code >= 500:
         raise RuntimeError(_provider_message(payload, "MSG91 verification service is unavailable"))
-    if response.status_code >= 400:
+    if response.status_code >= 400 or _provider_declared_error(payload):
         raise ValueError(_provider_message(payload, "MSG91 access token is invalid or expired"))
 
     identifier = _extract_identifier(payload)
