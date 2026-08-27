@@ -1,4 +1,4 @@
-from pydantic import field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,9 +28,14 @@ class Settings(BaseSettings):
     OTP_MAX_REQUESTS_PER_WINDOW: int = 5
     OTP_MAX_VERIFY_ATTEMPTS: int = 6
     SMS_PROVIDER: str = "none"
-    MSG91_AUTH_KEY: str | None = None
+
+    # One canonical MSG91 server secret. The legacy MSG91_WIDGET_AUTH_KEY alias is
+    # accepted so existing production .env files continue to work after upgrade.
+    MSG91_AUTH_KEY: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MSG91_AUTH_KEY", "MSG91_WIDGET_AUTH_KEY"),
+    )
     MSG91_TEMPLATE_ID: str | None = None
-    MSG91_WIDGET_AUTH_KEY: str | None = None
     SMS_HTTP_TIMEOUT_SECONDS: float = 8.0
 
     RAZORPAY_KEY_ID: str | None = None
@@ -74,8 +79,8 @@ class Settings(BaseSettings):
                 raise ValueError("APP_DEBUG must be false outside development/test")
             if self.SMS_PROVIDER == "msg91" and (not self.MSG91_AUTH_KEY or not self.MSG91_TEMPLATE_ID):
                 raise ValueError("MSG91_AUTH_KEY and MSG91_TEMPLATE_ID are required when SMS_PROVIDER=msg91")
-            if self.AUTH_PROVIDER == "msg91_widget" and not self.MSG91_WIDGET_AUTH_KEY:
-                raise ValueError("MSG91_WIDGET_AUTH_KEY is required when AUTH_PROVIDER=msg91_widget")
+            if self.AUTH_PROVIDER == "msg91_widget" and not self.MSG91_AUTH_KEY:
+                raise ValueError("MSG91_AUTH_KEY is required when AUTH_PROVIDER=msg91_widget")
         return self
 
     @property
