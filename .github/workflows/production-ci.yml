@@ -20,9 +20,7 @@ jobs:
           sed -i 's/admin@gaonone.example/admin@gaonone.example/g' .env.production
           sed -i 's/REPLACE_WITH_STRONG_DATABASE_PASSWORD/ci_strong_database_password_123456789/g' .env.production
           sed -i 's/REPLACE_WITH_AT_LEAST_32_RANDOM_BYTES/ci_secret_key_0123456789abcdef0123456789abcdef/g' .env.production
-          sed -i 's/REPLACE_WITH_PRIVATE_WIDGET_AUTH_KEY/ci_widget_private_auth_key_0123456789/g' .env.production
-          sed -i 's/REPLACE_WITH_WIDGET_ID/ci_widget_id_123456789/g' .env.production
-          sed -i 's/REPLACE_WITH_WIDGET_TOKEN/ci_widget_public_token_123456789/g' .env.production
+          sed -i 's/REPLACE_WITH_PRIVATE_OTPAUTH_KEY/ci_widget_private_auth_key_0123456789/g' .env.production
 
       - name: Validate production environment
         run: python3 deploy/validate_env.py
@@ -34,9 +32,4 @@ jobs:
         run: docker build -f backend/Dockerfile.prod -t gaonone-api:ci backend
 
       - name: Build production web image
-        run: |
-          docker build -f web/Dockerfile.prod \
-            --build-arg NEXT_PUBLIC_API_URL=/api/v1 \
-            --build-arg NEXT_PUBLIC_MSG91_WIDGET_ID=ci_widget_id_123456789 \
-            --build-arg NEXT_PUBLIC_MSG91_WIDGET_TOKEN=ci_widget_public_token_123456789 \
-            -t gaonone-web:ci web
+        run: docker build -f web/Dockerfile.prod --build-arg NEXT_PUBLIC_API_URL=/api/v1 -t gaonone-web:ci web
