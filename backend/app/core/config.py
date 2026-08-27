@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "data/uploads"
     MAX_UPLOAD_MB: int = 8
 
+    AUTH_PROVIDER: str = "local_otp"
     DEV_OTP: str = "123456"
     OTP_TTL_SECONDS: int = 300
     OTP_RATE_WINDOW_SECONDS: int = 900
@@ -29,6 +30,7 @@ class Settings(BaseSettings):
     SMS_PROVIDER: str = "none"
     MSG91_AUTH_KEY: str | None = None
     MSG91_TEMPLATE_ID: str | None = None
+    MSG91_WIDGET_AUTH_KEY: str | None = None
     SMS_HTTP_TIMEOUT_SECONDS: float = 8.0
 
     RAZORPAY_KEY_ID: str | None = None
@@ -55,6 +57,14 @@ class Settings(BaseSettings):
             raise ValueError("SMS_PROVIDER must be none or msg91")
         return normalized
 
+    @field_validator("AUTH_PROVIDER")
+    @classmethod
+    def validate_auth_provider(cls, value: str) -> str:
+        normalized = value.lower().strip()
+        if normalized not in {"local_otp", "msg91_widget"}:
+            raise ValueError("AUTH_PROVIDER must be local_otp or msg91_widget")
+        return normalized
+
     @model_validator(mode="after")
     def validate_production_safety(self) -> "Settings":
         if self.APP_ENV in {"staging", "production"}:
@@ -64,6 +74,8 @@ class Settings(BaseSettings):
                 raise ValueError("APP_DEBUG must be false outside development/test")
             if self.SMS_PROVIDER == "msg91" and (not self.MSG91_AUTH_KEY or not self.MSG91_TEMPLATE_ID):
                 raise ValueError("MSG91_AUTH_KEY and MSG91_TEMPLATE_ID are required when SMS_PROVIDER=msg91")
+            if self.AUTH_PROVIDER == "msg91_widget" and not self.MSG91_WIDGET_AUTH_KEY:
+                raise ValueError("MSG91_WIDGET_AUTH_KEY is required when AUTH_PROVIDER=msg91_widget")
         return self
 
     @property
