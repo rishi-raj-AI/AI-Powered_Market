@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: dev-up dev-down seed test-backend web mobile-ios mobile-check prod-check prod-build prod-migrate prod-up prod-down prod-logs prod-status prod-smoke prod-backup
+.PHONY: dev-up dev-down seed test-backend web mobile-ios mobile-check prod-check prod-build prod-migrate prod-bootstrap prod-up prod-down prod-logs prod-status prod-smoke prod-backup
 
 dev-up:
 	docker compose up --build -d
@@ -36,6 +36,12 @@ prod-build: prod-check
 
 prod-migrate: prod-check
 	docker compose --env-file .env.production -f docker-compose.prod.yml --profile ops run --rm migrate
+
+prod-bootstrap: prod-check
+	@for key in PILOT_ADMIN_PHONE PILOT_ADMIN_NAME PILOT_VILLAGE_NAME PILOT_VILLAGE_DISTRICT PILOT_VILLAGE_STATE; do \
+		grep -Eq "^$$key=.+" .env.production || (echo "Missing $$key in .env.production" && exit 1); \
+	done
+	docker compose --env-file .env.production -f docker-compose.prod.yml exec api python -m app.scripts.bootstrap_pilot
 
 prod-up: prod-check
 	docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
