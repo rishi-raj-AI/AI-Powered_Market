@@ -16,6 +16,11 @@ class OTPVerifyRequest(BaseModel):
     full_name: str | None = Field(default=None, max_length=120)
 
 
+class WidgetTokenExchangeRequest(BaseModel):
+    access_token: str = Field(min_length=20, max_length=4096)
+    full_name: str | None = Field(default=None, max_length=120)
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
