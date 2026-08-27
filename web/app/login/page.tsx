@@ -1,6 +1,6 @@
 'use client';
 
-import {FormEvent,useEffect,useRef,useState} from 'react';
+import {FormEvent,useRef,useState} from 'react';
 import {useRouter} from 'next/navigation';
 import {gaonApi,setToken} from '@/lib/api';
 import {Nav} from '@/components/Nav';
@@ -8,17 +8,12 @@ import {Nav} from '@/components/Nav';
 declare global {
   interface Window {
     initSendOTP?: (configuration: Record<string, unknown>) => void;
-    sendOtp?: (identifier: string, success?: (data: unknown) => void, failure?: (error: unknown) => void) => void;
-    verifyOtp?: (otp: string | number, success?: (data: unknown) => void, failure?: (error: unknown) => void) => void;
-    isCaptchaVerified?: () => boolean;
   }
 }
 
-// MSG91 explicitly designs the Widget token for browser-side OTP Widget use.
-// The private account Authkey is NEVER placed here; it remains server-side only.
+// MSG91 OTP Widget browser token. The private account Authkey remains server-side only.
 const MSG91_WIDGET_ID='366841725756303030313539';
 const MSG91_WIDGET_TOKEN='565081TwccrS3r6a90922dP1';
-const MSG91_CAPTCHA_RENDER_ID='msg91-captcha';
 const MSG91_SCRIPT_ID='msg91-otp-provider';
 const MSG91_SCRIPT_SRC='https://verify.msg91.com/otp-provider.js';
 
@@ -54,102 +49,45 @@ function accessToken(data:unknown):string|null{
   return nested&&typeof nested==='object'?accessToken(nested):null;
 }
 
-function normalizeIdentifier(phone:string){
-  const digits=phone.replace(/\D/g,'');
-  return digits.length===10?`91${digits}`:digits;
+function loadMsg91Sdk():Promise<void>{
+  if(window.initSendOTP)return Promise.resolve();
+
+  return new Promise((resolve,reject)=>{
+    const existing=document.getElementById(MSG91_SCRIPT_ID) as HTMLScriptElement|null;
+
+    const waitForInitializer=(attempt=0)=>{
+      if(window.initSendOTP){resolve();return;}
+      if(attempt>=100){reject(new Error('MSG91 OTP SDK loaded but its initializer is unavailable.'));return;}
+      window.setTimeout(()=>waitForInitializer(attempt+1),100);
+    };
+
+    if(existing){
+      waitForInitializer();
+      return;
+    }
+
+    const script=document.createElement('script');
+    script.id=MSG91_SCRIPT_ID;
+    script.src=MSG91_SCRIPT_SRC;
+    script.async=true;
+    script.onload=()=>waitForInitializer();
+    script.onerror=()=>reject(new Error('MSG91 OTP SDK failed to load. Check your connection and try again.'));
+    document.body.appendChild(script);
+  });
 }
 
 export default function Login(){
-  const [phone,setPhone]=useState('+91');
-  const [otp,setOtp]=useState('');
   const [name,setName]=useState('');
-  const [step,setStep]=useState(1);
   const [message,setMessage]=useState('');
-  const [sdkReady,setSdkReady]=useState(false);
   const [busy,setBusy]=useState(false);
   const loginStarted=useRef(false);
-  const widgetInitialized=useRef(false);
   const router=useRouter();
-
-  useEffect(()=>{
-    let cancelled=false;
-    let initTimer:number|undefined;
-    let methodTimer:number|undefined;
-
-    function waitForMethods(attempt=0){
-      if(cancelled)return;
-      if(window.sendOtp&&window.verifyOtp){
-        setSdkReady(true);
-        setMessage('');
-        return;
-      }
-      if(attempt>=200){
-        setSdkReady(false);
-        setMessage('MSG91 OTP service did not initialize. Reload the page and try again.');
-        return;
-      }
-      methodTimer=window.setTimeout(()=>waitForMethods(attempt+1),100);
-    }
-
-    function initialize(){
-      if(cancelled||widgetInitialized.current)return;
-      if(!window.initSendOTP){
-        setMessage('MSG91 OTP SDK loaded but its initializer is unavailable.');
-        return;
-      }
-      widgetInitialized.current=true;
-      try{
-        window.initSendOTP({
-          widgetId:MSG91_WIDGET_ID,
-          tokenAuth:MSG91_WIDGET_TOKEN,
-          exposeMethods:true,
-          captchaRenderId:MSG91_CAPTCHA_RENDER_ID,
-        });
-        waitForMethods();
-      }catch(error){
-        widgetInitialized.current=false;
-        setMessage(providerMessage(error));
-      }
-    }
-
-    function waitForInitializer(attempt=0){
-      if(cancelled)return;
-      if(window.initSendOTP){initialize();return;}
-      if(attempt>=200){
-        setMessage('MSG91 OTP SDK did not load. Check the connection and reload the page.');
-        return;
-      }
-      initTimer=window.setTimeout(()=>waitForInitializer(attempt+1),100);
-    }
-
-    setSdkReady(false);
-    setMessage('');
-
-    const existing=document.getElementById(MSG91_SCRIPT_ID) as HTMLScriptElement|null;
-    if(existing){
-      waitForInitializer();
-    }else{
-      const script=document.createElement('script');
-      script.id=MSG91_SCRIPT_ID;
-      script.src=MSG91_SCRIPT_SRC;
-      script.async=true;
-      script.onload=()=>waitForInitializer();
-      script.onerror=()=>setMessage('MSG91 OTP SDK failed to load. Reload the page and try again.');
-      document.body.appendChild(script);
-    }
-
-    return()=>{
-      cancelled=true;
-      if(initTimer)window.clearTimeout(initTimer);
-      if(methodTimer)window.clearTimeout(methodTimer);
-    };
-  },[]);
 
   async function finishLogin(token:string){
     if(loginStarted.current)return;
     loginStarted.current=true;
     try{
-      const result=await gaonApi.exchangeWidgetToken(token,name||undefined);
+      const result=await gaonApi.exchangeWidgetToken(token,name.trim()||undefined);
       setToken(result.access_token);
       const me=await gaonApi.me();
       const route={merchant:'/merchant',admin:'/admin',delivery:'/delivery',customer:'/market'}[me.role]||'/market';
@@ -160,57 +98,61 @@ export default function Login(){
     }
   }
 
-  function fail(error:unknown){
-    console.error('MSG91 OTP failure',error);
-    setMessage(providerMessage(error));
-  }
+  async function openOtp(e:FormEvent){
+    e.preventDefault();
+    setMessage('');
+    setBusy(true);
+    loginStarted.current=false;
 
-  async function request(e:FormEvent){
-    e.preventDefault();setMessage('');setBusy(true);loginStarted.current=false;
     try{
-      if(!window.sendOtp)throw new Error('OTP service is still loading. Please retry in a moment.');
-      const identifier=normalizeIdentifier(phone);
-      if(!/^91\d{10}$/.test(identifier))throw new Error('Enter a valid 10-digit Indian mobile number.');
-      if(window.isCaptchaVerified&&window.isCaptchaVerified()===false){
-        throw new Error('Complete the CAPTCHA verification, then press Send OTP.');
-      }
-      await new Promise<void>((resolve,reject)=>window.sendOtp!(identifier,()=>resolve(),reject));
-      setMessage('OTP sent to your mobile number.');
-      setStep(2);
-    }catch(error){fail(error)}finally{setBusy(false)}
-  }
+      await loadMsg91Sdk();
+      if(!window.initSendOTP)throw new Error('MSG91 OTP SDK is unavailable.');
 
-  async function verify(e:FormEvent){
-    e.preventDefault();setMessage('');setBusy(true);
-    try{
-      if(!window.verifyOtp)throw new Error('OTP service is not ready. Please reload and try again.');
-      await new Promise<void>((resolve,reject)=>window.verifyOtp!(otp,async(data:unknown)=>{
-        try{
-          const token=accessToken(data);
-          if(!token)throw new Error('OTP verified but no MSG91 access token was returned.');
-          await finishLogin(token);
-          resolve();
-        }catch(error){reject(error)}
-      },reject));
-    }catch(error){fail(error)}finally{setBusy(false)}
+      window.initSendOTP({
+        widgetId:MSG91_WIDGET_ID,
+        tokenAuth:MSG91_WIDGET_TOKEN,
+        success:async(data:unknown)=>{
+          try{
+            const token=accessToken(data);
+            if(!token)throw new Error('MSG91 verified the OTP but did not return an access token.');
+            setMessage('Phone verified. Signing you in…');
+            await finishLogin(token);
+          }catch(error){
+            console.error('GaonOne login exchange failure',error);
+            setMessage(providerMessage(error));
+            setBusy(false);
+          }
+        },
+        failure:(error:unknown)=>{
+          console.error('MSG91 OTP failure',error);
+          setMessage(providerMessage(error));
+          setBusy(false);
+        },
+      });
+
+      // The MSG91 default widget owns the phone, CAPTCHA, send/resend and verify UI.
+      // Do not wait for exposed sendOtp/verifyOtp methods here.
+      setBusy(false);
+    }catch(error){
+      console.error('MSG91 initialization failure',error);
+      setMessage(providerMessage(error));
+      setBusy(false);
+    }
   }
 
   return <>
     <Nav/>
     <div className="authWrap"><div className="panel authCard">
       <span className="eyebrow">Secure passwordless login</span>
-      <h1>{step===1?'Enter your mobile number':'Verify OTP'}</h1>
-      <p className="muted">OTP verification secured by MSG91.</p>
-      {step===1&&<div id={MSG91_CAPTCHA_RENDER_ID}/>} 
-      {step===1?<form className="form" onSubmit={request}>
-        <div className="field"><label>Mobile number</label><input value={phone} onChange={e=>setPhone(e.target.value)} required inputMode="tel"/></div>
-        <div className="field"><label>Name (first login)</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="Your name"/></div>
-        <button className="btn" disabled={busy||!sdkReady}>{busy?'Sending…':sdkReady?'Send OTP':'Loading OTP…'}</button>
-      </form>:<form className="form" onSubmit={verify}>
-        <div className="field"><label>OTP</label><input value={otp} onChange={e=>setOtp(e.target.value.replace(/\D/g,''))} inputMode="numeric" autoComplete="one-time-code" minLength={4} maxLength={8} required/></div>
-        <button className="btn" disabled={busy}>{busy?'Verifying…':'Verify & continue'}</button>
-        <button type="button" className="btn ghost" disabled={busy} onClick={()=>{setOtp('');setMessage('');setStep(1);loginStarted.current=false}}>Change number</button>
-      </form>}
+      <h1>Sign in with your mobile</h1>
+      <p className="muted">MSG91 will securely handle your mobile number, CAPTCHA and OTP verification.</p>
+      <form className="form" onSubmit={openOtp}>
+        <div className="field">
+          <label>Name (first login)</label>
+          <input value={name} onChange={e=>setName(e.target.value)} placeholder="Your name" autoComplete="name"/>
+        </div>
+        <button className="btn" disabled={busy}>{busy?'Opening OTP…':'Continue with OTP'}</button>
+      </form>
       {message&&<p className="notice">{message}</p>}
     </div></div>
   </>;
