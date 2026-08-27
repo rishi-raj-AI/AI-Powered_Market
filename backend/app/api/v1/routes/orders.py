@@ -7,7 +7,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, require_roles
-from app.models.commerce import Merchant, Store, StoreProduct
+from app.models.commerce import Merchant, MerchantStatus, Store, StoreProduct
 from app.models.geography import Address
 from app.models.orders import (
     Cart,
@@ -27,6 +27,9 @@ from app.schemas.orders import (
     CheckoutRequest,
     DeliveryRead,
     DeliveryStatusUpdate,
+    DeliverySummaryRead,
+    OrderDetailRead,
+    OrderItemRead,
     OrderRead,
     OrderStatusUpdate,
 )
@@ -61,6 +64,20 @@ def _notify_customer(db: Session, order: Order, event_type: str, title: str, bod
     )
 
 
+def _notify_merchant(db: Session, order: Order, event_type: str, title: str, body: str) -> None:
+    store = db.get(Store, order.store_id)
+    merchant = db.get(Merchant, store.merchant_id) if store else None
+    if merchant:
+        enqueue_notification(
+            db,
+            user_id=merchant.owner_user_id,
+            event_type=event_type,
+            title=title,
+            body=body,
+            data={"order_id": str(order.id), "order_number": order.order_number},
+        )
+
+
 def _restore_cancelled_stock(db: Session, order: Order) -> None:
     items = db.scalars(select(OrderItem).where(OrderItem.order_id == order.id)).all()
     for item in items:
@@ -73,6 +90,52 @@ def _restore_cancelled_stock(db: Session, order: Order) -> None:
         if listing:
             listing.stock_quantity += item.quantity
             listing.is_available = True
+
+
+def _can_view_order(db: Session, order: Order, user: User) -> bool:
+    if user.role == UserRole.ADMIN or order.user_id == user.id:
+        return True
+    if user.role == UserRole.MERCHANT:
+        merchant = db.scalar(select(Merchant).where(Merchant.owner_user_id == user.id))
+        store = db.get(Store, order.store_id)
+        return bool(merchant and store and store.merchant_id == merchant.id)
+    return False
+
+
+def _order_detail(db: Session, order: Order) -> OrderDetailRead:
+    store = db.get(Store, order.store_id)
+    address = db.get(Address, order.address_id)
+    if store is None or address is None:
+        raise HTTPException(status_code=409, detail="Order references are incomplete")
+    items = db.scalars(
+        select(OrderItem).where(OrderItem.order_id == order.id).order_by(OrderItem.id)
+    ).all()
+    delivery = db.scalar(select(Delivery).where(Delivery.order_id == order.id))
+    base = OrderRead.model_validate(order).model_dump()
+    return OrderDetailRead(
+        **base,
+        store_name=store.name,
+        store_phone=store.phone,
+        store_landmark=store.landmark,
+        recipient_name=address.recipient_name,
+        recipient_phone=address.phone,
+        house_details=address.house_details,
+        customer_landmark=address.landmark,
+        customer_directions=address.directions,
+        items=[OrderItemRead.model_validate(item) for item in items],
+        delivery=(
+            DeliverySummaryRead(
+                id=delivery.id,
+                delivery_partner_id=delivery.delivery_partner_id,
+                status=delivery.status,
+                assigned_at=delivery.assigned_at,
+                picked_up_at=delivery.picked_up_at,
+                delivered_at=delivery.delivered_at,
+            )
+            if delivery
+            else None
+        ),
+    )
 
 
 @router.get("/cart", response_model=CartRead)
@@ -91,6 +154,10 @@ def add_cart_item(
     listing = db.get(StoreProduct, payload.store_product_id)
     if listing is None or not listing.is_available or listing.stock_quantity < payload.quantity:
         raise HTTPException(status_code=400, detail="Product is unavailable or insufficient stock")
+    store = db.get(Store, listing.store_id)
+    merchant = db.get(Merchant, store.merchant_id) if store else None
+    if store is None or not store.is_active or merchant is None or merchant.status != MerchantStatus.APPROVED:
+        raise HTTPException(status_code=409, detail="Store is currently unavailable")
     cart = _get_or_create_cart(db, user.id)
     if cart.store_id and cart.store_id != listing.store_id:
         raise HTTPException(status_code=409, detail="Cart can contain products from only one store")
@@ -131,6 +198,15 @@ def remove_cart_item(
     return _cart_payload(db, cart)
 
 
+@router.delete("/cart", response_model=CartRead)
+def clear_cart(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    cart = _get_or_create_cart(db, user.id)
+    db.execute(delete(CartItem).where(CartItem.cart_id == cart.id))
+    cart.store_id = None
+    db.commit()
+    return _cart_payload(db, cart)
+
+
 @router.post("/orders/checkout", response_model=OrderRead, status_code=status.HTTP_201_CREATED)
 def checkout(
     payload: CheckoutRequest,
@@ -148,9 +224,10 @@ def checkout(
         raise HTTPException(status_code=400, detail="Cart is empty")
 
     store = db.get(Store, cart.store_id)
-    if store is None or not store.is_active:
+    merchant = db.get(Merchant, store.merchant_id) if store else None
+    if store is None or not store.is_active or merchant is None or merchant.status != MerchantStatus.APPROVED:
         raise HTTPException(status_code=409, detail="Store is currently unavailable")
-    if payload.payment_method == PaymentMethod.COD and not store.delivery_enabled:
+    if not store.delivery_enabled:
         raise HTTPException(status_code=409, detail="This store does not currently support delivery")
 
     subtotal = Decimal("0.00")
@@ -204,16 +281,13 @@ def checkout(
         "Order placed",
         f"Your order {order.order_number} has been placed successfully.",
     )
-    merchant = db.get(Merchant, store.merchant_id)
-    if merchant:
-        enqueue_notification(
-            db,
-            user_id=merchant.owner_user_id,
-            event_type="merchant.order_received",
-            title="New order received",
-            body=f"Order {order.order_number} is waiting for confirmation.",
-            data={"order_id": str(order.id), "order_number": order.order_number},
-        )
+    _notify_merchant(
+        db,
+        order,
+        "merchant.order_received",
+        "New order received",
+        f"Order {order.order_number} is waiting for confirmation.",
+    )
 
     db.commit()
     db.refresh(order)
@@ -225,6 +299,54 @@ def my_orders(db: Session = Depends(get_db), user: User = Depends(get_current_us
     return db.scalars(
         select(Order).where(Order.user_id == user.id).order_by(Order.created_at.desc())
     ).all()
+
+
+@router.get("/orders/{order_id}", response_model=OrderDetailRead)
+def order_detail(
+    order_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    order = db.get(Order, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if not _can_view_order(db, order, user):
+        raise HTTPException(status_code=403, detail="You cannot view this order")
+    return _order_detail(db, order)
+
+
+@router.post("/orders/{order_id}/cancel", response_model=OrderRead)
+def cancel_my_order(
+    order_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    order = db.scalar(select(Order).where(Order.id == order_id).with_for_update())
+    if order is None or order.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.status != OrderStatus.PLACED:
+        raise HTTPException(status_code=409, detail="Only newly placed orders can be cancelled")
+    _restore_cancelled_stock(db, order)
+    order.status = OrderStatus.CANCELLED
+    if order.payment_status == PaymentStatus.PAID:
+        order.payment_status = PaymentStatus.REFUNDED
+    _notify_customer(
+        db,
+        order,
+        "order.cancelled",
+        "Order cancelled",
+        f"Order {order.order_number} was cancelled successfully.",
+    )
+    _notify_merchant(
+        db,
+        order,
+        "merchant.order_cancelled",
+        "Order cancelled by customer",
+        f"Order {order.order_number} was cancelled before acceptance.",
+    )
+    db.commit()
+    db.refresh(order)
+    return order
 
 
 @router.get("/merchant/orders", response_model=list[OrderRead])
@@ -258,6 +380,8 @@ def update_order_status(
         store = db.get(Store, order.store_id)
         if merchant is None or store is None or store.merchant_id != merchant.id:
             raise HTTPException(status_code=403, detail="Order does not belong to your store")
+        if merchant.status != MerchantStatus.APPROVED:
+            raise HTTPException(status_code=403, detail="Merchant is not active")
 
     allowed = {
         OrderStatus.PLACED: {OrderStatus.ACCEPTED, OrderStatus.CANCELLED},
@@ -272,6 +396,8 @@ def update_order_status(
 
     if payload.status == OrderStatus.CANCELLED:
         _restore_cancelled_stock(db, order)
+        if order.payment_status == PaymentStatus.PAID:
+            order.payment_status = PaymentStatus.REFUNDED
         _notify_customer(
             db,
             order,
@@ -313,11 +439,9 @@ def my_deliveries(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.DELIVERY, UserRole.ADMIN)),
 ):
-    stmt = (
-        select(Delivery)
-        .where(Delivery.delivery_partner_id == user.id)
-        .order_by(Delivery.updated_at.desc())
-    )
+    stmt = select(Delivery).order_by(Delivery.updated_at.desc())
+    if user.role != UserRole.ADMIN:
+        stmt = stmt.where(Delivery.delivery_partner_id == user.id)
     return db.scalars(stmt).all()
 
 
