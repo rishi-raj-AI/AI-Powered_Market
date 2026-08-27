@@ -20,6 +20,8 @@ declare global {
 const MSG91_WIDGET_ID='366841725756303030313539';
 const MSG91_WIDGET_TOKEN='565081TwccrS3r6a90922dP1';
 const MSG91_CAPTCHA_RENDER_ID='msg91-captcha';
+const SDK_READY_RETRIES=50;
+const SDK_READY_DELAY_MS=100;
 
 function providerMessage(error:unknown):string{
   if(error instanceof Error)return error.message;
@@ -89,27 +91,39 @@ export default function Login(){
     setMessage(providerMessage(error));
   }
 
+  function waitForSdkMethods(attempt=0){
+    if(window.sendOtp&&window.verifyOtp){
+      setSdkReady(true);
+      setMessage('');
+      return;
+    }
+    if(attempt>=SDK_READY_RETRIES){
+      setSdkReady(false);
+      setMessage('MSG91 OTP service did not initialize. Reload the page and try again.');
+      return;
+    }
+    window.setTimeout(()=>waitForSdkMethods(attempt+1),SDK_READY_DELAY_MS);
+  }
+
   function initializeWidget(){
     if(!window.initSendOTP){
       setMessage('MSG91 OTP SDK failed to load. Please reload the page.');
       return;
     }
-    // With exposed custom UI methods, MSG91 recommends listening to the
-    // sendOtp/verifyOtp callbacks only. Registering both configuration-level
-    // success/failure callbacks and verifyOtp callbacks causes duplicate events.
+    setSdkReady(false);
     window.initSendOTP({
       widgetId:MSG91_WIDGET_ID,
       tokenAuth:MSG91_WIDGET_TOKEN,
       exposeMethods:true,
       captchaRenderId:MSG91_CAPTCHA_RENDER_ID,
     });
-    setSdkReady(true);
+    waitForSdkMethods();
   }
 
   async function request(e:FormEvent){
     e.preventDefault();setMessage('');setBusy(true);loginStarted.current=false;
     try{
-      if(!sdkReady||!window.sendOtp)throw new Error('OTP service is still loading. Please retry in a moment.');
+      if(!window.sendOtp)throw new Error('OTP service is still loading. Please retry in a moment.');
       const identifier=normalizeIdentifier(phone);
       if(!/^91\d{10}$/.test(identifier))throw new Error('Enter a valid 10-digit Indian mobile number.');
       if(window.isCaptchaVerified&&window.isCaptchaVerified()===false){
