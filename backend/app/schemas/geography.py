@@ -53,3 +53,32 @@ class AddressRead(AddressCreate):
     user_id: uuid.UUID
     created_at: datetime
     updated_at: datetime
+
+
+class PlaceSuggestion(BaseModel):
+    place_id: str
+    text: str
+    structured_format: dict | None = None
+
+
+class PlaceDetailsRead(BaseModel):
+    place_id: str
+    formatted_address: str | None = None
+    address_components: list[dict] = []
+    latitude: float | None = None
+    longitude: float | None = None
+    plus_code: str | None = None
+
+
+class ReverseGeocodeRead(BaseModel):
+    formatted_address: str | None = None
+    place_id: str | None = None
+    address_components: list[dict] = []
+
+
+class ServiceabilityRead(BaseModel):
+    serviceable: bool
+    service_area_id: uuid.UUID | None = None
+    service_area_name: str | None = None
+    distance_km: float | None = None
+    radius_km: float | None = None
