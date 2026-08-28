@@ -43,7 +43,7 @@ def _ensure_user(db, phone: str, full_name: str, role: UserRole) -> User:
     return user
 
 
-def _seed_catalog(db, categories: dict[str, Category]) -> int:
+def _seed_catalog(db, categories: dict[str, Category]) -> tuple[int, int]:
     catalog = {
         "groceries": [
             ("Rice", "1 kg"), ("Wheat Flour (Atta)", "1 kg"), ("Toor Dal", "1 kg"),
@@ -74,6 +74,7 @@ def _seed_catalog(db, categories: dict[str, Category]) -> int:
         ],
     }
     created = 0
+    total = sum(len(items) for items in catalog.values())
     for slug, items in catalog.items():
         category = categories[slug]
         for name, unit in items:
@@ -97,7 +98,7 @@ def _seed_catalog(db, categories: dict[str, Category]) -> int:
                 created += 1
             else:
                 product.is_active = True
-    return created
+    return created, total
 
 
 def main() -> None:
@@ -191,7 +192,7 @@ def main() -> None:
                 category.is_active = True
             categories[slug] = category
 
-        catalog_created = _seed_catalog(db, categories)
+        catalog_created, catalog_total = _seed_catalog(db, categories)
         db.commit()
 
         print("GaonOne production pilot bootstrap complete")
@@ -200,7 +201,7 @@ def main() -> None:
             print(f"Delivery user: {rider.phone} ({rider.id})")
         print(f"Pilot village: {village.name} ({village.id})")
         print(f"Service cluster: {cluster_name} / {radius_km:g} km")
-        print(f"Starter catalogue: {sum(len(v) for v in {k:v for k,v in {slug: [] for _, slug in category_specs}.items()}.values()) if False else '40+'} generic items ({catalog_created} newly created)")
+        print(f"Starter catalogue: {catalog_total} generic items ({catalog_created} newly created)")
         print("No merchant/store demo data was created in production.")
     finally:
         db.close()
