@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.db.session import SessionLocal
-from app.models.commerce import Category
+from app.models.commerce import Category, Product
 from app.models.geography import ServiceArea, Village
 from app.models.user import User, UserRole
 
@@ -41,6 +41,63 @@ def _ensure_user(db, phone: str, full_name: str, role: UserRole) -> User:
         user.is_active = True
         user.is_verified = True
     return user
+
+
+def _seed_catalog(db, categories: dict[str, Category]) -> int:
+    catalog = {
+        "groceries": [
+            ("Rice", "1 kg"), ("Wheat Flour (Atta)", "1 kg"), ("Toor Dal", "1 kg"),
+            ("Moong Dal", "1 kg"), ("Chana Dal", "1 kg"), ("Sugar", "1 kg"),
+            ("Salt", "1 kg"), ("Cooking Oil", "1 L"), ("Tea", "250 g"),
+            ("Poha", "500 g"), ("Besan", "500 g"), ("Jaggery", "500 g"),
+        ],
+        "vegetables-fruits": [
+            ("Onion", "1 kg"), ("Potato", "1 kg"), ("Tomato", "1 kg"),
+            ("Green Chilli", "250 g"), ("Coriander", "1 bunch"), ("Lemon", "6 pcs"),
+            ("Banana", "6 pcs"), ("Apple", "1 kg"),
+        ],
+        "daily-essentials": [
+            ("Milk", "500 ml"), ("Curd", "500 g"), ("Bread", "1 pack"),
+            ("Bath Soap", "1 pc"), ("Detergent Powder", "1 kg"), ("Dishwash Bar", "1 pc"),
+            ("Toothpaste", "150 g"), ("Matchbox", "1 pack"),
+        ],
+        "food-restaurants": [
+            ("Veg Thali", "1 plate"), ("Chapati", "1 pc"), ("Dal Rice", "1 plate"),
+            ("Poha Prepared", "1 plate"), ("Tea Prepared", "1 cup"),
+        ],
+        "pharmacy-health": [
+            ("ORS Sachet", "1 sachet"), ("Cotton Roll", "1 pc"),
+            ("Antiseptic Liquid", "100 ml"), ("Bandage Roll", "1 pc"),
+        ],
+        "home-local-services": [
+            ("Drinking Water Can", "20 L"), ("LPG Delivery Assistance", "1 service"),
+        ],
+    }
+    created = 0
+    for slug, items in catalog.items():
+        category = categories[slug]
+        for name, unit in items:
+            product = db.scalar(
+                select(Product).where(
+                    Product.category_id == category.id,
+                    Product.name == name,
+                    Product.unit == unit,
+                )
+            )
+            if product is None:
+                db.add(Product(
+                    category_id=category.id,
+                    name=name,
+                    unit=unit,
+                    description="GaonOne starter catalogue item. Merchant controls price, stock and availability.",
+                    brand=None,
+                    image_url=None,
+                    is_active=True,
+                ))
+                created += 1
+            else:
+                product.is_active = True
+    return created
 
 
 def main() -> None:
@@ -114,21 +171,27 @@ def main() -> None:
             area.radius_km = radius_km
             area.is_active = True
 
-        for name, slug in (
+        category_specs = (
             ("Groceries", "groceries"),
             ("Food & Restaurants", "food-restaurants"),
             ("Vegetables & Fruits", "vegetables-fruits"),
             ("Daily Essentials", "daily-essentials"),
             ("Pharmacy & Health", "pharmacy-health"),
             ("Home & Local Services", "home-local-services"),
-        ):
+        )
+        categories: dict[str, Category] = {}
+        for name, slug in category_specs:
             category = db.scalar(select(Category).where(Category.slug == slug))
             if category is None:
-                db.add(Category(name=name, slug=slug, is_active=True))
+                category = Category(name=name, slug=slug, is_active=True)
+                db.add(category)
+                db.flush()
             else:
                 category.name = name
                 category.is_active = True
+            categories[slug] = category
 
+        catalog_created = _seed_catalog(db, categories)
         db.commit()
 
         print("GaonOne production pilot bootstrap complete")
@@ -137,7 +200,8 @@ def main() -> None:
             print(f"Delivery user: {rider.phone} ({rider.id})")
         print(f"Pilot village: {village.name} ({village.id})")
         print(f"Service cluster: {cluster_name} / {radius_km:g} km")
-        print("No merchant/store/product demo data was created in production.")
+        print(f"Starter catalogue: {sum(len(v) for v in {k:v for k,v in {slug: [] for _, slug in category_specs}.items()}.values()) if False else '40+'} generic items ({catalog_created} newly created)")
+        print("No merchant/store demo data was created in production.")
     finally:
         db.close()
 
