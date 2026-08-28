@@ -1,13 +1,15 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, require_roles
 from app.models.geography import Address, ServiceArea, Village
 from app.models.user import User, UserRole
-from app.schemas.geography import AddressCreate, AddressRead, ServiceAreaCreate, ServiceAreaRead, VillageCreate, VillageRead
+from app.schemas.geography import AddressCreate, AddressRead, PlaceDetailsRead, PlaceSuggestion, ReverseGeocodeRead, ServiceAreaCreate, ServiceAreaRead, ServiceabilityRead, VillageCreate, VillageRead
+from app.services.places import PlacesUnavailable, autocomplete, distance_km, place_details, reverse_geocode
 
 router = APIRouter(tags=["Geography"])
 
@@ -43,6 +45,53 @@ def create_service_area(payload: ServiceAreaCreate, db: Session = Depends(get_db
     db.commit()
     db.refresh(area)
     return area
+
+
+@router.get("/location/autocomplete", response_model=list[PlaceSuggestion])
+def location_autocomplete(q: str = Query(min_length=2, max_length=160), latitude: float | None = None, longitude: float | None = None, session_token: str | None = None, _: User = Depends(get_current_user)):
+    try:
+        return autocomplete(q, latitude, longitude, session_token)
+    except PlacesUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Address search provider unavailable") from exc
+
+
+@router.get("/location/place/{place_id}", response_model=PlaceDetailsRead)
+def location_place(place_id: str, session_token: str | None = None, _: User = Depends(get_current_user)):
+    try:
+        return place_details(place_id, session_token)
+    except PlacesUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Place details provider unavailable") from exc
+
+
+@router.get("/location/reverse", response_model=ReverseGeocodeRead | None)
+def location_reverse(latitude: float = Query(ge=-90, le=90), longitude: float = Query(ge=-180, le=180), _: User = Depends(get_current_user)):
+    try:
+        return reverse_geocode(latitude, longitude)
+    except PlacesUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Reverse geocoding provider unavailable") from exc
+
+
+@router.get("/location/serviceability", response_model=ServiceabilityRead)
+def location_serviceability(latitude: float = Query(ge=-90, le=90), longitude: float = Query(ge=-180, le=180), db: Session = Depends(get_db)):
+    areas = db.scalars(select(ServiceArea).where(ServiceArea.is_active.is_(True))).all()
+    best = None
+    for area in areas:
+        hub = db.get(Village, area.hub_village_id)
+        if hub is None or hub.latitude is None or hub.longitude is None:
+            continue
+        km = distance_km(latitude, longitude, hub.latitude, hub.longitude)
+        if best is None or km < best[0]:
+            best = (km, area)
+    if best is None:
+        return ServiceabilityRead(serviceable=False)
+    km, area = best
+    return ServiceabilityRead(serviceable=km <= area.radius_km, service_area_id=area.id, service_area_name=area.name, distance_km=round(km, 2), radius_km=area.radius_km)
 
 
 @router.get("/addresses/me", response_model=list[AddressRead])
