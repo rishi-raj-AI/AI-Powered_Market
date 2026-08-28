@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gaonone-backend"
-version = "0.4.0"
+version = "0.5.0"
 description = "Backend API for the GaonOne rural commerce platform"
 requires-python = ">=3.12"
 dependencies = [
@@ -18,6 +18,7 @@ dependencies = [
   "PyJWT>=2.10,<3.0",
   "python-multipart>=0.0.20,<1.0",
   "httpx>=0.28,<1.0",
+  "firebase-admin>=7.0,<8.0",
 ]
 
 [project.optional-dependencies]
