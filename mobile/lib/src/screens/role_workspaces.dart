@@ -58,6 +58,68 @@ class _MerchantWorkspaceState extends State<MerchantWorkspace> {
     }
   }
 
+  Future<void> editListing(StoreModel store, StoreProduct listing) async {
+    final price = TextEditingController(text: listing.price);
+    final mrp = TextEditingController(text: listing.mrp ?? '');
+    final stock = TextEditingController(text: '${listing.stock}');
+    bool available = listing.isAvailable;
+    final ok = await showDialog<bool>(context: context, builder: (dialogContext) => StatefulBuilder(builder: (dialogContext, setDialogState) => AlertDialog(
+      title: Text(listing.name),
+      content: Column(mainAxisSize: MainAxisSize.min, children: [
+        TextField(controller: price, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Selling price')),
+        TextField(controller: mrp, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'MRP')),
+        TextField(controller: stock, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Stock quantity')),
+        SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Available for customers'), value: available, onChanged: (value) => setDialogState(() => available = value)),
+      ]),
+      actions: [TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Save'))],
+    )));
+    if (ok == true) {
+      final quantity = int.tryParse(stock.text.trim());
+      if (double.tryParse(price.text.trim()) == null || quantity == null || quantity < 0) { snack('Enter a valid price and stock quantity.'); return; }
+      try {
+        await GaonApi.updateStoreProduct(storeId: store.id, listingId: listing.id, price: price.text.trim(), mrp: mrp.text.trim().isEmpty ? null : mrp.text.trim(), stockQuantity: quantity, isAvailable: available);
+        if (mounted) Navigator.pop(context);
+        await manageInventory(store);
+      } catch (e) { snack('$e'); }
+    }
+  }
+
+  Future<void> addListing(StoreModel store) async {
+    final products = await GaonApi.products();
+    if (!mounted || products.isEmpty) { snack('No starter products are available.'); return; }
+    String productId = products.first.id;
+    final price = TextEditingController();
+    final stock = TextEditingController(text: '1');
+    final ok = await showDialog<bool>(context: context, builder: (dialogContext) => StatefulBuilder(builder: (dialogContext, setDialogState) => AlertDialog(
+      title: Text('Add product to ${store.name}'),
+      content: SizedBox(width: 460, child: Column(mainAxisSize: MainAxisSize.min, children: [
+        DropdownButtonFormField<String>(initialValue: productId, isExpanded: true, items: products.map((item) => DropdownMenuItem(value: item.id, child: Text('${item.name} • ${item.unit}', overflow: TextOverflow.ellipsis))).toList(), onChanged: (value) { if (value != null) setDialogState(() => productId = value); }, decoration: const InputDecoration(labelText: 'Product')),
+        const SizedBox(height: 10),
+        TextField(controller: price, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Selling price')),
+        TextField(controller: stock, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Opening stock')),
+      ])),
+      actions: [TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Add product'))],
+    )));
+    if (ok == true) {
+      final quantity = int.tryParse(stock.text.trim());
+      if (double.tryParse(price.text.trim()) == null || quantity == null || quantity < 0) { snack('Enter a valid price and stock quantity.'); return; }
+      try { await GaonApi.upsertStoreProduct(storeId: store.id, productId: productId, price: price.text.trim(), stockQuantity: quantity); if (mounted) Navigator.pop(context); await manageInventory(store); } catch (e) { snack('$e'); }
+    }
+  }
+
+  Future<void> manageInventory(StoreModel store) async {
+    try {
+      final inventory = await GaonApi.storeInventory(store.id);
+      if (!mounted) return;
+      await showModalBottomSheet<void>(context: context, isScrollControlled: true, builder: (sheetContext) => SafeArea(child: SizedBox(height: MediaQuery.of(sheetContext).size.height * .8, child: Column(children: [
+        Padding(padding: const EdgeInsets.fromLTRB(18, 18, 10, 10), child: Row(children: [Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(store.name, style: Theme.of(sheetContext).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)), Text('${inventory.length} catalogue items')])), IconButton(onPressed: () => Navigator.pop(sheetContext), icon: const Icon(Icons.close))])),
+        Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: () { Navigator.pop(sheetContext); addListing(store); }, icon: const Icon(Icons.add), label: const Text('Add product')))),
+        const SizedBox(height: 8),
+        Expanded(child: inventory.isEmpty ? const Center(child: Text('No products listed yet.')) : ListView.builder(itemCount: inventory.length, itemBuilder: (_, index) { final item = inventory[index]; return ListTile(title: Text(item.name), subtitle: Text('₹${item.price} • Stock ${item.stock} • ${item.isAvailable ? 'Visible' : 'Hidden'}'), trailing: const Icon(Icons.edit_outlined), onTap: () { Navigator.pop(sheetContext); editListing(store, item); }); })),
+      ]))));
+    } catch (e) { snack('$e'); }
+  }
+
   @override Widget build(BuildContext context) {
     final approved = profile?['status'] == 'approved';
     return Scaffold(
@@ -71,7 +133,7 @@ class _MerchantWorkspaceState extends State<MerchantWorkspace> {
         if (error != null) Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
         const SizedBox(height: 14),
         Text('Stores (${stores.length})', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
-        ...stores.map((store) => Card(child: ListTile(leading: const Icon(Icons.storefront), title: Text(store.name), subtitle: Text(store.landmark ?? 'Local storefront')))),
+        ...stores.map((store) => Card(child: ListTile(leading: const Icon(Icons.storefront), title: Text(store.name), subtitle: Text('${store.landmark ?? 'Local storefront'}\nTap to manage catalogue and stock'), isThreeLine: true, trailing: const Icon(Icons.inventory_2_outlined), onTap: approved ? () => manageInventory(store) : null))),
         const SizedBox(height: 14),
         Text('Orders', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
         if (orders.isEmpty) const Padding(padding: EdgeInsets.all(24), child: Text('No merchant orders yet.')),
@@ -93,8 +155,8 @@ class _DeliveryWorkspaceState extends State<DeliveryWorkspace> {
   String? error;
   @override void initState() { super.initState(); load(); }
   Future<void> load() async { try { final result = await Future.wait([GaonApi.availableDeliveryTasks(), GaonApi.myDeliveryTasks()]); if (mounted) setState(() { available = result[0]; mine = result[1]; loading = false; error = null; }); } catch (e) { if (mounted) setState(() { loading = false; error = '$e'; }); } }
-  Future<void> claim(String id) async { await GaonApi.claimDelivery(id); await load(); }
-  Future<void> update(DeliveryTaskModel task, String status) async { await GaonApi.updateDelivery(task.id, status); await load(); }
+  Future<void> claim(String id) async { try { await GaonApi.claimDelivery(id); await load(); } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'))); } }
+  Future<void> update(DeliveryTaskModel task, String status) async { try { await GaonApi.updateDelivery(task.id, status); await load(); } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'))); } }
   Widget card(DeliveryTaskModel task, bool canClaim) => Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Row(children: [Expanded(child: Text(task.orderNumber, style: const TextStyle(fontWeight: FontWeight.w800))), Chip(label: Text(task.status.replaceAll('_', ' ')))]),
     Text('₹${task.total} • ${task.paymentMethod.toUpperCase()} • ${task.paymentStatus}'),
