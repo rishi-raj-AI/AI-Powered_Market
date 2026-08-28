@@ -120,6 +120,7 @@ def main() -> None:
     db = SessionLocal()
     try:
         admin = _ensure_user(db, admin_phone, admin_name, UserRole.ADMIN)
+        admin.is_super_admin = True
 
         rider_phone = os.getenv("PILOT_DELIVERY_PHONE", "").strip()
         rider_name = os.getenv("PILOT_DELIVERY_NAME", "GaonOne Pilot Rider").strip()
@@ -196,7 +197,7 @@ def main() -> None:
         db.commit()
 
         print("GaonOne production pilot bootstrap complete")
-        print(f"Admin user: {admin.phone} ({admin.id})")
+        print(f"Super Admin user: {admin.phone} ({admin.id})")
         if rider is not None:
             print(f"Delivery user: {rider.phone} ({rider.id})")
         print(f"Pilot village: {village.name} ({village.id})")
