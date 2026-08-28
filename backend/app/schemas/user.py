@@ -13,6 +13,7 @@ class UserResponse(BaseModel):
     phone: str
     full_name: str | None
     role: UserRole
+    is_super_admin: bool
     is_active: bool
     is_verified: bool
     created_at: datetime
