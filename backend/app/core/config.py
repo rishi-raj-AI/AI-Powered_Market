@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     APP_DEBUG: bool = True
     API_V1_PREFIX: str = "/api/v1"
-    APP_VERSION: str = "0.4.0"
+    APP_VERSION: str = "0.5.0"
 
     DATABASE_URL: str = "postgresql+psycopg://gaonone:gaonone_dev_password@db:5432/gaonone"
     REDIS_URL: str = "redis://redis:6379/0"
@@ -40,6 +40,7 @@ class Settings(BaseSettings):
 
     RAZORPAY_KEY_ID: str | None = None
     RAZORPAY_KEY_SECRET: str | None = None
+    RAZORPAY_WEBHOOK_SECRET: str | None = None
     FCM_PROJECT_ID: str | None = None
     MAPS_PROVIDER: str = "none"
     MAPS_API_KEY: str | None = None
