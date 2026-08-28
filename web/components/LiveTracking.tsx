@@ -3,6 +3,7 @@
 import {useEffect,useState} from 'react';
 import {MapPin,Navigation,Radio,RefreshCw} from 'lucide-react';
 import {getToken} from '@/lib/api';
+import {LocationMap,MapPoint} from '@/components/LocationMap';
 
 type Point={latitude?:number|null;longitude?:number|null;label?:string|null};
 type RiderLocation={latitude:number;longitude:number;accuracy_m?:number|null;heading_deg?:number|null;speed_mps?:number|null;recorded_at:string};
@@ -26,11 +27,7 @@ export function LiveTracking({orderId}:{orderId:string}){
     }catch(e:any){setError(e.message||'Tracking unavailable.')}finally{setLoading(false)}
   }
 
-  useEffect(()=>{
-    load();
-    const timer=window.setInterval(()=>{if(data?.tracking_active!==false)load()},5000);
-    return()=>window.clearInterval(timer);
-  },[orderId,data?.tracking_active]);
+  useEffect(()=>{load();const timer=window.setInterval(load,5000);return()=>window.clearInterval(timer)},[orderId]);
 
   if(loading)return <div className="card"><p className="muted"><RefreshCw size={15}/> Loading delivery tracking…</p></div>;
   if(error)return <div className="card"><p className="muted">{error}</p></div>;
@@ -38,8 +35,15 @@ export function LiveTracking({orderId}:{orderId:string}){
 
   const rider=data.rider;
   const riderMap=rider?`https://www.google.com/maps/search/?api=1&query=${rider.latitude},${rider.longitude}`:null;
+  const points:MapPoint[]=[];
+  if(data.store.latitude!=null&&data.store.longitude!=null)points.push({lat:data.store.latitude,lng:data.store.longitude,label:data.store.label||'Store',kind:'store'});
+  if(data.customer.latitude!=null&&data.customer.longitude!=null)points.push({lat:data.customer.latitude,lng:data.customer.longitude,label:data.customer.label||'Delivery address',kind:'customer'});
+  if(rider&&data.tracking_active)points.push({lat:rider.latitude,lng:rider.longitude,label:'Delivery partner',kind:'rider'});
+  const center=rider&&data.tracking_active?{lat:rider.latitude,lng:rider.longitude}:points[0];
+
   return <div className="card stack" aria-live="polite">
     <div className="row space"><div className="row"><Radio size={18}/><strong>Live delivery</strong></div><span className={`badge status-${data.delivery_status||'unassigned'}`}>{label(data.delivery_status||'unassigned')}</span></div>
+    {points.length>0&&<LocationMap latitude={center?.lat} longitude={center?.lng} markers={points} height={320} zoom={15}/>} 
     {data.tracking_active?<>
       {rider?<>
         <div className="row"><MapPin size={17}/><span>Rider location received {data.rider_location_age_seconds??0}s ago</span></div>
