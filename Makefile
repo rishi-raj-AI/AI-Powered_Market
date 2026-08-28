@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: dev-up dev-down seed test-backend web mobile-ios mobile-check prod-check prod-build prod-migrate prod-bootstrap prod-up prod-down prod-logs prod-status prod-smoke prod-backup
+.PHONY: dev-up dev-down seed test-backend web mobile-ios mobile-check prod-check prod-build prod-migrate prod-bootstrap prod-up prod-down prod-logs prod-status prod-smoke prod-backup prod-monitor prod-restore
 
 dev-up:
 	docker compose up --build -d
@@ -60,3 +60,9 @@ prod-smoke:
 
 prod-backup:
 	bash deploy/backup.sh
+
+prod-monitor:
+	bash deploy/monitor.sh
+
+prod-restore:
+	bash deploy/restore.sh
