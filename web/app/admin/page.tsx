@@ -1,7 +1,126 @@
 'use client';
+
 import {useEffect,useMemo,useState} from 'react';
-import {AlertTriangle,Boxes,IndianRupee,MapPinned,PackageCheck,RefreshCw,Store,Truck,Users} from 'lucide-react';
+import {
+  AlertTriangle,Boxes,IndianRupee,MapPinned,PackageCheck,RefreshCw,ShieldCheck,Store,Truck,Users,
+} from 'lucide-react';
 import {AdminOverview,gaonApi,Merchant,MerchantStatus,User} from '@/lib/api';
 import {Nav} from '@/components/Nav';
-const money=(v:string|number)=>new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(Number(v||0));const label=(v:string)=>v.replaceAll('_',' ').replace(/\b\w/g,c=>c.toUpperCase());
-export default function Admin(){const[merchants,setMerchants]=useState<Merchant[]>([]);const[users,setUsers]=useState<User[]>([]);const[overview,setOverview]=useState<AdminOverview|null>(null);const[msg,setMsg]=useState('');const[busy,setBusy]=useState('');async function load(){try{const[m,o,u]=await Promise.all([gaonApi.merchants(),gaonApi.adminOverview(),gaonApi.adminUsers()]);setMerchants(m);setOverview(o);setUsers(u);setMsg('')}catch(e:any){setMsg(e.message)}}useEffect(()=>{load()},[]);async function changeStatus(id:string,status:MerchantStatus){setBusy(id);try{await gaonApi.updateMerchantStatus(id,status);setMsg(status==='approved'?'Merchant activated.':'Merchant suspended and storefronts hidden.');await load()}catch(e:any){setMsg(e.message)}finally{setBusy('')}}async function role(u:User,r:User['role']){setBusy(u.id);try{await gaonApi.updateUserRole(u.id,r,true);setMsg(r==='delivery'?'Delivery partner activated.':'User role updated.');await load()}catch(e:any){setMsg(e.message)}finally{setBusy('')}}async function push(){setBusy('push');try{const r=await gaonApi.flushNotifications();setMsg(`Notification dispatch: ${r.events} events, ${r.pushes} pushes.`)}catch(e:any){setMsg(e.message)}finally{setBusy('')}}const pipeline=useMemo(()=>overview?Object.entries(overview.orders.by_status):[],[overview]);return <><Nav/><main className="container section"><div className="sectionHead"><div><span className="eyebrow">Pilot command centre</span><h2>Admin dashboard</h2><p className="muted">Marketplace health, merchant approvals, rider activation and notification operations.</p></div><div className="row"><button className="btn secondary" disabled={busy==='push'} onClick={push}>Dispatch notifications</button><button className="btn secondary" onClick={load}><RefreshCw size={16}/> Refresh</button></div></div>{msg&&<div className="notice">{msg}</div>}<div className="statsGrid"><div className="card statCard"><Users/><span className="statValue">{overview?.users??'—'}</span><strong>Users</strong><span className="muted">Marketplace accounts</span></div><div className="card statCard"><MapPinned/><span className="statValue">{overview?.villages??'—'}</span><strong>Villages</strong><span className="muted">Active coverage</span></div><div className="card statCard"><Store/><span className="statValue">{overview?.active_stores??'—'}</span><strong>Live stores</strong><span className="muted">Customer storefronts</span></div><div className="card statCard"><Truck/><span className="statValue">{overview?.operations.active_delivery_partners??0}</span><strong>Riders</strong><span className="muted">Active delivery partners</span></div><div className="card statCard"><IndianRupee/><span className="statValue">{overview?money(overview.gross_order_value):'—'}</span><strong>Order value</strong><span className="muted">Non-cancelled GMV</span></div><div className="card statCard"><PackageCheck/><span className="statValue">{overview?.orders.total??'—'}</span><strong>Orders</strong><span className="muted">All-time volume</span></div><div className="card statCard"><AlertTriangle/><span className="statValue">{overview?.operations.low_stock_listings??'—'}</span><strong>Low stock</strong><span className="muted">Listings at 5 or less</span></div><div className="card statCard"><Boxes/><span className="statValue">{overview?.operations.ready_unassigned_deliveries??'—'}</span><strong>Awaiting rider</strong><span className="muted">Ready and unassigned</span></div></div><section className="section splitGrid"><div className="panel"><h2 className="subhead">Order pipeline</h2><div className="stack">{pipeline.map(([s,c])=><div className="metricRow" key={s}><span>{label(s)}</span><strong>{c}</strong></div>)}</div></div><div className="panel"><h2 className="subhead">Merchant health</h2><div className="stack"><div className="metricRow"><span>Pending review</span><strong>{overview?.merchants.pending??0}</strong></div><div className="metricRow"><span>Approved</span><strong>{overview?.merchants.approved??0}</strong></div><div className="metricRow"><span>Suspended</span><strong>{overview?.merchants.suspended??0}</strong></div></div></div></section><section className="section"><div className="panel"><h2 className="subhead">Merchant control</h2><div className="tableWrap"><table className="table"><thead><tr><th>Business</th><th>Status</th><th>GSTIN</th><th>Action</th></tr></thead><tbody>{merchants.map(m=><tr key={m.id}><td><strong>{m.business_name}</strong></td><td><span className={`badge status-${m.status}`}>{label(m.status)}</span></td><td>{m.gstin||'—'}</td><td>{m.status!=='approved'?<button disabled={busy===m.id} className="btn" onClick={()=>changeStatus(m.id,'approved')}>{m.status==='pending'?'Approve':'Reactivate'}</button>:<button disabled={busy===m.id} className="btn dangerBtn" onClick={()=>changeStatus(m.id,'suspended')}>Suspend</button>}</td></tr>)}{!merchants.length&&<tr><td colSpan={4}>No merchant applications yet.</td></tr>}</tbody></table></div></div></section><section className="section"><div className="panel"><h2 className="subhead">Pilot people & rider onboarding</h2><p className="muted">A verified customer can be promoted to delivery partner after your offline identity/vehicle check. Roles can also be reverted immediately.</p><div className="tableWrap"><table className="table"><thead><tr><th>Person</th><th>Phone</th><th>Role</th><th>Action</th></tr></thead><tbody>{users.map(u=><tr key={u.id}><td>{u.full_name||'Unnamed user'}</td><td>{u.phone}</td><td><span className="badge">{label(u.role)}</span></td><td><div className="row">{u.role==='customer'&&<button className="btn" disabled={busy===u.id} onClick={()=>role(u,'delivery')}>Activate rider</button>}{u.role==='delivery'&&<button className="btn secondary" disabled={busy===u.id} onClick={()=>role(u,'customer')}>Remove rider role</button>}</div></td></tr>)}</tbody></table></div></div></section></main></>}
+
+const money=(value:string|number)=>new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(Number(value||0));
+const label=(value:string)=>value.replaceAll('_',' ').replace(/\b\w/g,char=>char.toUpperCase());
+type AdminUser=User&{is_super_admin?:boolean};
+
+export default function Admin(){
+  const[merchants,setMerchants]=useState<Merchant[]>([]);
+  const[users,setUsers]=useState<AdminUser[]>([]);
+  const[me,setMe]=useState<AdminUser|null>(null);
+  const[overview,setOverview]=useState<AdminOverview|null>(null);
+  const[msg,setMsg]=useState('');
+  const[busy,setBusy]=useState('');
+
+  async function load(){
+    try{
+      const[current,m,o,u]=await Promise.all([
+        gaonApi.me(),gaonApi.merchants(),gaonApi.adminOverview(),gaonApi.adminUsers(),
+      ]);
+      setMe(current as AdminUser);
+      setMerchants(m);
+      setOverview(o);
+      setUsers(u as AdminUser[]);
+      setMsg('');
+    }catch(error:any){setMsg(error.message)}
+  }
+
+  useEffect(()=>{load()},[]);
+
+  async function changeStatus(id:string,status:MerchantStatus){
+    setBusy(id);
+    try{
+      await gaonApi.updateMerchantStatus(id,status);
+      setMsg(status==='approved'?'Merchant activated.':'Merchant suspended and storefronts hidden.');
+      await load();
+    }catch(error:any){setMsg(error.message)}finally{setBusy('')}
+  }
+
+  async function role(user:AdminUser,nextRole:User['role']){
+    setBusy(user.id);
+    try{
+      await gaonApi.updateUserRole(user.id,nextRole,true);
+      setMsg(nextRole==='delivery'?'Delivery partner activated.':nextRole==='admin'?'Administrator access granted.':'User role updated.');
+      await load();
+    }catch(error:any){setMsg(error.message)}finally{setBusy('')}
+  }
+
+  async function push(){
+    setBusy('push');
+    try{
+      const result=await gaonApi.flushNotifications();
+      setMsg(`Notification dispatch: ${result.events} events, ${result.pushes} pushes.`);
+    }catch(error:any){setMsg(error.message)}finally{setBusy('')}
+  }
+
+  const pipeline=useMemo(()=>overview?Object.entries(overview.orders.by_status):[],[overview]);
+  const isSuperAdmin=Boolean(me?.is_super_admin);
+
+  return <><Nav/><main className="container section">
+    <div className="sectionHead">
+      <div>
+        <span className="eyebrow">Pilot command centre</span>
+        <h2>{isSuperAdmin?'Super Admin dashboard':'Admin dashboard'}</h2>
+        <p className="muted">Marketplace health, merchant approvals, rider activation and notification operations.</p>
+      </div>
+      <div className="row">
+        {isSuperAdmin&&<span className="badge"><ShieldCheck size={15}/> Protected Super Admin</span>}
+        <button className="btn secondary" disabled={busy==='push'} onClick={push}>Dispatch notifications</button>
+        <button className="btn secondary" onClick={load}><RefreshCw size={16}/> Refresh</button>
+      </div>
+    </div>
+
+    {msg&&<div className="notice">{msg}</div>}
+
+    <div className="statsGrid">
+      <div className="card statCard"><Users/><span className="statValue">{overview?.users??'—'}</span><strong>Users</strong><span className="muted">Marketplace accounts</span></div>
+      <div className="card statCard"><MapPinned/><span className="statValue">{overview?.villages??'—'}</span><strong>Villages</strong><span className="muted">Active coverage</span></div>
+      <div className="card statCard"><Store/><span className="statValue">{overview?.active_stores??'—'}</span><strong>Live stores</strong><span className="muted">Customer storefronts</span></div>
+      <div className="card statCard"><Truck/><span className="statValue">{overview?.operations.active_delivery_partners??0}</span><strong>Riders</strong><span className="muted">Active delivery partners</span></div>
+      <div className="card statCard"><IndianRupee/><span className="statValue">{overview?money(overview.gross_order_value):'—'}</span><strong>Order value</strong><span className="muted">Non-cancelled GMV</span></div>
+      <div className="card statCard"><PackageCheck/><span className="statValue">{overview?.orders.total??'—'}</span><strong>Orders</strong><span className="muted">All-time volume</span></div>
+      <div className="card statCard"><AlertTriangle/><span className="statValue">{overview?.operations.low_stock_listings??'—'}</span><strong>Low stock</strong><span className="muted">Listings at 5 or less</span></div>
+      <div className="card statCard"><Boxes/><span className="statValue">{overview?.operations.ready_unassigned_deliveries??'—'}</span><strong>Awaiting rider</strong><span className="muted">Ready and unassigned</span></div>
+    </div>
+
+    <section className="section splitGrid">
+      <div className="panel"><h2 className="subhead">Order pipeline</h2><div className="stack">{pipeline.map(([status,count])=><div className="metricRow" key={status}><span>{label(status)}</span><strong>{count}</strong></div>)}</div></div>
+      <div className="panel"><h2 className="subhead">Merchant health</h2><div className="stack"><div className="metricRow"><span>Pending review</span><strong>{overview?.merchants.pending??0}</strong></div><div className="metricRow"><span>Approved</span><strong>{overview?.merchants.approved??0}</strong></div><div className="metricRow"><span>Suspended</span><strong>{overview?.merchants.suspended??0}</strong></div></div></div>
+    </section>
+
+    <section className="section"><div className="panel">
+      <h2 className="subhead">Merchant control</h2>
+      <div className="tableWrap"><table className="table"><thead><tr><th>Business</th><th>Status</th><th>GSTIN</th><th>Action</th></tr></thead><tbody>
+        {merchants.map(merchant=><tr key={merchant.id}><td><strong>{merchant.business_name}</strong></td><td><span className={`badge status-${merchant.status}`}>{label(merchant.status)}</span></td><td>{merchant.gstin||'—'}</td><td>{merchant.status!=='approved'?<button disabled={busy===merchant.id} className="btn" onClick={()=>changeStatus(merchant.id,'approved')}>{merchant.status==='pending'?'Approve':'Reactivate'}</button>:<button disabled={busy===merchant.id} className="btn dangerBtn" onClick={()=>changeStatus(merchant.id,'suspended')}>Suspend</button>}</td></tr>)}
+        {!merchants.length&&<tr><td colSpan={4}>No merchant applications yet.</td></tr>}
+      </tbody></table></div>
+    </div></section>
+
+    <section className="section"><div className="panel">
+      <h2 className="subhead">People, riders & administrators</h2>
+      <p className="muted">Admins can manage pilot operations and rider access. Only the protected Super Admin can grant or remove administrator access.</p>
+      <div className="tableWrap"><table className="table"><thead><tr><th>Person</th><th>Phone</th><th>Role</th><th>Action</th></tr></thead><tbody>
+        {users.map(user=><tr key={user.id}>
+          <td>{user.full_name||'Unnamed user'}</td>
+          <td>{user.phone}</td>
+          <td><span className="badge">{user.is_super_admin?'Super Admin':label(user.role)}</span></td>
+          <td><div className="row">
+            {user.is_super_admin?<span className="muted">Protected</span>:<>
+              {user.role==='customer'&&<button className="btn" disabled={busy===user.id} onClick={()=>role(user,'delivery')}>Activate rider</button>}
+              {user.role==='delivery'&&<button className="btn secondary" disabled={busy===user.id} onClick={()=>role(user,'customer')}>Remove rider role</button>}
+              {isSuperAdmin&&user.role!=='admin'&&<button className="btn secondary" disabled={busy===user.id} onClick={()=>role(user,'admin')}>Make admin</button>}
+              {isSuperAdmin&&user.role==='admin'&&<button className="btn dangerBtn" disabled={busy===user.id} onClick={()=>role(user,'customer')}>Remove admin</button>}
+            </>}
+          </div></td>
+        </tr>)}
+      </tbody></table></div>
+    </div></section>
+  </main></>;
+}
