@@ -1,6 +1,145 @@
-import 'package:flutter/material.dart';import '../api/gaon_api.dart';import '../models/models.dart';
-class MerchantWorkspace extends StatefulWidget{final VoidCallback onLogout;const MerchantWorkspace({super.key,required this.onLogout});@override State<MerchantWorkspace> createState()=>_MerchantWorkspaceState();}
-class _MerchantWorkspaceState extends State<MerchantWorkspace>{List<OrderModel> orders=[];List<StoreModel> stores=[];Map<String,dynamic>? profile;bool loading=true;String? error;@override void initState(){super.initState();load();}Future<void> load()async{try{final p=await GaonApi.merchantProfile();final r=await Future.wait([GaonApi.merchantOrders(),GaonApi.myStores()]);if(mounted)setState((){profile=p;orders=r[0] as List<OrderModel>;stores=r[1] as List<StoreModel>;loading=false;error=null;});}catch(e){if(mounted)setState((){loading=false;error=e.toString();});}}Future<void> update(OrderModel o,String s)async{try{await GaonApi.updateMerchantOrder(o.id,s);await load();}catch(e){snack('$e');}}void snack(String s){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(s)));}List<String> actions(String s)=>switch(s){'placed'=>['accepted','cancelled'],'accepted'=>['preparing','cancelled'],'preparing'=>['ready'],_=>[]};Future<void> addStore()async{final villages=await GaonApi.villages();if(!mounted||villages.isEmpty)return;final name=TextEditingController(),landmark=TextEditingController();String village=villages.first.id;final ok=await showDialog<bool>(context:context,builder:(c)=>StatefulBuilder(builder:(c,setD)=>AlertDialog(title:const Text('Create storefront'),content:SizedBox(width:420,child:Column(mainAxisSize:MainAxisSize.min,children:[TextField(controller:name,decoration:const InputDecoration(labelText:'Store name')),const SizedBox(height:10),DropdownButtonFormField(value:village,items:villages.map((v)=>DropdownMenuItem(value:v.id,child:Text('${v.name}, ${v.district}'))).toList(),onChanged:(v)=>setD(()=>village=v!),decoration:const InputDecoration(labelText:'Village')),const SizedBox(height:10),TextField(controller:landmark,decoration:const InputDecoration(labelText:'Landmark'))])),actions:[TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(c,true),child:const Text('Create'))])));if(ok==true&&name.text.trim().length>1){try{final slug='${name.text.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'),'-')}-${DateTime.now().millisecondsSinceEpoch}';await GaonApi.createStore(villageId:village,name:name.text.trim(),slug:slug,landmark:landmark.text.trim());await load();}catch(e){snack('$e');}}}
-@override Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('Merchant workspace'),actions:[IconButton(onPressed:widget.onLogout,icon:const Icon(Icons.logout))]),floatingActionButton:profile?['status']=='approved'?FloatingActionButton.extended(onPressed:addStore,icon:const Icon(Icons.add_business),label:const Text('Add store')):null,body:loading?const Center(child:CircularProgressIndicator()):RefreshIndicator(onRefresh:load,child:ListView(padding:const EdgeInsets.all(16),children:[Text(profile?['business_name']??'Merchant operations',style:Theme.of(c).textTheme.headlineMedium?.copyWith(fontWeight:FontWeight.w800)),Text('Status: ${profile?['status']??'unknown'}'),if(profile?['status']=='pending')const Card(child:ListTile(leading:Icon(Icons.hourglass_top),title:Text('Approval pending'),subtitle:Text('GaonOne admin will activate storefront operations after verification.'))),if(profile?['status']=='suspended')const Card(child:ListTile(leading:Icon(Icons.block),title:Text('Merchant access suspended'))),if(error!=null)Text(error!,style:TextStyle(color:Theme.of(c).colorScheme.error)),const SizedBox(height:14),Text('Stores (${stores.length})',style:Theme.of(c).textTheme.titleLarge?.copyWith(fontWeight:FontWeight.w700)),...stores.map((s)=>Card(child:ListTile(leading:const Icon(Icons.storefront),title:Text(s.name),subtitle:Text(s.landmark??'Local storefront')))),const SizedBox(height:14),Text('Orders',style:Theme.of(c).textTheme.titleLarge?.copyWith(fontWeight:FontWeight.w700)),if(orders.isEmpty)const Padding(padding:EdgeInsets.all(24),child:Text('No merchant orders yet.')),...orders.map((o)=>Card(child:ListTile(title:Text(o.orderNumber),subtitle:Text('₹${o.total} • ${o.status.replaceAll('_',' ')} • ${o.paymentStatus}'),trailing:actions(o.status).isEmpty?const Icon(Icons.check_circle_outline):PopupMenuButton<String>(onSelected:(s)=>update(o,s),itemBuilder:(_)=>actions(o.status).map((s)=>PopupMenuItem(value:s,child:Text(s=='cancelled'?'Cancel order':'Mark ${s.replaceAll('_',' ')}'))).toList()))))])));}}
-class DeliveryWorkspace extends StatefulWidget{final VoidCallback onLogout;const DeliveryWorkspace({super.key,required this.onLogout});@override State<DeliveryWorkspace> createState()=>_DeliveryWorkspaceState();}class _DeliveryWorkspaceState extends State<DeliveryWorkspace>{List<DeliveryTaskModel> available=[],mine=[];bool loading=true;String? error;@override void initState(){super.initState();load();}Future<void> load()async{try{final r=await Future.wait([GaonApi.availableDeliveryTasks(),GaonApi.myDeliveryTasks()]);if(mounted)setState((){available=r[0];mine=r[1];loading=false;error=null;});}catch(e){if(mounted)setState((){loading=false;error='$e';});}}Future<void> claim(String id)async{await GaonApi.claimDelivery(id);await load();}Future<void> update(DeliveryTaskModel d,String s)async{await GaonApi.updateDelivery(d.id,s);await load();}Widget card(DeliveryTaskModel d,bool canClaim)=>Card(child:Padding(padding:const EdgeInsets.all(14),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Row(children:[Expanded(child:Text(d.orderNumber,style:const TextStyle(fontWeight:FontWeight.w800))),Chip(label:Text(d.status.replaceAll('_',' ')))]),Text('₹${d.total} • ${d.paymentMethod.toUpperCase()} • ${d.paymentStatus}'),Text('Pickup: ${d.storeName} • ${d.storeLandmark??'location pending'}'),Text('Drop: ${d.recipientName??'Customer'} • ${d.customerLandmark}'),if(d.recipientPhone!=null)SelectableText('Customer: ${d.recipientPhone}'),if(d.customerDirections?.isNotEmpty==true)Text('Directions: ${d.customerDirections}'),const SizedBox(height:10),if(canClaim)FilledButton.icon(onPressed:()=>claim(d.id),icon:const Icon(Icons.delivery_dining),label:const Text('Claim delivery'))else if(d.status=='assigned')FilledButton(onPressed:()=>update(d,'picked_up'),child:const Text('Mark picked up'))else if(d.status=='picked_up')FilledButton(onPressed:()=>update(d,'delivered'),child:const Text('Mark delivered'))])));@override Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('Delivery workspace'),actions:[IconButton(onPressed:widget.onLogout,icon:const Icon(Icons.logout))]),body:loading?const Center(child:CircularProgressIndicator()):RefreshIndicator(onRefresh:load,child:ListView(padding:const EdgeInsets.all(16),children:[Text('Delivery network',style:Theme.of(c).textTheme.headlineMedium?.copyWith(fontWeight:FontWeight.w800)),const Text('Claim ready jobs, collect COD where shown, and update each hand-off immediately.'),if(error!=null)Text(error!),const SizedBox(height:16),Text('Available jobs (${available.length})',style:Theme.of(c).textTheme.titleLarge),...available.map((d)=>card(d,true)),const SizedBox(height:16),Text('My deliveries (${mine.length})',style:Theme.of(c).textTheme.titleLarge),...mine.map((d)=>card(d,false))]))));}}
-class AdminWorkspace extends StatefulWidget{final VoidCallback onLogout;const AdminWorkspace({super.key,required this.onLogout});@override State<AdminWorkspace> createState()=>_AdminWorkspaceState();}class _AdminWorkspaceState extends State<AdminWorkspace>{List<OrderModel> orders=[];bool loading=true;@override void initState(){super.initState();load();}Future<void> load()async{try{final d=await GaonApi.merchantOrders();if(mounted)setState((){orders=d;loading=false;});}catch(_){if(mounted)setState(()=>loading=false);}}@override Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('GaonOne admin'),actions:[IconButton(onPressed:widget.onLogout,icon:const Icon(Icons.logout))]),body:loading?const Center(child:CircularProgressIndicator()):RefreshIndicator(onRefresh:load,child:ListView(padding:const EdgeInsets.all(16),children:[Text('Pilot operations',style:Theme.of(c).textTheme.headlineMedium?.copyWith(fontWeight:FontWeight.w800)),Text('${orders.length} orders visible'),const Card(child:ListTile(leading:Icon(Icons.desktop_windows_outlined),title:Text('Use the web admin command centre for merchant approvals, rider activation and push dispatch.'))),...orders.take(20).map((o)=>Card(child:ListTile(title:Text(o.orderNumber),subtitle:Text('${o.status} • ₹${o.total} • ${o.paymentStatus}'))))]))));}}
+import 'package:flutter/material.dart';
+import '../api/gaon_api.dart';
+import '../models/models.dart';
+
+class MerchantWorkspace extends StatefulWidget {
+  final VoidCallback onLogout;
+  const MerchantWorkspace({super.key, required this.onLogout});
+  @override State<MerchantWorkspace> createState() => _MerchantWorkspaceState();
+}
+
+class _MerchantWorkspaceState extends State<MerchantWorkspace> {
+  List<OrderModel> orders = [];
+  List<StoreModel> stores = [];
+  Map<String, dynamic>? profile;
+  bool loading = true;
+  String? error;
+
+  @override void initState() { super.initState(); load(); }
+
+  Future<void> load() async {
+    try {
+      final merchant = await GaonApi.merchantProfile();
+      final result = await Future.wait([GaonApi.merchantOrders(), GaonApi.myStores()]);
+      if (mounted) setState(() { profile = merchant; orders = result[0] as List<OrderModel>; stores = result[1] as List<StoreModel>; loading = false; error = null; });
+    } catch (e) { if (mounted) setState(() { loading = false; error = e.toString(); }); }
+  }
+
+  void snack(String message) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message))); }
+  List<String> actions(String status) => switch (status) { 'placed' => ['accepted', 'cancelled'], 'accepted' => ['preparing', 'cancelled'], 'preparing' => ['ready'], _ => [] };
+
+  Future<void> update(OrderModel order, String status) async {
+    try { await GaonApi.updateMerchantOrder(order.id, status); await load(); } catch (e) { snack('$e'); }
+  }
+
+  Future<void> addStore() async {
+    final villages = await GaonApi.villages();
+    if (!mounted || villages.isEmpty) return;
+    final name = TextEditingController();
+    final landmark = TextEditingController();
+    String village = villages.first.id;
+    final ok = await showDialog<bool>(context: context, builder: (dialogContext) => StatefulBuilder(builder: (dialogContext, setDialogState) => AlertDialog(
+      title: const Text('Create storefront'),
+      content: SizedBox(width: 420, child: Column(mainAxisSize: MainAxisSize.min, children: [
+        TextField(controller: name, decoration: const InputDecoration(labelText: 'Store name')),
+        const SizedBox(height: 10),
+        DropdownButtonFormField<String>(initialValue: village, items: villages.map((item) => DropdownMenuItem(value: item.id, child: Text('${item.name}, ${item.district}'))).toList(), onChanged: (value) { if (value != null) setDialogState(() => village = value); }, decoration: const InputDecoration(labelText: 'Village')),
+        const SizedBox(height: 10),
+        TextField(controller: landmark, decoration: const InputDecoration(labelText: 'Landmark')),
+      ])),
+      actions: [TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Create'))],
+    )));
+    if (ok == true && name.text.trim().length > 1) {
+      try {
+        final slug = '${name.text.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-')}-${DateTime.now().millisecondsSinceEpoch}';
+        await GaonApi.createStore(villageId: village, name: name.text.trim(), slug: slug, landmark: landmark.text.trim());
+        await load();
+      } catch (e) { snack('$e'); }
+    }
+  }
+
+  @override Widget build(BuildContext context) {
+    final approved = profile?['status'] == 'approved';
+    return Scaffold(
+      appBar: AppBar(title: const Text('Merchant workspace'), actions: [IconButton(onPressed: widget.onLogout, icon: const Icon(Icons.logout))]),
+      floatingActionButton: approved ? FloatingActionButton.extended(onPressed: addStore, icon: const Icon(Icons.add_business), label: const Text('Add store')) : null,
+      body: loading ? const Center(child: CircularProgressIndicator()) : RefreshIndicator(onRefresh: load, child: ListView(padding: const EdgeInsets.all(16), children: [
+        Text('${profile?['business_name'] ?? 'Merchant operations'}', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
+        Text('Status: ${profile?['status'] ?? 'unknown'}'),
+        if (profile?['status'] == 'pending') const Card(child: ListTile(leading: Icon(Icons.hourglass_top), title: Text('Approval pending'), subtitle: Text('GaonOne admin will activate storefront operations after verification.'))),
+        if (profile?['status'] == 'suspended') const Card(child: ListTile(leading: Icon(Icons.block), title: Text('Merchant access suspended'))),
+        if (error != null) Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+        const SizedBox(height: 14),
+        Text('Stores (${stores.length})', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+        ...stores.map((store) => Card(child: ListTile(leading: const Icon(Icons.storefront), title: Text(store.name), subtitle: Text(store.landmark ?? 'Local storefront')))),
+        const SizedBox(height: 14),
+        Text('Orders', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+        if (orders.isEmpty) const Padding(padding: EdgeInsets.all(24), child: Text('No merchant orders yet.')),
+        ...orders.map((order) => Card(child: ListTile(title: Text(order.orderNumber), subtitle: Text('₹${order.total} • ${order.status.replaceAll('_', ' ')} • ${order.paymentStatus}'), trailing: actions(order.status).isEmpty ? const Icon(Icons.check_circle_outline) : PopupMenuButton<String>(onSelected: (status) => update(order, status), itemBuilder: (_) => actions(order.status).map((status) => PopupMenuItem(value: status, child: Text(status == 'cancelled' ? 'Cancel order' : 'Mark ${status.replaceAll('_', ' ')}'))).toList())))),
+      ])),
+    );
+  }
+}
+
+class DeliveryWorkspace extends StatefulWidget {
+  final VoidCallback onLogout;
+  const DeliveryWorkspace({super.key, required this.onLogout});
+  @override State<DeliveryWorkspace> createState() => _DeliveryWorkspaceState();
+}
+
+class _DeliveryWorkspaceState extends State<DeliveryWorkspace> {
+  List<DeliveryTaskModel> available = [], mine = [];
+  bool loading = true;
+  String? error;
+  @override void initState() { super.initState(); load(); }
+  Future<void> load() async { try { final result = await Future.wait([GaonApi.availableDeliveryTasks(), GaonApi.myDeliveryTasks()]); if (mounted) setState(() { available = result[0]; mine = result[1]; loading = false; error = null; }); } catch (e) { if (mounted) setState(() { loading = false; error = '$e'; }); } }
+  Future<void> claim(String id) async { await GaonApi.claimDelivery(id); await load(); }
+  Future<void> update(DeliveryTaskModel task, String status) async { await GaonApi.updateDelivery(task.id, status); await load(); }
+  Widget card(DeliveryTaskModel task, bool canClaim) => Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Row(children: [Expanded(child: Text(task.orderNumber, style: const TextStyle(fontWeight: FontWeight.w800))), Chip(label: Text(task.status.replaceAll('_', ' ')))]),
+    Text('₹${task.total} • ${task.paymentMethod.toUpperCase()} • ${task.paymentStatus}'),
+    Text('Pickup: ${task.storeName} • ${task.storeLandmark ?? 'location pending'}'),
+    Text('Drop: ${task.recipientName ?? 'Customer'} • ${task.customerLandmark}'),
+    if (task.recipientPhone != null) SelectableText('Customer: ${task.recipientPhone}'),
+    if (task.customerDirections?.isNotEmpty == true) Text('Directions: ${task.customerDirections}'),
+    const SizedBox(height: 10),
+    if (canClaim) FilledButton.icon(onPressed: () => claim(task.id), icon: const Icon(Icons.delivery_dining), label: const Text('Claim delivery'))
+    else if (task.status == 'assigned') FilledButton(onPressed: () => update(task, 'picked_up'), child: const Text('Mark picked up'))
+    else if (task.status == 'picked_up') FilledButton(onPressed: () => update(task, 'delivered'), child: const Text('Mark delivered')),
+  ])));
+
+  @override Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Delivery workspace'), actions: [IconButton(onPressed: widget.onLogout, icon: const Icon(Icons.logout))]),
+    body: loading ? const Center(child: CircularProgressIndicator()) : RefreshIndicator(onRefresh: load, child: ListView(padding: const EdgeInsets.all(16), children: [
+      Text('Delivery network', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
+      const Text('Claim ready jobs, collect COD where shown, and update each hand-off immediately.'),
+      if (error != null) Text(error!),
+      const SizedBox(height: 16),
+      Text('Available jobs (${available.length})', style: Theme.of(context).textTheme.titleLarge), ...available.map((task) => card(task, true)),
+      const SizedBox(height: 16),
+      Text('My deliveries (${mine.length})', style: Theme.of(context).textTheme.titleLarge), ...mine.map((task) => card(task, false)),
+    ])),
+  );
+}
+
+class AdminWorkspace extends StatefulWidget {
+  final VoidCallback onLogout;
+  const AdminWorkspace({super.key, required this.onLogout});
+  @override State<AdminWorkspace> createState() => _AdminWorkspaceState();
+}
+
+class _AdminWorkspaceState extends State<AdminWorkspace> {
+  List<OrderModel> orders = [];
+  bool loading = true;
+  @override void initState() { super.initState(); load(); }
+  Future<void> load() async { try { final data = await GaonApi.merchantOrders(); if (mounted) setState(() { orders = data; loading = false; }); } catch (_) { if (mounted) setState(() => loading = false); } }
+  @override Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('GaonOne admin'), actions: [IconButton(onPressed: widget.onLogout, icon: const Icon(Icons.logout))]),
+    body: loading ? const Center(child: CircularProgressIndicator()) : RefreshIndicator(onRefresh: load, child: ListView(padding: const EdgeInsets.all(16), children: [
+      Text('Pilot operations', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
+      Text('${orders.length} orders visible'),
+      const Card(child: ListTile(leading: Icon(Icons.desktop_windows_outlined), title: Text('Use the web admin command centre for merchant approvals, rider activation and push dispatch.'))),
+      ...orders.take(20).map((order) => Card(child: ListTile(title: Text(order.orderNumber), subtitle: Text('${order.status} • ₹${order.total} • ${order.paymentStatus}')))),
+    ])),
+  );
+}
