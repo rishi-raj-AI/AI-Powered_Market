@@ -1,11 +1,14 @@
+import json
+import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
 from app.core.config import settings
+from app.db.session import SessionLocal
 from app.models.integrations import PaymentAttempt
 from app.models.orders import Order, PaymentMethod, PaymentStatus
 from app.models.user import User
@@ -22,9 +25,11 @@ from app.services.payments import (
     create_razorpay_order,
     razorpay_enabled,
     verify_razorpay_signature,
+    verify_razorpay_webhook_signature,
 )
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/config", response_model=PaymentConfigResponse)
@@ -50,6 +55,8 @@ def create_payment_intent(
         raise HTTPException(status_code=409, detail="This order is not configured for online payment")
     if order.payment_status == PaymentStatus.PAID:
         raise HTTPException(status_code=409, detail="Order is already paid")
+    if order.status.value == "cancelled":
+        raise HTTPException(status_code=409, detail="Cancelled orders cannot be paid")
 
     existing = db.scalar(
         select(PaymentAttempt)
@@ -64,6 +71,8 @@ def create_payment_intent(
     if existing and existing.provider_order_id:
         if not settings.RAZORPAY_KEY_ID:
             raise HTTPException(status_code=503, detail="Payment provider is not configured")
+        existing.status = "attempted"
+        db.commit()
         return PaymentIntentResponse(
             payment_attempt_id=existing.id,
             provider="razorpay",
@@ -89,7 +98,7 @@ def create_payment_intent(
         order_id=order.id,
         provider="razorpay",
         provider_order_id=str(provider_order["id"]),
-        status="created",
+        status="attempted",
         amount=order.total,
         currency="INR",
     )
@@ -164,3 +173,72 @@ def verify_payment(
         payment_status=order.payment_status.value,
         provider_payment_id=payload.razorpay_payment_id,
     )
+
+
+def _process_razorpay_event(payload: dict) -> None:
+    event = str(payload.get("event") or "")
+    payment_entity = (((payload.get("payload") or {}).get("payment") or {}).get("entity") or {})
+    order_entity = (((payload.get("payload") or {}).get("order") or {}).get("entity") or {})
+    provider_payment_id = str(payment_entity.get("id") or "") or None
+    provider_order_id = str(payment_entity.get("order_id") or order_entity.get("id") or "") or None
+    if not provider_order_id:
+        logger.warning("Razorpay webhook missing provider order id: event=%s", event)
+        return
+
+    with SessionLocal() as db:
+        attempt = db.scalar(
+            select(PaymentAttempt).where(PaymentAttempt.provider_order_id == provider_order_id)
+        )
+        if attempt is None:
+            logger.warning("Razorpay webhook references unknown order: event=%s", event)
+            return
+        order = db.get(Order, attempt.order_id)
+        if order is None:
+            return
+
+        if event in {"order.paid", "payment.captured"}:
+            if provider_payment_id:
+                duplicate = db.scalar(
+                    select(PaymentAttempt).where(
+                        PaymentAttempt.provider_payment_id == provider_payment_id,
+                        PaymentAttempt.id != attempt.id,
+                    )
+                )
+                if duplicate:
+                    logger.warning("Razorpay webhook duplicate payment id ignored")
+                    return
+                attempt.provider_payment_id = provider_payment_id
+            attempt.status = "paid"
+            order.payment_status = PaymentStatus.PAID
+        elif event == "payment.failed":
+            if order.payment_status != PaymentStatus.PAID:
+                attempt.status = "failed"
+                order.payment_status = PaymentStatus.FAILED
+        else:
+            return
+        db.commit()
+
+
+@router.post("/webhook", status_code=status.HTTP_200_OK)
+async def razorpay_webhook(request: Request, background_tasks: BackgroundTasks) -> dict[str, bool]:
+    raw_body = await request.body()
+    signature = request.headers.get("x-razorpay-signature", "")
+    if not signature:
+        raise HTTPException(status_code=400, detail="Missing Razorpay signature")
+    try:
+        valid = verify_razorpay_webhook_signature(
+            raw_body=raw_body,
+            received_signature=signature,
+        )
+    except PaymentProviderUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if not valid:
+        raise HTTPException(status_code=400, detail="Invalid Razorpay webhook signature")
+    try:
+        payload = json.loads(raw_body)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid Razorpay webhook payload") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Invalid Razorpay webhook payload")
+    background_tasks.add_task(_process_razorpay_event, payload)
+    return {"ok": True}
