@@ -6,10 +6,6 @@ if [[ ! -f .env.production ]]; then
   exit 1
 fi
 
-set -a
-source .env.production
-set +a
-
 compose() {
   if docker info >/dev/null 2>&1; then
     docker compose --env-file .env.production -f docker-compose.prod.yml "$@"
@@ -18,6 +14,12 @@ compose() {
   fi
 }
 
+# Ask Compose for the resolved environment instead of sourcing .env.production;
+# Compose env files may legally contain values that are not shell-safe.
+DOMAIN="$(docker compose --env-file .env.production -f docker-compose.prod.yml config --environment 2>/dev/null | awk -F= '$1=="DOMAIN" {sub(/^[^=]*=/,""); print; exit}')"
+if [[ -z "$DOMAIN" ]]; then
+  DOMAIN="gaonone.in"
+fi
 BASE="https://${DOMAIN}"
 FAIL=0
 
@@ -47,8 +49,7 @@ check_url "api-ready" "${BASE}/api/v1/health/ready"
 
 DISK_USED="$(df -P . | awk 'NR==2 {gsub("%","",$5); print $5}')"
 if (( DISK_USED >= 90 )); then
-  echo "FAIL disk usage ${DISK_USED}%" >&2
-  FAIL=1
+  echo "FAIL disk usage ${DISK_USED}%" >&2; FAIL=1
 elif (( DISK_USED >= 80 )); then
   echo "WARN disk usage ${DISK_USED}%"
 else
@@ -68,8 +69,7 @@ if [[ -z "$LATEST_BACKUP" ]]; then
 else
   AGE_HOURS="$(( ($(date +%s) - $(stat -c %Y "$LATEST_BACKUP")) / 3600 ))"
   if (( AGE_HOURS > 30 )); then
-    echo "FAIL latest backup is ${AGE_HOURS}h old" >&2
-    FAIL=1
+    echo "FAIL latest backup is ${AGE_HOURS}h old" >&2; FAIL=1
   else
     echo "OK  latest backup ${AGE_HOURS}h old"
   fi
