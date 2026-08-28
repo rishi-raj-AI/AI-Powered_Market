@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: dev-up dev-down seed test-backend web mobile-ios mobile-check prod-check prod-build prod-migrate prod-bootstrap prod-up prod-down prod-logs prod-status prod-smoke prod-backup prod-monitor prod-restore prod-cleanup
+.PHONY: dev-up dev-down seed test-backend test-web test-e2e test-a11y test-full web mobile-ios mobile-check prod-check prod-build prod-migrate prod-bootstrap prod-up prod-deploy prod-down prod-logs prod-status prod-smoke prod-backup prod-monitor prod-restore prod-cleanup
 
 dev-up:
 	docker compose up --build -d
@@ -15,6 +15,17 @@ seed:
 test-backend:
 	docker compose exec api pip install ".[dev]"
 	docker compose exec api pytest -q
+
+test-web:
+	cd web && npm install && npm run build
+
+test-e2e:
+	cd web && npm install && npx playwright install chromium && npm run test:e2e
+
+test-a11y:
+	cd web && npm install && npx playwright install chromium && npm run test:a11y
+
+test-full: test-backend test-web test-e2e
 
 web:
 	@echo "Open http://localhost:3000"
@@ -45,6 +56,14 @@ prod-bootstrap: prod-check
 
 prod-up: prod-check
 	docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+
+prod-deploy: prod-check
+	docker compose --env-file .env.production -f docker-compose.prod.yml build api web migrate
+	docker compose --env-file .env.production -f docker-compose.prod.yml --profile ops run --rm migrate
+	docker compose --env-file .env.production -f docker-compose.prod.yml up -d --no-build --force-recreate api web
+	@sleep 15
+	docker compose --env-file .env.production -f docker-compose.prod.yml ps
+	bash deploy/monitor.sh
 
 prod-down:
 	docker compose --env-file .env.production -f docker-compose.prod.yml down
