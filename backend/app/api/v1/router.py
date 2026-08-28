@@ -10,6 +10,7 @@ from app.api.v1.routes.media import router as media_router
 from app.api.v1.routes.notifications import router as notifications_router
 from app.api.v1.routes.orders import router as orders_router
 from app.api.v1.routes.payments import router as payments_router
+from app.api.v1.routes.tracking import router as tracking_router
 from app.api.v1.routes.users import router as users_router
 
 api_router = APIRouter()
@@ -20,6 +21,7 @@ api_router.include_router(geography_router)
 api_router.include_router(commerce_router)
 api_router.include_router(delivery_tasks_router)
 api_router.include_router(orders_router)
+api_router.include_router(tracking_router)
 api_router.include_router(payments_router)
 api_router.include_router(notifications_router)
 api_router.include_router(media_router)
