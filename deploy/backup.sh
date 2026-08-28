@@ -6,10 +6,6 @@ if [[ ! -f .env.production ]]; then
   exit 1
 fi
 
-set -a
-source .env.production
-set +a
-
 compose() {
   if docker info >/dev/null 2>&1; then
     docker compose --env-file .env.production -f docker-compose.prod.yml "$@"
@@ -17,6 +13,15 @@ compose() {
     sudo docker compose --env-file .env.production -f docker-compose.prod.yml "$@"
   fi
 }
+
+# .env.production is a Docker Compose env file, not a shell script. Read database
+# credentials from the running container so values containing spaces stay safe.
+POSTGRES_USER="$(compose exec -T db printenv POSTGRES_USER | tr -d '\r')"
+POSTGRES_DB="$(compose exec -T db printenv POSTGRES_DB | tr -d '\r')"
+if [[ -z "$POSTGRES_USER" || -z "$POSTGRES_DB" ]]; then
+  echo "Could not read PostgreSQL configuration from the production database container" >&2
+  exit 1
+fi
 
 BACKUP_DIR="${BACKUP_DIR:-backups}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
@@ -35,7 +40,5 @@ compose exec -T api sh -c 'cd /app/data && tar -czf - uploads' > "$MEDIA_OUT"
 test -s "$MEDIA_OUT" || { echo "Media backup is empty" >&2; exit 1; }
 
 sha256sum "$DB_OUT" "$MEDIA_OUT" > "$MANIFEST"
-
 find "$BACKUP_DIR" -type f \( -name 'gaonone-db-*.dump' -o -name 'gaonone-media-*.tar.gz' -o -name 'gaonone-*.sha256' \) -mtime "+${RETENTION_DAYS}" -delete
-
 printf 'Backup complete:\n  %s\n  %s\n  %s\n' "$DB_OUT" "$MEDIA_OUT" "$MANIFEST"
