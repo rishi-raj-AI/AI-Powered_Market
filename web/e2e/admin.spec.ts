@@ -1,0 +1,37 @@
+import AxeBuilder from '@axe-core/playwright';
+import {expect,test} from '@playwright/test';
+import {installApiMocks,normalAdmin,superAdmin} from './helpers';
+
+test('super admin sees protected status and administrator controls',async({page})=>{
+  await installApiMocks(page,superAdmin);
+  await page.goto('/admin');
+  await expect(page.getByRole('heading',{name:'Super Admin dashboard'})).toBeVisible();
+  await expect(page.getByText('Protected Super Admin')).toBeVisible();
+  await expect(page.getByRole('cell',{name:'Super Admin'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Make admin'}).first()).toBeVisible();
+  await expect(page.getByRole('button',{name:'Remove admin'})).toBeVisible();
+});
+
+test('normal admin can run operations but cannot manage administrator privilege',async({page})=>{
+  await installApiMocks(page,normalAdmin);
+  await page.goto('/admin');
+  await expect(page.getByRole('heading',{name:'Admin dashboard'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Activate rider'}).first()).toBeVisible();
+  await expect(page.getByRole('button',{name:'Make admin'})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Remove admin'})).toHaveCount(0);
+});
+
+test('@a11y super admin dashboard has no serious accessibility violations',async({page})=>{
+  await installApiMocks(page,superAdmin);
+  await page.goto('/admin');
+  const results=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze();
+  expect(results.violations.filter(item=>['serious','critical'].includes(item.impact||''))).toEqual([]);
+});
+
+test('admin dashboard avoids horizontal page overflow on mobile',async({page})=>{
+  await installApiMocks(page,superAdmin);
+  await page.setViewportSize({width:390,height:844});
+  await page.goto('/admin');
+  const pageOverflow=await page.evaluate(()=>document.documentElement.scrollWidth>document.documentElement.clientWidth);
+  expect(pageOverflow).toBe(false);
+});
