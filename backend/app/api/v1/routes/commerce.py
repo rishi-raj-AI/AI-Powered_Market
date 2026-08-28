@@ -21,6 +21,7 @@ from app.schemas.commerce import (
     StoreCreate,
     StoreProductCreate,
     StoreProductRead,
+    StoreProductUpdate,
     StoreRead,
     StoreUpdate,
 )
@@ -328,6 +329,38 @@ def upsert_store_product(
     else:
         listing = StoreProduct(store_id=store_id, **payload.model_dump())
         db.add(listing)
+    db.commit()
+    db.refresh(listing)
+    return listing
+
+
+@router.patch(
+    "/stores/{store_id}/products/{listing_id}",
+    response_model=StoreProductRead,
+)
+def update_store_product(
+    store_id: uuid.UUID,
+    listing_id: uuid.UUID,
+    payload: StoreProductUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles(UserRole.MERCHANT, UserRole.ADMIN)),
+):
+    store = db.get(Store, store_id)
+    if store is None:
+        raise HTTPException(status_code=404, detail="Store not found")
+    merchant = _require_store_owner(db, store, user)
+    if user.role != UserRole.ADMIN and (merchant is None or merchant.status != MerchantStatus.APPROVED):
+        raise HTTPException(status_code=403, detail="Merchant is not active")
+    listing = db.scalar(
+        select(StoreProduct).where(
+            StoreProduct.id == listing_id,
+            StoreProduct.store_id == store_id,
+        )
+    )
+    if listing is None:
+        raise HTTPException(status_code=404, detail="Store product not found")
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(listing, key, value)
     db.commit()
     db.refresh(listing)
     return listing
