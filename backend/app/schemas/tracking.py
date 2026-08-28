@@ -50,3 +50,13 @@ class OrderTrackingRead(BaseModel):
     customer: TrackingPoint
     rider: DeliveryLocationRead | None = None
     rider_location_age_seconds: int | None = None
+
+
+class RouteRead(BaseModel):
+    available: bool
+    provider: str
+    origin: TrackingPoint
+    destination: TrackingPoint
+    distance_meters: int | None = None
+    duration_seconds: int | None = None
+    encoded_polyline: str | None = None
