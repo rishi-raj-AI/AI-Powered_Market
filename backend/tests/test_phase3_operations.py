@@ -96,6 +96,27 @@ def test_operational_controls_and_customer_cancellation() -> None:
     assert inventory.status_code == 200, inventory.text
     assert any(item["id"] == listing_id for item in inventory.json())
 
+    inventory_update = client.patch(
+        f"/api/v1/stores/{store_id}/products/{listing_id}",
+        headers=auth(merchant_token),
+        json={"price": "47.00", "stock_quantity": 9, "is_available": False},
+    )
+    assert inventory_update.status_code == 200, inventory_update.text
+    assert inventory_update.json()["price"] == "47.00"
+    assert inventory_update.json()["stock_quantity"] == 9
+    assert inventory_update.json()["is_available"] is False
+
+    hidden_listing = client.get(f"/api/v1/stores/{store_id}/products")
+    assert hidden_listing.status_code == 200, hidden_listing.text
+    assert all(item["id"] != listing_id for item in hidden_listing.json())
+
+    inventory_reopen = client.patch(
+        f"/api/v1/stores/{store_id}/products/{listing_id}",
+        headers=auth(merchant_token),
+        json={"price": "49.00", "stock_quantity": 7, "is_available": True},
+    )
+    assert inventory_reopen.status_code == 200, inventory_reopen.text
+
     suspend = client.patch(
         f"/api/v1/merchants/{merchant_id}/status",
         headers=auth(admin_token),
