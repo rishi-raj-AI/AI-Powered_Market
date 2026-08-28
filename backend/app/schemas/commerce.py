@@ -102,6 +102,13 @@ class StoreProductCreate(BaseModel):
     is_available: bool = True
 
 
+class StoreProductUpdate(BaseModel):
+    price: Decimal | None = Field(default=None, gt=0)
+    mrp: Decimal | None = Field(default=None, gt=0)
+    stock_quantity: int | None = Field(default=None, ge=0)
+    is_available: bool | None = None
+
+
 class StoreProductRead(StoreProductCreate):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
