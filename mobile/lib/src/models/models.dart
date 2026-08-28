@@ -47,14 +47,34 @@ class StoreModel {
       );
 }
 
-class StoreProduct {
+class ProductModel {
   final String id;
   final String name;
   final String unit;
+  ProductModel({required this.id, required this.name, required this.unit});
+  factory ProductModel.fromJson(Map<String, dynamic> j) => ProductModel(id: j['id'], name: j['name'], unit: j['unit']);
+}
+
+class StoreProduct {
+  final String id;
+  final String productId;
+  final String name;
+  final String unit;
   final String price;
+  final String? mrp;
   final int stock;
-  StoreProduct({required this.id, required this.name, required this.unit, required this.price, required this.stock});
-  factory StoreProduct.fromJson(Map<String, dynamic> j) => StoreProduct(id: j['id'], name: j['product']['name'], unit: j['product']['unit'], price: j['price'].toString(), stock: j['stock_quantity'] ?? 0);
+  final bool isAvailable;
+  StoreProduct({required this.id, required this.productId, required this.name, required this.unit, required this.price, this.mrp, required this.stock, required this.isAvailable});
+  factory StoreProduct.fromJson(Map<String, dynamic> j) => StoreProduct(
+        id: j['id'],
+        productId: j['product_id'],
+        name: j['product']['name'],
+        unit: j['product']['unit'],
+        price: j['price'].toString(),
+        mrp: j['mrp']?.toString(),
+        stock: j['stock_quantity'] ?? 0,
+        isAvailable: j['is_available'] ?? false,
+      );
 }
 
 class CartItemModel {
