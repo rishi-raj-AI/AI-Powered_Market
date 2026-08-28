@@ -10,7 +10,14 @@ from app.models.commerce import Merchant, Store
 from app.models.geography import Address
 from app.models.orders import Delivery, DeliveryLocation, DeliveryStatus, Order
 from app.models.user import User, UserRole
-from app.schemas.tracking import DeliveryLocationCreate, DeliveryLocationRead, OrderTrackingRead, TrackingPoint
+from app.schemas.tracking import (
+    DeliveryLocationCreate,
+    DeliveryLocationRead,
+    OrderTrackingRead,
+    RouteRead,
+    TrackingPoint,
+)
+from app.services.maps import compute_route, maps_enabled
 
 router = APIRouter(tags=["Live Tracking"])
 ACTIVE_TRACKING_STATUSES = {DeliveryStatus.ASSIGNED, DeliveryStatus.PICKED_UP}
@@ -48,6 +55,18 @@ def _location_read(location: DeliveryLocation) -> DeliveryLocationRead:
         speed_mps=location.speed_mps,
         recorded_at=location.recorded_at,
     )
+
+
+def _tracking_context(db: Session, order_id: uuid.UUID, user: User):
+    order = db.get(Order, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    delivery = db.scalar(select(Delivery).where(Delivery.order_id == order.id))
+    if not _can_view_tracking(db, order, delivery, user):
+        raise HTTPException(status_code=403, detail="You cannot view tracking for this order")
+    store = db.get(Store, order.store_id)
+    address = db.get(Address, order.address_id)
+    return order, delivery, store, address
 
 
 @router.post("/delivery/{delivery_id}/location", response_model=DeliveryLocationRead, status_code=201)
@@ -94,15 +113,7 @@ def order_tracking(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    order = db.get(Order, order_id)
-    if order is None:
-        raise HTTPException(status_code=404, detail="Order not found")
-    delivery = db.scalar(select(Delivery).where(Delivery.order_id == order.id))
-    if not _can_view_tracking(db, order, delivery, user):
-        raise HTTPException(status_code=403, detail="You cannot view tracking for this order")
-
-    store = db.get(Store, order.store_id)
-    address = db.get(Address, order.address_id)
+    order, delivery, store, address = _tracking_context(db, order_id, user)
     active = delivery is not None and delivery.status in ACTIVE_TRACKING_STATUSES
     latest = _latest_location(db, delivery.id) if delivery is not None and active else None
     age_seconds = None
@@ -128,4 +139,49 @@ def order_tracking(
         ),
         rider=_location_read(latest) if latest else None,
         rider_location_age_seconds=age_seconds,
+    )
+
+
+@router.get("/orders/{order_id}/route", response_model=RouteRead)
+def order_route(
+    order_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    order, delivery, store, address = _tracking_context(db, order_id, user)
+    latest = None
+    if delivery is not None and delivery.status in ACTIVE_TRACKING_STATUSES:
+        latest = _latest_location(db, delivery.id)
+
+    origin = TrackingPoint(
+        latitude=latest.latitude if latest else (float(store.latitude) if store and store.latitude is not None else None),
+        longitude=latest.longitude if latest else (float(store.longitude) if store and store.longitude is not None else None),
+        label="Delivery partner" if latest else (store.name if store else "Store"),
+    )
+    destination = TrackingPoint(
+        latitude=address.latitude if address else None,
+        longitude=address.longitude if address else None,
+        label=address.landmark if address else "Delivery address",
+    )
+
+    if (
+        origin.latitude is None
+        or origin.longitude is None
+        or destination.latitude is None
+        or destination.longitude is None
+        or not maps_enabled()
+    ):
+        return RouteRead(available=False, provider="none", origin=origin, destination=destination)
+
+    result = compute_route(origin.latitude, origin.longitude, destination.latitude, destination.longitude)
+    if result is None:
+        return RouteRead(available=False, provider="google", origin=origin, destination=destination)
+    return RouteRead(
+        available=True,
+        provider="google",
+        origin=origin,
+        destination=destination,
+        distance_meters=result.distance_meters,
+        duration_seconds=result.duration_seconds,
+        encoded_polyline=result.encoded_polyline,
     )
