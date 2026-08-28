@@ -31,12 +31,12 @@ check_url(){
   fi
 }
 
+RUNNING_SERVICES="$(compose ps --status running --services 2>/dev/null || true)"
 for service in db redis api web proxy; do
-  status="$(compose ps --format json "$service" 2>/dev/null | python3 -c 'import json,sys; data=[json.loads(x) for x in sys.stdin if x.strip()]; print(data[0].get("State","") if data else "")' 2>/dev/null || true)"
-  if [[ "$status" == "running" ]]; then
+  if grep -qx "$service" <<<"$RUNNING_SERVICES"; then
     echo "OK  container:$service"
   else
-    echo "FAIL container:$service state=${status:-missing}" >&2
+    echo "FAIL container:$service not running" >&2
     FAIL=1
   fi
 done
