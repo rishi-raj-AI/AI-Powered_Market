@@ -5,7 +5,6 @@ if [[ ! -f .env.production ]]; then
   echo "Missing .env.production" >&2
   exit 1
 fi
-
 if [[ "${CONFIRM_RESTORE:-}" != "YES" ]]; then
   echo "Refusing restore. Set CONFIRM_RESTORE=YES and provide DB_BACKUP=/path/to/file.dump" >&2
   exit 1
@@ -18,10 +17,6 @@ if [[ -z "$DB_BACKUP" || ! -f "$DB_BACKUP" ]]; then
   exit 1
 fi
 
-set -a
-source .env.production
-set +a
-
 compose() {
   if docker info >/dev/null 2>&1; then
     docker compose --env-file .env.production -f docker-compose.prod.yml "$@"
@@ -29,6 +24,13 @@ compose() {
     sudo docker compose --env-file .env.production -f docker-compose.prod.yml "$@"
   fi
 }
+
+POSTGRES_USER="$(compose exec -T db printenv POSTGRES_USER | tr -d '\r')"
+POSTGRES_DB="$(compose exec -T db printenv POSTGRES_DB | tr -d '\r')"
+if [[ -z "$POSTGRES_USER" || -z "$POSTGRES_DB" ]]; then
+  echo "Could not read PostgreSQL configuration from the production database container" >&2
+  exit 1
+fi
 
 echo "Restoring database from $DB_BACKUP"
 compose exec -T db pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner < "$DB_BACKUP"
