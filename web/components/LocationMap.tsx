@@ -2,6 +2,7 @@
 
 import {useEffect,useRef,useState} from 'react';
 import {LocateFixed,MapPin} from 'lucide-react';
+import styles from './LocationMap.module.css';
 
 export type MapPoint={lat:number;lng:number;label?:string;kind?:'store'|'customer'|'rider'};
 
@@ -65,10 +66,7 @@ export function LocationMap({latitude,longitude,onChange,editable=false,height=2
     return()=>{alive=false;overlays.current.forEach(x=>{try{x.map=null}catch{}});overlays.current=[];mapRef.current=null};
   },[]);
 
-  useEffect(()=>{
-    const map=mapRef.current;if(!map||latitude===undefined||longitude===undefined)return;
-    map.panTo({lat:latitude,lng:longitude});
-  },[latitude,longitude]);
+  useEffect(()=>{const map=mapRef.current;if(!map||latitude===undefined||longitude===undefined)return;map.panTo({lat:latitude,lng:longitude})},[latitude,longitude]);
 
   useEffect(()=>{
     const map=mapRef.current;const g=(window as any).google;if(!map||!g?.maps||!mapId)return;
@@ -85,12 +83,12 @@ export function LocationMap({latitude,longitude,onChange,editable=false,height=2
     navigator.geolocation.getCurrentPosition(p=>{const lat=p.coords.latitude,lng=p.coords.longitude;mapRef.current?.panTo({lat,lng});mapRef.current?.setZoom(17);onChange?.(lat,lng);setMessage('Current location selected.');},()=>setMessage('Location permission was not granted.'),{enableHighAccuracy:true,timeout:10000,maximumAge:15000});
   }
 
-  return <div className={`locationMapShell ${className}`}>
-    <div className="locationMap" ref={root} style={{height}} aria-label={editable?'Choose exact location on map':'Location map'}>
-      {!available&&<div className="mapFallback"><MapPin size={28}/><strong>Location ready</strong><span>{latitude!==undefined&&longitude!==undefined?`${latitude.toFixed(5)}, ${longitude.toFixed(5)}`:'Choose current location or enter the landmark.'}</span></div>}
+  return <div className={`${styles.shell} ${className}`}>
+    <div className={styles.map} ref={root} style={{height}} aria-label={editable?'Choose exact location on map':'Location map'}>
+      {!available&&<div className={styles.fallback}><MapPin size={28}/><strong>Location ready</strong><span>{latitude!==undefined&&longitude!==undefined?`${latitude.toFixed(5)}, ${longitude.toFixed(5)}`:'Choose current location or enter the landmark.'}</span></div>}
     </div>
-    {editable&&available&&<div className="centerPin" aria-hidden="true"><MapPin size={34}/></div>}
-    {editable&&<div className="mapToolbar"><button type="button" className="btn secondary" onClick={locate}><LocateFixed size={15}/> Use current location</button><span className="muted small">Move the map until the pin is at the exact entrance.</span></div>}
-    {message&&<div className="muted small mapMessage">{message}</div>}
+    {editable&&available&&<div className={styles.pin} aria-hidden="true"><MapPin size={34}/></div>}
+    {editable&&<div className={styles.toolbar}><button type="button" className="btn secondary" onClick={locate}><LocateFixed size={15}/> Use current location</button><span className="muted small">Move the map until the pin is at the exact entrance.</span></div>}
+    {message&&<div className={`muted small ${styles.message}`}>{message}</div>}
   </div>;
 }
