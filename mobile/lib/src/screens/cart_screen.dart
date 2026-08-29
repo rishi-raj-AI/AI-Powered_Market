@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../api/customer_checkout_api.dart';
 import '../api/gaon_api.dart';
 import '../models/models.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
+
   @override
   State<CartScreen> createState() => _CartScreenState();
 }
@@ -16,7 +18,11 @@ class _CartScreenState extends State<CartScreen> {
   List<Village> villages = [];
   bool loading = true;
   bool locating = false;
+  bool checkoutBusy = false;
   String? error;
+  String? selectedAddressId;
+  String paymentMethod = 'cod';
+  String? checkoutAttemptKey;
 
   @override
   void initState() {
@@ -26,12 +32,21 @@ class _CartScreenState extends State<CartScreen> {
 
   Future<void> load() async {
     try {
-      final results = await Future.wait([GaonApi.cart(), GaonApi.addresses(), GaonApi.villages()]);
+      final results = await Future.wait([
+        GaonApi.cart(),
+        GaonApi.addresses(),
+        GaonApi.villages(),
+      ]);
       if (!mounted) return;
+      final loadedAddresses = results[1] as List<AddressModel>;
       setState(() {
         cart = results[0] as CartModel;
-        addresses = results[1] as List<AddressModel>;
+        addresses = loadedAddresses;
         villages = results[2] as List<Village>;
+        selectedAddressId ??= loadedAddresses.isEmpty ? null : loadedAddresses.first.id;
+        if (selectedAddressId != null && !loadedAddresses.any((a) => a.id == selectedAddressId)) {
+          selectedAddressId = loadedAddresses.isEmpty ? null : loadedAddresses.first.id;
+        }
         loading = false;
         error = null;
       });
@@ -39,15 +54,37 @@ class _CartScreenState extends State<CartScreen> {
       if (!mounted) return;
       setState(() {
         loading = false;
-        error = e.toString();
+        error = e.toString().replaceFirst('Exception: ', '');
       });
+    }
+  }
+
+  void _resetCheckoutAttempt() {
+    checkoutAttemptKey = null;
+  }
+
+  Future<void> setQuantity(CartItemModel item, int quantity) async {
+    if (quantity < 1 || quantity > item.product.stock) return;
+    try {
+      final updated = await GaonApi.addToCart(item.product.id, quantity: quantity);
+      if (!mounted) return;
+      setState(() {
+        cart = updated;
+        _resetCheckoutAttempt();
+      });
+    } catch (e) {
+      _snack(e.toString());
     }
   }
 
   Future<void> remove(String storeProductId) async {
     try {
-      cart = await GaonApi.removeCartItem(storeProductId);
-      if (mounted) setState(() {});
+      final updated = await GaonApi.removeCartItem(storeProductId);
+      if (!mounted) return;
+      setState(() {
+        cart = updated;
+        _resetCheckoutAttempt();
+      });
     } catch (e) {
       _snack(e.toString());
     }
@@ -91,7 +128,9 @@ class _CartScreenState extends State<CartScreen> {
               children: [
                 DropdownButtonFormField<String>(
                   initialValue: villageId,
-                  items: villages.map((v) => DropdownMenuItem(value: v.id, child: Text(v.name))).toList(),
+                  items: villages
+                      .map((v) => DropdownMenuItem(value: v.id, child: Text(v.name)))
+                      .toList(),
                   onChanged: (v) => setLocal(() => villageId = v ?? villageId),
                 ),
                 const SizedBox(height: 10),
@@ -127,7 +166,7 @@ class _CartScreenState extends State<CartScreen> {
 
     if (ok == true && landmark.text.trim().isNotEmpty) {
       try {
-        await GaonApi.createAddress(
+        final created = await GaonApi.createAddress(
           villageId: villageId,
           label: label.text.trim(),
           landmark: landmark.text.trim(),
@@ -135,99 +174,249 @@ class _CartScreenState extends State<CartScreen> {
           directions: directions.text.trim(),
           latitude: position?.latitude,
           longitude: position?.longitude,
+          isDefault: addresses.isEmpty,
         );
+        _resetCheckoutAttempt();
         await load();
+        if (mounted) setState(() => selectedAddressId = created.id);
       } catch (e) {
         _snack(e.toString());
       }
     }
   }
 
-  Future<void> checkout(AddressModel address, String payment) async {
+  Future<void> checkout() async {
+    final currentCart = cart;
+    final addressId = selectedAddressId;
+    if (currentCart == null || currentCart.items.isEmpty || addressId == null || checkoutBusy) return;
+
+    checkoutAttemptKey ??= 'mobile-${currentCart.id}-${DateTime.now().microsecondsSinceEpoch}';
+    setState(() => checkoutBusy = true);
     try {
-      final order = await GaonApi.checkout(address.id, payment);
+      final order = await CustomerCheckoutApi.checkout(
+        addressId: addressId,
+        paymentMethod: paymentMethod,
+        idempotencyKey: checkoutAttemptKey!,
+      );
+      checkoutAttemptKey = null;
       if (!mounted) return;
-      if (payment == 'upi') {
+
+      if (paymentMethod == 'upi') {
         final paid = await GaonApi.openRazorpayCheckout(order);
         if (!mounted) return;
-        if (!paid) {
-          _snack('Order placed, but online payment is still pending. You can retry from Orders.');
-        }
+        _snack(
+          paid
+              ? 'Order ${order.orderNumber} placed and payment confirmed.'
+              : 'Order ${order.orderNumber} is placed. Payment is still pending and can be retried from Orders.',
+        );
       } else {
         await showDialog(
           context: context,
           builder: (_) => AlertDialog(
             title: const Text('Order placed'),
-            content: Text('Order ${order.orderNumber}\nTotal ₹${order.total}\nPayment: Cash on delivery'),
-            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+            content: Text(
+              'Order ${order.orderNumber}\nTotal ₹${order.total}\nPayment: Cash on delivery',
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
+            ],
           ),
         );
       }
       await load();
     } catch (e) {
+      // Keep the same idempotency key after transport/provider uncertainty so a
+      // customer retry cannot create a duplicate order.
       _snack(e.toString());
+    } finally {
+      if (mounted) setState(() => checkoutBusy = false);
     }
   }
 
   void _snack(String text) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(text.replaceFirst('Exception: ', ''))),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     if (loading) return const Center(child: CircularProgressIndicator());
     final c = cart;
+    final selectedAddress = selectedAddressId == null
+        ? null
+        : addresses.where((a) => a.id == selectedAddressId).firstOrNull;
+
     return RefreshIndicator(
       onRefresh: load,
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text('Your cart', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
+          Text(
+            'Your cart',
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
+          ),
           if (error != null)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
             ),
           if (c == null || c.items.isEmpty)
-            const Padding(padding: EdgeInsets.all(40), child: Center(child: Text('Your cart is empty.'))),
+            const Padding(
+              padding: EdgeInsets.all(40),
+              child: Center(child: Text('Your cart is empty.')),
+            ),
           if (c != null)
             ...c.items.map(
               (item) => Card(
-                child: ListTile(
-                  title: Text(item.product.name),
-                  subtitle: Text('${item.quantity} × ₹${item.product.price}'),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: () => remove(item.product.id),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(item.product.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                            Text('₹${item.product.price} • ${item.product.unit}'),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Decrease quantity',
+                        onPressed: item.quantity > 1 ? () => setQuantity(item, item.quantity - 1) : null,
+                        icon: const Icon(Icons.remove_circle_outline),
+                      ),
+                      Text('${item.quantity}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                      IconButton(
+                        tooltip: 'Increase quantity',
+                        onPressed: item.quantity < item.product.stock
+                            ? () => setQuantity(item, item.quantity + 1)
+                            : null,
+                        icon: const Icon(Icons.add_circle_outline),
+                      ),
+                      IconButton(
+                        tooltip: 'Remove item',
+                        icon: const Icon(Icons.delete_outline),
+                        onPressed: () => remove(item.product.id),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
           if (c != null && c.items.isNotEmpty) ...[
             const SizedBox(height: 12),
-            Text('Subtotal ₹${c.subtotal}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(child: Text('Delivery address', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700))),
-                TextButton.icon(onPressed: addAddress, icon: const Icon(Icons.add), label: const Text('Add')),
-              ],
-            ),
-            if (addresses.isEmpty) const Text('Add an address before checkout.'),
-            ...addresses.map(
-              (a) => Card(
-                child: ListTile(
-                  leading: Icon(a.latitude != null ? Icons.location_on : Icons.signpost_outlined),
-                  title: Text(a.label),
-                  subtitle: Text('${a.houseDetails ?? ''} • ${a.landmark}'),
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (p) => checkout(a, p),
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(value: 'cod', child: Text('Cash on delivery')),
-                      PopupMenuItem(value: 'upi', child: Text('Pay online / UPI')),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Delivery address',
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        TextButton.icon(onPressed: addAddress, icon: const Icon(Icons.add), label: const Text('Add')),
+                      ],
+                    ),
+                    if (addresses.isEmpty)
+                      const Text('Add an address before checkout.')
+                    else
+                      DropdownButtonFormField<String>(
+                        value: selectedAddressId,
+                        decoration: const InputDecoration(labelText: 'Deliver to'),
+                        items: addresses
+                            .map(
+                              (a) => DropdownMenuItem(
+                                value: a.id,
+                                child: Text('${a.label} • ${a.landmark}', overflow: TextOverflow.ellipsis),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) => setState(() {
+                          selectedAddressId = value;
+                          _resetCheckoutAttempt();
+                        }),
+                      ),
+                    if (selectedAddress != null) ...[
+                      const SizedBox(height: 8),
+                      Text('${selectedAddress.houseDetails ?? ''} ${selectedAddress.landmark}'.trim()),
+                      if (selectedAddress.latitude == null)
+                        const Text('GPS not attached; serviceability will use village coverage.'),
                     ],
-                    child: const Chip(label: Text('Checkout')),
-                  ),
+                    const SizedBox(height: 18),
+                    Text(
+                      'Payment',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    RadioListTile<String>(
+                      contentPadding: EdgeInsets.zero,
+                      value: 'cod',
+                      groupValue: paymentMethod,
+                      title: const Text('Cash on delivery'),
+                      subtitle: const Text('Pay after verified delivery'),
+                      onChanged: (value) => setState(() {
+                        paymentMethod = value ?? 'cod';
+                        _resetCheckoutAttempt();
+                      }),
+                    ),
+                    RadioListTile<String>(
+                      contentPadding: EdgeInsets.zero,
+                      value: 'upi',
+                      groupValue: paymentMethod,
+                      title: const Text('UPI / online payment'),
+                      subtitle: const Text('Secure payment through Razorpay'),
+                      onChanged: (value) => setState(() {
+                        paymentMethod = value ?? 'upi';
+                        _resetCheckoutAttempt();
+                      }),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(child: Text('Subtotal')),
+                        Text('₹${c.subtotal}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    const Row(
+                      children: [
+                        Expanded(child: Text('Delivery fee')),
+                        Text('Calculated at checkout'),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: selectedAddressId == null || checkoutBusy ? null : checkout,
+                        icon: checkoutBusy
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.lock_outline),
+                        label: Text(checkoutBusy ? 'Placing order…' : 'Place order securely'),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
