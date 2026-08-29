@@ -91,6 +91,7 @@ def auto_assign_delivery(
         title="Delivery partner assigned",
         body=f"{rider.full_name or 'Your delivery partner'} is assigned to order {order.order_number}.",
         data={"order_id": str(order.id), "order_number": order.order_number, "delivery_id": str(delivery.id)},
+        idempotency_key=f"delivery:{delivery.id}:assigned:customer:rider:{rider.id}",
     )
     enqueue_notification(
         db,
@@ -99,6 +100,7 @@ def auto_assign_delivery(
         title="New delivery assigned",
         body=f"Order {order.order_number} is ready for pickup.",
         data={"order_id": str(order.id), "order_number": order.order_number, "delivery_id": str(delivery.id)},
+        idempotency_key=f"delivery:{delivery.id}:assigned:rider:{rider.id}",
     )
 
     db.commit()
