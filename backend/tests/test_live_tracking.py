@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -160,10 +161,27 @@ def test_customer_sees_only_active_assigned_rider_location() -> None:
         json={"status": "picked_up"},
     )
     assert picked_up.status_code == 200, picked_up.text
-    delivered = client.patch(
-        f"/api/v1/delivery/{delivery_id}/status",
+
+    challenge = client.post(
+        f"/api/v1/delivery/{delivery_id}/proof/challenge",
         headers=auth(rider_token),
-        json={"status": "delivered"},
+    )
+    assert challenge.status_code == 200, challenge.text
+    notifications = client.get("/api/v1/notifications/me", headers=auth(customer_token))
+    assert notifications.status_code == 200, notifications.text
+    otp_event = next(item for item in notifications.json() if item["event_type"] == "delivery.otp")
+    otp_match = re.search(r"\b(\d{6})\b", otp_event["body"])
+    assert otp_match is not None
+    proof = client.post(
+        f"/api/v1/delivery/{delivery_id}/proof",
+        headers=auth(rider_token),
+        json={"otp": otp_match.group(1), "recipient_name": "Tracking Customer"},
+    )
+    assert proof.status_code == 200, proof.text
+
+    delivered = client.post(
+        f"/api/v1/delivery/{delivery_id}/complete",
+        headers=auth(rider_token),
     )
     assert delivered.status_code == 200, delivered.text
 

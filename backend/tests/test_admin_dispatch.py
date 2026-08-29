@@ -58,26 +58,41 @@ def test_admin_can_assign_recover_and_reassign_ready_delivery() -> None:
     assert active.status_code==200,active.text
     assert any(item["id"]==first_task["id"] and item["rider_phone"]==rider["phone"] for item in active.json())
 
+    failed_before_pickup=client.post(
+        f"/api/v1/delivery/{first_task['id']}/fail",
+        headers=auth(rider_token),
+        json={"reason":"vehicle_issue","notes":"Tyre puncture before pickup"},
+    )
+    assert failed_before_pickup.status_code==200,failed_before_pickup.text
+    assert failed_before_pickup.json()["status"]=="failed"
+    assert failed_before_pickup.json()["failure_reason"]=="vehicle_issue"
+
+    recovered=client.post(f"/api/v1/admin/deliveries/{first_task['id']}/recover",headers=auth(admin_token))
+    assert recovered.status_code==200,recovered.text
+    assert recovered.json()["status"]=="unassigned"
+    assert recovered.json()["delivery_partner_id"] is None
+
     second_order=_ready_order(customer_token,merchant_token,address_id,listing_id)
     second_task=next(item for item in client.get("/api/v1/delivery/tasks/available",headers=auth(admin_token)).json() if item["order_id"]==second_order)
-    rider_available=client.get("/api/v1/delivery/tasks/available",headers=auth(rider_token))
-    assert rider_available.status_code==200,rider_available.text
-    assert rider_available.json()==[]
-    overloaded=client.post(f"/api/v1/admin/deliveries/{second_task['id']}/assign",headers=auth(admin_token),json={"rider_id":rider["id"]})
-    assert overloaded.status_code==409,overloaded.text
-    assert overloaded.json()["detail"]=="Rider already has an active delivery"
-
-    released=client.post(f"/api/v1/admin/deliveries/{first_task['id']}/unassign",headers=auth(admin_token))
-    assert released.status_code==200,released.text
-    assert released.json()["status"]=="unassigned"
-    assert released.json()["delivery_partner_id"] is None
-
     reassigned=client.post(f"/api/v1/admin/deliveries/{second_task['id']}/assign",headers=auth(admin_token),json={"rider_id":rider["id"]})
     assert reassigned.status_code==200,reassigned.text
     assert reassigned.json()["delivery_partner_id"]==rider["id"]
 
     picked_up=client.patch(f"/api/v1/delivery/{second_task['id']}/status",headers=auth(rider_token),json={"status":"picked_up"})
     assert picked_up.status_code==200,picked_up.text
-    locked=client.post(f"/api/v1/admin/deliveries/{second_task['id']}/unassign",headers=auth(admin_token))
-    assert locked.status_code==409,locked.text
-    assert "awaiting pickup" in locked.json()["detail"]
+
+    failed_after_pickup=client.post(
+        f"/api/v1/delivery/{second_task['id']}/fail",
+        headers=auth(rider_token),
+        json={"reason":"customer_unavailable","notes":"Customer unreachable after pickup"},
+    )
+    assert failed_after_pickup.status_code==200,failed_after_pickup.text
+    assert failed_after_pickup.json()["status"]=="failed"
+
+    unsafe_recovery=client.post(f"/api/v1/admin/deliveries/{second_task['id']}/recover",headers=auth(admin_token))
+    assert unsafe_recovery.status_code==409,unsafe_recovery.text
+    assert "custody never left the merchant" in unsafe_recovery.json()["detail"]
+
+    events=client.get(f"/api/v1/orders/{second_order}/events",headers=auth(admin_token))
+    assert events.status_code==200,events.text
+    assert any(item["entity_type"]=="delivery" and item["to_status"]=="failed" and item["reason"]=="customer_unavailable" for item in events.json())

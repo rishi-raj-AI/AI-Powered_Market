@@ -115,7 +115,7 @@ def admin_assign_delivery(
     delivery = db.scalar(select(Delivery).where(Delivery.id == delivery_id).with_for_update())
     if delivery is None:
         raise HTTPException(status_code=404, detail="Delivery not found")
-    order = db.get(Order, delivery.order_id)
+    order = db.scalar(select(Order).where(Order.id == delivery.order_id).with_for_update())
     if delivery.status != DeliveryStatus.UNASSIGNED or order is None or order.status != OrderStatus.READY:
         raise HTTPException(status_code=409, detail="Delivery is no longer available for assignment")
     rider = db.get(User, payload.rider_id)
@@ -135,7 +135,6 @@ def admin_assign_delivery(
     delivery.delivery_partner_id = rider.id
     delivery.status = DeliveryStatus.ASSIGNED
     delivery.assigned_at = datetime.now(timezone.utc)
-    order.status = OrderStatus.OUT_FOR_DELIVERY
     enqueue_notification(db,user_id=order.user_id,event_type="delivery.assigned",title="Delivery partner assigned",body=f"{rider.full_name or 'Your delivery partner'} is assigned to order {order.order_number}.",data={"order_id":str(order.id),"order_number":order.order_number,"delivery_id":str(delivery.id)})
     enqueue_notification(db,user_id=rider.id,event_type="delivery.task_assigned",title="New delivery assigned",body=f"Order {order.order_number} is ready for pickup.",data={"order_id":str(order.id),"order_number":order.order_number,"delivery_id":str(delivery.id)})
     db.commit()
@@ -154,14 +153,15 @@ def admin_unassign_delivery(
         raise HTTPException(status_code=404, detail="Delivery not found")
     if delivery.status != DeliveryStatus.ASSIGNED:
         raise HTTPException(status_code=409, detail="Only a delivery awaiting pickup can be unassigned")
-    order = db.get(Order, delivery.order_id)
+    order = db.scalar(select(Order).where(Order.id == delivery.order_id).with_for_update())
     if order is None:
         raise HTTPException(status_code=409, detail="Delivery order is missing")
+    if order.status != OrderStatus.READY:
+        raise HTTPException(status_code=409, detail="Only a ready order can be reassigned before pickup")
     rider_id = delivery.delivery_partner_id
     delivery.delivery_partner_id = None
     delivery.status = DeliveryStatus.UNASSIGNED
     delivery.assigned_at = None
-    order.status = OrderStatus.READY
     if rider_id:
         enqueue_notification(db,user_id=rider_id,event_type="delivery.task_unassigned",title="Delivery reassigned",body=f"Order {order.order_number} is no longer assigned to you.",data={"order_id":str(order.id),"order_number":order.order_number,"delivery_id":str(delivery.id)})
     enqueue_notification(db,user_id=order.user_id,event_type="delivery.reassignment",title="Delivery partner is being reassigned",body=f"We are assigning another delivery partner to order {order.order_number}.",data={"order_id":str(order.id),"order_number":order.order_number,"delivery_id":str(delivery.id)})

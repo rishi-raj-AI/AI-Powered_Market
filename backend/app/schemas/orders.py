@@ -1,8 +1,9 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.orders import DeliveryStatus, OrderStatus, PaymentMethod, PaymentStatus
 from app.schemas.commerce import StoreProductRead
@@ -68,6 +69,8 @@ class DeliverySummaryRead(BaseModel):
     assigned_at: datetime | None
     picked_up_at: datetime | None
     delivered_at: datetime | None
+    failed_at: datetime | None = None
+    failure_reason: str | None = None
 
 
 class OrderDetailRead(OrderRead):
@@ -96,6 +99,10 @@ class DeliveryRead(BaseModel):
     assigned_at: datetime | None
     picked_up_at: datetime | None
     delivered_at: datetime | None
+    failed_at: datetime | None = None
+    failure_reason: str | None = None
+    failure_notes: str | None = None
+    failure_evidence_url: str | None = None
     updated_at: datetime
 
 
@@ -123,3 +130,66 @@ class DeliveryTaskRead(BaseModel):
 
 class DeliveryStatusUpdate(BaseModel):
     status: DeliveryStatus
+
+    @field_validator("status")
+    @classmethod
+    def require_controlled_terminal_endpoints(cls, value: DeliveryStatus) -> DeliveryStatus:
+        if value in {DeliveryStatus.DELIVERED, DeliveryStatus.FAILED}:
+            raise ValueError("Use the controlled delivery completion or failure endpoint")
+        return value
+
+
+DeliveryFailureReason = Literal[
+    "customer_unavailable",
+    "address_not_found",
+    "vehicle_issue",
+    "merchant_issue",
+    "unsafe_condition",
+    "other",
+]
+
+
+class DeliveryFailureRequest(BaseModel):
+    reason: DeliveryFailureReason
+    notes: str | None = Field(default=None, max_length=500)
+    evidence_url: str | None = Field(default=None, max_length=500)
+
+
+class DeliveryProofChallengeRead(BaseModel):
+    delivery_id: uuid.UUID
+    expires_at: datetime
+
+
+class DeliveryProofSubmit(BaseModel):
+    otp: str = Field(pattern=r"^\d{6}$")
+    evidence_url: str | None = Field(default=None, max_length=500)
+    recipient_name: str | None = Field(default=None, max_length=160)
+    notes: str | None = Field(default=None, max_length=500)
+
+
+class DeliveryProofRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    delivery_id: uuid.UUID
+    otp_expires_at: datetime
+    verified_at: datetime | None
+    evidence_url: str | None
+    recipient_name: str | None
+    notes: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class StatusTransitionEventRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    entity_type: str
+    entity_id: uuid.UUID
+    order_id: uuid.UUID | None
+    delivery_id: uuid.UUID | None
+    actor_user_id: uuid.UUID | None
+    from_status: str
+    to_status: str
+    reason: str | None
+    event_metadata: dict
+    created_at: datetime
