@@ -4,8 +4,10 @@ from collections.abc import Generator
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.core.request_context import actor_user_id_var, request_id
 from app.core.security import decode_access_token
 from app.db.session import SessionLocal
 from app.models.user import User, UserRole
@@ -16,6 +18,9 @@ bearer_scheme = HTTPBearer(auto_error=False)
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
+        correlation_id = request_id()
+        if correlation_id:
+            db.execute(text("SELECT set_config('gaonone.request_id', :value, true)"), {"value": correlation_id})
         yield db
     finally:
         db.close()
@@ -37,6 +42,9 @@ def get_current_user(
     user = db.get(User, user_id)
     if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not available")
+
+    actor_user_id_var.set(str(user.id))
+    db.execute(text("SELECT set_config('gaonone.actor_user_id', :value, true)"), {"value": str(user.id)})
     return user
 
 
