@@ -62,12 +62,15 @@ class CartItem(Base):
 
 class Order(Base):
     __tablename__ = "orders"
+    __table_args__ = (UniqueConstraint("user_id", "idempotency_key", name="uq_orders_user_idempotency_key"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     order_number: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     store_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stores.id"), nullable=False, index=True)
     address_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("addresses.id"), nullable=False)
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), index=True)
+    stock_restored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[OrderStatus] = mapped_column(Enum(OrderStatus, name="order_status", values_callable=lambda e: [x.value for x in e]), default=OrderStatus.PLACED, server_default="placed", nullable=False)
     payment_method: Mapped[PaymentMethod] = mapped_column(Enum(PaymentMethod, name="payment_method", values_callable=lambda e: [x.value for x in e]), nullable=False)
     payment_status: Mapped[PaymentStatus] = mapped_column(Enum(PaymentStatus, name="payment_status", values_callable=lambda e: [x.value for x in e]), default=PaymentStatus.PENDING, server_default="pending", nullable=False)
@@ -143,12 +146,8 @@ class DeliveryLocation(Base):
     __tablename__ = "delivery_locations"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    delivery_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("deliveries.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    delivery_partner_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
-    )
+    delivery_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("deliveries.id", ondelete="CASCADE"), nullable=False, index=True)
+    delivery_partner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     latitude: Mapped[float] = mapped_column(Float, nullable=False)
     longitude: Mapped[float] = mapped_column(Float, nullable=False)
     accuracy_m: Mapped[float | None] = mapped_column(Float)
