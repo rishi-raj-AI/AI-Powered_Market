@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1.routes.admin import router as admin_router
 from app.api.v1.routes.auth import router as auth_router
+from app.api.v1.routes.checkout import router as checkout_router
 from app.api.v1.routes.commerce import router as commerce_router
 from app.api.v1.routes.delivery_operations import router as delivery_operations_router
 from app.api.v1.routes.delivery_tasks import router as delivery_tasks_router
@@ -21,6 +22,9 @@ api_router.include_router(users_router)
 api_router.include_router(geography_router)
 api_router.include_router(commerce_router)
 api_router.include_router(delivery_tasks_router)
+# Register the concurrency-safe checkout before the legacy orders router so
+# POST /orders/checkout is handled by the hardened transaction path.
+api_router.include_router(checkout_router)
 api_router.include_router(orders_router)
 api_router.include_router(delivery_operations_router)
 api_router.include_router(tracking_router)
