@@ -36,12 +36,7 @@ def serviceability_for_point(db: Session, latitude: float, longitude: float) -> 
     return dict(row) if row else None
 
 
-def point_is_in_service_area(
-    db: Session,
-    service_area_id: uuid.UUID,
-    latitude: float,
-    longitude: float,
-) -> bool:
+def point_is_in_service_area(db: Session, service_area_id: uuid.UUID, latitude: float, longitude: float) -> bool:
     return bool(
         db.scalar(
             text(
@@ -63,31 +58,20 @@ def point_is_in_service_area(
                 )
                 """
             ),
-            {
-                "service_area_id": service_area_id,
-                "latitude": latitude,
-                "longitude": longitude,
-            },
+            {"service_area_id": service_area_id, "latitude": latitude, "longitude": longitude},
         )
     )
 
 
-def nearby_store_distances(
-    db: Session,
-    latitude: float,
-    longitude: float,
-    radius_km: float,
-    delivery: bool | None = None,
-) -> list[tuple[uuid.UUID, float]]:
+def nearby_store_distances(db: Session, latitude: float, longitude: float, radius_km: float, delivery: bool | None = None) -> list[tuple[uuid.UUID, float]]:
     rows = db.execute(
         text(
             """
-            SELECT
-                s.id,
-                ST_Distance(
-                    ST_SetSRID(ST_MakePoint(s.longitude::double precision, s.latitude::double precision), 4326)::geography,
-                    ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography
-                ) / 1000.0 AS distance_km
+            SELECT s.id,
+                   ST_Distance(
+                       ST_SetSRID(ST_MakePoint(s.longitude::double precision, s.latitude::double precision), 4326)::geography,
+                       ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography
+                   ) / 1000.0 AS distance_km
             FROM stores s
             JOIN merchants m ON m.id = s.merchant_id
             WHERE s.is_active = true
@@ -105,31 +89,115 @@ def nearby_store_distances(
                 <-> ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography
             """
         ),
-        {
-            "latitude": latitude,
-            "longitude": longitude,
-            "radius_m": radius_km * 1000.0,
-            "delivery": delivery,
-        },
+        {"latitude": latitude, "longitude": longitude, "radius_m": radius_km * 1000.0, "delivery": delivery},
     ).all()
     return [(row[0], float(row[1])) for row in rows]
 
 
-def nearest_eligible_rider(
+def best_eligible_rider(
     db: Session,
+    *,
+    store_id: uuid.UUID,
     store_latitude: float,
     store_longitude: float,
     max_radius_km: float,
-) -> tuple[uuid.UUID, float] | None:
+    allow_batch: bool = False,
+) -> tuple[uuid.UUID, float, int, float] | None:
     row = db.execute(
         text(
             """
+            WITH candidates AS (
+                SELECT
+                    u.id,
+                    ST_Distance(
+                        ST_SetSRID(ST_MakePoint(rp.longitude::double precision, rp.latitude::double precision), 4326)::geography,
+                        ST_SetSRID(ST_MakePoint(:store_longitude, :store_latitude), 4326)::geography
+                    ) / 1000.0 AS distance_km,
+                    EXTRACT(EPOCH FROM (NOW() - rp.last_seen_at)) AS freshness_seconds,
+                    (
+                        SELECT COUNT(*)
+                        FROM deliveries d
+                        WHERE d.delivery_partner_id = u.id
+                          AND d.status IN ('assigned', 'picked_up')
+                    ) AS active_tasks
+                FROM users u
+                JOIN rider_presences rp ON rp.rider_id = u.id
+                WHERE u.role = 'delivery'
+                  AND u.is_active = true
+                  AND u.is_verified = true
+                  AND rp.is_online = true
+                  AND rp.last_seen_at >= NOW() - INTERVAL '5 minutes'
+                  AND ST_DWithin(
+                      ST_SetSRID(ST_MakePoint(rp.longitude::double precision, rp.latitude::double precision), 4326)::geography,
+                      ST_SetSRID(ST_MakePoint(:store_longitude, :store_latitude), 4326)::geography,
+                      :radius_m
+                  )
+                  AND (
+                      (
+                          :allow_batch = false
+                          AND NOT EXISTS (
+                              SELECT 1 FROM deliveries d
+                              WHERE d.delivery_partner_id = u.id
+                                AND d.status IN ('assigned', 'picked_up')
+                          )
+                      )
+                      OR
+                      (
+                          :allow_batch = true
+                          AND NOT EXISTS (
+                              SELECT 1 FROM deliveries d
+                              WHERE d.delivery_partner_id = u.id
+                                AND d.status = 'picked_up'
+                          )
+                          AND (
+                              SELECT COUNT(*) FROM deliveries d
+                              WHERE d.delivery_partner_id = u.id
+                                AND d.status = 'assigned'
+                          ) < 2
+                          AND NOT EXISTS (
+                              SELECT 1
+                              FROM deliveries d
+                              JOIN orders o ON o.id = d.order_id
+                              WHERE d.delivery_partner_id = u.id
+                                AND d.status = 'assigned'
+                                AND o.store_id <> :store_id
+                          )
+                      )
+                  )
+                FOR UPDATE OF u SKIP LOCKED
+            )
             SELECT
-                u.id,
-                ST_Distance(
-                    ST_SetSRID(ST_MakePoint(rp.longitude::double precision, rp.latitude::double precision), 4326)::geography,
-                    ST_SetSRID(ST_MakePoint(:store_longitude, :store_latitude), 4326)::geography
-                ) / 1000.0 AS distance_km
+                id,
+                distance_km,
+                active_tasks,
+                distance_km + (active_tasks * 2.0) + LEAST(freshness_seconds / 300.0, 1.0) AS score
+            FROM candidates
+            ORDER BY score ASC, distance_km ASC, id ASC
+            LIMIT 1
+            """
+        ),
+        {
+            "store_id": store_id,
+            "store_latitude": store_latitude,
+            "store_longitude": store_longitude,
+            "radius_m": max_radius_km * 1000.0,
+            "allow_batch": allow_batch,
+        },
+    ).first()
+    if row is None:
+        return None
+    return row[0], float(row[1]), int(row[2]), float(row[3])
+
+
+def nearest_eligible_rider(db: Session, store_latitude: float, store_longitude: float, max_radius_km: float) -> tuple[uuid.UUID, float] | None:
+    row = db.execute(
+        text(
+            """
+            SELECT u.id,
+                   ST_Distance(
+                       ST_SetSRID(ST_MakePoint(rp.longitude::double precision, rp.latitude::double precision), 4326)::geography,
+                       ST_SetSRID(ST_MakePoint(:store_longitude, :store_latitude), 4326)::geography
+                   ) / 1000.0 AS distance_km
             FROM users u
             JOIN rider_presences rp ON rp.rider_id = u.id
             WHERE u.role = 'delivery'
@@ -143,8 +211,7 @@ def nearest_eligible_rider(
                   :radius_m
               )
               AND NOT EXISTS (
-                  SELECT 1
-                  FROM deliveries d
+                  SELECT 1 FROM deliveries d
                   WHERE d.delivery_partner_id = u.id
                     AND d.status IN ('assigned', 'picked_up')
               )
@@ -155,12 +222,6 @@ def nearest_eligible_rider(
             LIMIT 1
             """
         ),
-        {
-            "store_latitude": store_latitude,
-            "store_longitude": store_longitude,
-            "radius_m": max_radius_km * 1000.0,
-        },
+        {"store_latitude": store_latitude, "store_longitude": store_longitude, "radius_m": max_radius_km * 1000.0},
     ).first()
-    if row is None:
-        return None
-    return row[0], float(row[1])
+    return None if row is None else (row[0], float(row[1]))
