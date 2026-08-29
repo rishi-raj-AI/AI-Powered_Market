@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from decimal import Decimal
 import uuid
 
@@ -11,6 +12,7 @@ from app.models.commerce import Merchant, MerchantStatus, Store, StoreProduct
 from app.models.geography import Village
 from app.models.orders import Delivery, DeliveryStatus, Order, OrderStatus, PaymentStatus
 from app.models.user import User, UserRole
+from app.services.notifications import enqueue_notification
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -18,6 +20,10 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
 class UserRoleUpdate(BaseModel):
     role: UserRole
     is_active: bool = True
+
+
+class DeliveryAssignRequest(BaseModel):
+    rider_id: uuid.UUID
 
 
 def _user_payload(user: User) -> dict:
@@ -68,6 +74,57 @@ def admin_update_user(
     db.commit()
     db.refresh(user)
     return _user_payload(user)
+
+
+@router.post("/deliveries/{delivery_id}/assign")
+def admin_assign_delivery(
+    delivery_id: uuid.UUID,
+    payload: DeliveryAssignRequest,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(UserRole.ADMIN)),
+):
+    delivery = db.scalar(select(Delivery).where(Delivery.id == delivery_id).with_for_update())
+    if delivery is None:
+        raise HTTPException(status_code=404, detail="Delivery not found")
+    order = db.get(Order, delivery.order_id)
+    if delivery.status != DeliveryStatus.UNASSIGNED or order is None or order.status != OrderStatus.READY:
+        raise HTTPException(status_code=409, detail="Delivery is no longer available for assignment")
+
+    rider = db.get(User, payload.rider_id)
+    if rider is None or rider.role != UserRole.DELIVERY or not rider.is_active or not rider.is_verified:
+        raise HTTPException(status_code=422, detail="Select an active verified delivery partner")
+
+    now = datetime.now(timezone.utc)
+    delivery.delivery_partner_id = rider.id
+    delivery.status = DeliveryStatus.ASSIGNED
+    delivery.assigned_at = now
+    order.status = OrderStatus.OUT_FOR_DELIVERY
+
+    enqueue_notification(
+        db,
+        user_id=order.user_id,
+        event_type="delivery.assigned",
+        title="Delivery partner assigned",
+        body=f"{rider.full_name or 'Your delivery partner'} is assigned to order {order.order_number}.",
+        data={"order_id": str(order.id), "order_number": order.order_number, "delivery_id": str(delivery.id)},
+    )
+    enqueue_notification(
+        db,
+        user_id=rider.id,
+        event_type="delivery.task_assigned",
+        title="New delivery assigned",
+        body=f"Order {order.order_number} is ready for pickup.",
+        data={"order_id": str(order.id), "order_number": order.order_number, "delivery_id": str(delivery.id)},
+    )
+    db.commit()
+    db.refresh(delivery)
+    return {
+        "id": str(delivery.id),
+        "order_id": str(delivery.order_id),
+        "delivery_partner_id": str(delivery.delivery_partner_id),
+        "status": delivery.status.value,
+        "assigned_at": delivery.assigned_at,
+    }
 
 
 @router.get("/overview")
