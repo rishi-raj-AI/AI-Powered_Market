@@ -1,4 +1,4 @@
-name: Production Deploy
+name: Staging Deploy
 
 on:
   push:
@@ -6,12 +6,12 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: Commit SHA to deploy (defaults to current main)
+        description: Commit SHA to deploy to staging (defaults to current main)
         required: false
         type: string
 
 concurrency:
-  group: gaonone-production
+  group: gaonone-staging
   cancel-in-progress: true
 
 permissions:
@@ -76,12 +76,13 @@ jobs:
 
   deploy:
     needs: verify-green-main
+    # Keep the existing runner label until the server runner is deliberately re-registered.
     runs-on: [self-hosted, linux, gaonone-production]
     timeout-minutes: 30
     environment:
-      name: production
+      name: staging
     steps:
-      - name: Sync audited release bootstrap
+      - name: Sync audited staging release bootstrap
         env:
           GAONONE_EXPECTED_SHA: ${{ needs.verify-green-main.outputs.sha }}
         run: |
@@ -90,7 +91,7 @@ jobs:
           cd "$ROOT"
           git config core.filemode false
           if ! git diff --quiet --ignore-submodules -- || ! git diff --cached --quiet --ignore-submodules --; then
-            echo "Tracked production checkout has local content changes; refusing bootstrap sync." >&2
+            echo "Tracked staging checkout has local content changes; refusing bootstrap sync." >&2
             git status --short --untracked-files=no
             exit 1
           fi
@@ -104,7 +105,8 @@ jobs:
           git reset --hard "$GAONONE_EXPECTED_SHA"
           chmod 0755 deploy/release.sh
 
-      - name: Deploy audited green commit
+      - name: Deploy audited green commit to staging
         env:
           GAONONE_EXPECTED_SHA: ${{ needs.verify-green-main.outputs.sha }}
-        run: sudo /home/ubuntu/gaonone/deploy/release.sh
+          GAONONE_ENVIRONMENT: staging
+        run: sudo -E /home/ubuntu/gaonone/deploy/release.sh
