@@ -6,9 +6,20 @@ if [[ ! -f .env.production ]]; then
   exit 1
 fi
 
-set -a
-source .env.production
-set +a
+# Docker Compose env files are not shell scripts. Resolve only the values needed
+# by smoke checks through Compose so spaces/special characters cannot be executed.
+COMPOSE_ENV="$(docker compose --env-file .env.production -f docker-compose.prod.yml config --environment 2>/dev/null)"
+env_value() {
+  local key="$1"
+  awk -F= -v k="$key" '$1==k {sub(/^[^=]*=/,""); print; exit}' <<<"$COMPOSE_ENV"
+}
+
+DOMAIN="$(env_value DOMAIN)"
+if [[ -z "$DOMAIN" ]]; then
+  DOMAIN="gaonone.in"
+fi
+PILOT_VILLAGE_LATITUDE="$(env_value PILOT_VILLAGE_LATITUDE)"
+PILOT_VILLAGE_LONGITUDE="$(env_value PILOT_VILLAGE_LONGITUDE)"
 
 BASE="https://${DOMAIN}"
 
@@ -24,7 +35,7 @@ secret_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --m
 root_post_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 -X POST "${BASE}/")"
 [[ "$root_post_status" == "405" ]] || { echo "Expected POST / to return 405, got $root_post_status" >&2; exit 1; }
 
-if [[ -n "${PILOT_VILLAGE_LATITUDE:-}" && -n "${PILOT_VILLAGE_LONGITUDE:-}" ]]; then
+if [[ -n "$PILOT_VILLAGE_LATITUDE" && -n "$PILOT_VILLAGE_LONGITUDE" ]]; then
   serviceability="$(curl --fail --silent --show-error --max-time 15 \
     "${BASE}/api/v1/location/serviceability?latitude=${PILOT_VILLAGE_LATITUDE}&longitude=${PILOT_VILLAGE_LONGITUDE}")"
   python3 - "$serviceability" <<'PY'
