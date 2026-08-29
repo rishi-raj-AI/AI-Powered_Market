@@ -5,26 +5,45 @@ import {LocateFixed,Radio,RadioTower} from 'lucide-react';
 import {getToken} from '@/lib/api';
 
 const API=process.env.NEXT_PUBLIC_API_URL||'http://localhost:8000/api/v1';
+const SEND_INTERVAL_MS=8000;
+const STALE_POSITION_MS=30000;
 
 export function RiderLocationSharing({deliveryId,active}:{deliveryId:string;active:boolean}){
   const[sharing,setSharing]=useState(false);
   const[message,setMessage]=useState(active?'Location sharing is off.':'Location sharing stopped.');
   const watchRef=useRef<number|null>(null);
   const lastSentRef=useRef(0);
+  const latestRef=useRef<GeolocationPosition|null>(null);
+  const sendingRef=useRef(false);
+  const mountedRef=useRef(true);
 
-  function stop(){
-    if(watchRef.current!==null&&navigator.geolocation){navigator.geolocation.clearWatch(watchRef.current);watchRef.current=null}
-    setSharing(false);
+  function clearWatch(){
+    if(watchRef.current!==null&&typeof navigator!=='undefined'&&navigator.geolocation){navigator.geolocation.clearWatch(watchRef.current);watchRef.current=null}
   }
 
-  useEffect(()=>{if(!active)stop();return()=>stop()},[active]);
+  function stop(){
+    clearWatch();latestRef.current=null;
+    if(mountedRef.current){setSharing(false);setMessage(active?'Location sharing is off.':'Location sharing stopped.')}
+  }
 
-  async function send(position:GeolocationPosition){
+  useEffect(()=>{
+    mountedRef.current=true;
+    if(!active)stop();
+    const online=()=>{if(watchRef.current!==null&&latestRef.current){lastSentRef.current=0;void send(latestRef.current,true)}};
+    window.addEventListener('online',online);
+    return()=>{mountedRef.current=false;window.removeEventListener('online',online);clearWatch()};
+  },[active,deliveryId]);
+
+  async function send(position:GeolocationPosition,force=false){
+    latestRef.current=position;
     const now=Date.now();
-    if(now-lastSentRef.current<8000)return;
-    lastSentRef.current=now;
+    if(now-position.timestamp>STALE_POSITION_MS){if(mountedRef.current)setMessage('Waiting for a fresh GPS fix…');return}
+    if(!force&&now-lastSentRef.current<SEND_INTERVAL_MS)return;
+    if(sendingRef.current)return;
+    if(typeof navigator!=='undefined'&&!navigator.onLine){if(mountedRef.current)setMessage('Offline • GPS sharing will resume when the connection returns.');return}
     const token=getToken();if(!token)return;
     const c=position.coords;
+    sendingRef.current=true;
     try{
       const response=await fetch(`${API}/delivery/${deliveryId}/location`,{
         method:'POST',
@@ -38,9 +57,13 @@ export function RiderLocationSharing({deliveryId,active}:{deliveryId:string;acti
           recorded_at:new Date(position.timestamp).toISOString(),
         }),
       });
+      if(response.status===429){if(mountedRef.current)setMessage('Sharing live • update cadence protected');return}
       if(!response.ok){const body=await response.json().catch(()=>null);throw new Error(body?.detail||`Location update failed (${response.status})`)}
-      setMessage(`Sharing live • accuracy ≈ ${Math.round(c.accuracy)} m`);
-    }catch(e:any){setMessage(e.message||'Unable to share location.')}
+      lastSentRef.current=now;
+      if(mountedRef.current)setMessage(`Sharing live • accuracy ≈ ${Math.round(c.accuracy)} m`);
+    }catch(e:any){
+      if(mountedRef.current)setMessage(typeof navigator!=='undefined'&&!navigator.onLine?'Offline • GPS sharing will resume automatically.':e.message||'Unable to share location. Retrying with the next GPS fix.');
+    }finally{s endingRef.current=false}
   }
 
   function start(){
@@ -49,8 +72,8 @@ export function RiderLocationSharing({deliveryId,active}:{deliveryId:string;acti
     if(watchRef.current!==null)return;
     setMessage('Requesting location permission…');
     watchRef.current=navigator.geolocation.watchPosition(
-      position=>{setSharing(true);void send(position)},
-      error=>{stop();setMessage(error.code===1?'Location permission denied. Enable it to share live delivery progress.':error.message)},
+      position=>{latestRef.current=position;setSharing(true);void send(position)},
+      error=>{clearWatch();setSharing(false);setMessage(error.code===1?'Location permission denied. Enable it to share live delivery progress.':error.code===3?'GPS timed out. Try again where location signal is available.':error.message)},
       {enableHighAccuracy:true,maximumAge:5000,timeout:15000},
     );
   }
