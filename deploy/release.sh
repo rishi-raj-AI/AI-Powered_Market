@@ -4,30 +4,38 @@ set -euo pipefail
 ROOT_DIR="${GAONONE_ROOT:-/home/ubuntu/gaonone}"
 BRANCH="${GAONONE_DEPLOY_BRANCH:-main}"
 EXPECTED_SHA="${GAONONE_EXPECTED_SHA:-}"
-LOCK_FILE="${GAONONE_DEPLOY_LOCK:-/tmp/gaonone-production-deploy.lock}"
+ENVIRONMENT="${GAONONE_ENVIRONMENT:-staging}"
+LOCK_FILE="${GAONONE_DEPLOY_LOCK:-/tmp/gaonone-${ENVIRONMENT}-deploy.lock}"
 
 cd "$ROOT_DIR"
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
-  echo "Another GaonOne production deployment is already running." >&2
+  echo "Another GaonOne ${ENVIRONMENT} deployment is already running." >&2
   exit 1
 fi
 
+# Keep the production-grade Compose/env contract on the current server while the
+# server itself is used as staging. Renaming these files would require a separate
+# server migration and is intentionally deferred.
 if [[ ! -f .env.production ]]; then
   echo "Missing $ROOT_DIR/.env.production" >&2
   exit 1
 fi
 
-# Production setup scripts may be chmod'd locally during bootstrap. Ignore file-mode
-# metadata while still refusing any tracked content/index changes.
 git config core.filemode false
 if ! git diff --quiet --ignore-submodules -- || ! git diff --cached --quiet --ignore-submodules --; then
-  echo "Tracked production checkout has local content changes; refusing automated deployment." >&2
+  echo "Tracked ${ENVIRONMENT} checkout has local content changes; refusing automated deployment." >&2
   git status --short --untracked-files=no
   exit 1
 fi
 
-echo "=== Pre-deploy backup ==="
+PREVIOUS_SHA=""
+if [[ -f .deployed-sha ]]; then
+  PREVIOUS_SHA="$(tr -d '[:space:]' < .deployed-sha)"
+fi
+printf '%s\n' "$PREVIOUS_SHA" > .previous-deployed-sha
+
+echo "=== Pre-deploy backup (${ENVIRONMENT}) ==="
 bash deploy/backup.sh
 
 echo "=== Sync $BRANCH ==="
@@ -40,7 +48,7 @@ fi
 
 git checkout "$BRANCH"
 git reset --hard "$TARGET_SHA"
-echo "Deploying $(git log -1 --oneline)"
+echo "Deploying $(git log -1 --oneline) to ${ENVIRONMENT}"
 
 make prod-check
 
@@ -62,4 +70,4 @@ bash deploy/smoke.sh
 bash deploy/monitor.sh
 
 printf '%s\n' "$TARGET_SHA" > .deployed-sha
-printf 'GaonOne production deployment passed: %s\n' "$TARGET_SHA"
+printf 'GaonOne %s deployment passed: %s\n' "$ENVIRONMENT" "$TARGET_SHA"
