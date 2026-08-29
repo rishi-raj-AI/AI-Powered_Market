@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../api/gaon_api.dart';
 import '../models/models.dart';
+import '../widgets/customer_live_tracking.dart';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
@@ -69,8 +70,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
         context: context,
         isScrollControlled: true,
         builder: (sheetContext) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
+          child: SingleChildScrollView(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 20,
+              bottom: 20 + MediaQuery.of(sheetContext).viewInsets.bottom,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -87,6 +93,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 const Divider(),
                 Text('Deliver to: ${detail['house_details'] ?? ''} ${detail['customer_landmark'] ?? ''}'),
                 if (detail['customer_directions'] != null) Text('Directions: ${detail['customer_directions']}'),
+                if (order.status == 'out_for_delivery' || order.status == 'delivered') ...[
+                  const SizedBox(height: 12),
+                  CustomerLiveTracking(orderId: order.id),
+                ],
                 const SizedBox(height: 10),
                 Align(alignment: Alignment.centerRight, child: Text('Total ₹${order.total}', style: const TextStyle(fontWeight: FontWeight.w800))),
               ],
