@@ -10,6 +10,7 @@ from app.models.user import User, UserRole
 from app.schemas.orders import DeliveryTaskRead
 
 router = APIRouter(prefix="/delivery/tasks", tags=["Delivery Tasks"])
+ACTIVE_DELIVERY_STATUSES = {DeliveryStatus.ASSIGNED, DeliveryStatus.PICKED_UP}
 
 
 def _task(db: Session, delivery: Delivery) -> DeliveryTaskRead | None:
@@ -46,8 +47,19 @@ def _task(db: Session, delivery: Delivery) -> DeliveryTaskRead | None:
 @router.get("/available", response_model=list[DeliveryTaskRead])
 def available_tasks(
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.DELIVERY, UserRole.ADMIN)),
+    user: User = Depends(require_roles(UserRole.DELIVERY, UserRole.ADMIN)),
 ):
+    if user.role == UserRole.DELIVERY:
+        active = db.scalar(
+            select(Delivery.id)
+            .where(
+                Delivery.delivery_partner_id == user.id,
+                Delivery.status.in_(ACTIVE_DELIVERY_STATUSES),
+            )
+            .limit(1)
+        )
+        if active is not None:
+            return []
     deliveries = db.scalars(
         select(Delivery)
         .join(Order, Delivery.order_id == Order.id)
