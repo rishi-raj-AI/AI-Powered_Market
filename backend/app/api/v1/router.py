@@ -14,6 +14,7 @@ from app.api.v1.routes.notifications import router as notifications_router
 from app.api.v1.routes.order_mutations import router as order_mutations_router
 from app.api.v1.routes.orders import router as orders_router
 from app.api.v1.routes.payments import router as payments_router
+from app.api.v1.routes.store_discovery import router as store_discovery_router
 from app.api.v1.routes.tracking import router as tracking_router
 from app.api.v1.routes.users import router as users_router
 
@@ -22,6 +23,9 @@ api_router.include_router(health_router)
 api_router.include_router(auth_router)
 api_router.include_router(users_router)
 api_router.include_router(geography_router)
+# Register indexed PostGIS discovery before the legacy commerce route with the
+# same public path, preserving API compatibility while replacing its runtime path.
+api_router.include_router(store_discovery_router)
 api_router.include_router(commerce_router)
 api_router.include_router(delivery_tasks_router)
 # Hardened mutation routes are registered before the legacy orders router so
