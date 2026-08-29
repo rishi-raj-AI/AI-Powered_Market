@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.routes.admin import router as admin_router
+from app.api.v1.routes.ai_assist import router as ai_assist_router
 from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.checkout import router as checkout_router
 from app.api.v1.routes.commerce import router as commerce_router
@@ -48,4 +49,5 @@ api_router.include_router(payment_hardening_router)
 api_router.include_router(payments_router)
 api_router.include_router(notifications_router)
 api_router.include_router(media_router)
+api_router.include_router(ai_assist_router)
 api_router.include_router(admin_router)
