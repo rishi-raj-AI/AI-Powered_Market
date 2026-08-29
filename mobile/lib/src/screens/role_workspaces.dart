@@ -171,10 +171,10 @@ class _DeliveryWorkspaceState extends State<DeliveryWorkspace> {
     try {
       final result = await Future.wait([GaonApi.availableDeliveryTasks(), GaonApi.myDeliveryTasks()]);
       if (!mounted) return;
-      final nextMine = result[1] as List<DeliveryTaskModel>;
+      final nextMine = result[1];
       final sharingStillActive = _sharingDeliveryId == null || nextMine.any((task) => task.id == _sharingDeliveryId && (task.status == 'assigned' || task.status == 'picked_up'));
       if (!sharingStillActive) await stopLocationSharing(message: 'Live location stopped because the delivery is no longer active.');
-      if (mounted) setState(() { available = result[0] as List<DeliveryTaskModel>; mine = nextMine; loading = false; error = null; });
+      if (mounted) setState(() { available = result[0]; mine = nextMine; loading = false; error = null; });
     } catch (e) { if (mounted) setState(() { loading = false; error = '$e'; }); }
   }
 
