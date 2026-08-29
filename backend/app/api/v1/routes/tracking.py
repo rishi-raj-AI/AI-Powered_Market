@@ -21,6 +21,7 @@ from app.services.maps import compute_route, maps_enabled
 
 router = APIRouter(tags=["Live Tracking"])
 ACTIVE_TRACKING_STATUSES = {DeliveryStatus.ASSIGNED, DeliveryStatus.PICKED_UP}
+MIN_LOCATION_INTERVAL_SECONDS = 5
 
 
 def _can_view_tracking(db: Session, order: Order, delivery: Delivery | None, user: User) -> bool:
@@ -90,6 +91,14 @@ def record_delivery_location(
         raise HTTPException(status_code=422, detail="Location timestamp is too far in the future")
     if recorded_at < now - timedelta(minutes=30):
         raise HTTPException(status_code=422, detail="Location timestamp is too old")
+
+    latest = _latest_location(db, delivery.id)
+    if latest is not None:
+        latest_recorded_at = latest.recorded_at.astimezone(timezone.utc)
+        if recorded_at <= latest_recorded_at:
+            raise HTTPException(status_code=409, detail="Location timestamp must be newer than the previous update")
+        if (recorded_at - latest_recorded_at).total_seconds() < MIN_LOCATION_INTERVAL_SECONDS:
+            raise HTTPException(status_code=429, detail="Location updates are limited to one every 5 seconds")
 
     location = DeliveryLocation(
         delivery_id=delivery.id,
