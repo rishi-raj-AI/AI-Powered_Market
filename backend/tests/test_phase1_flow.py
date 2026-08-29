@@ -1,3 +1,4 @@
+import re
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -178,10 +179,46 @@ def test_complete_marketplace_flow() -> None:
     assert after_pickup.status_code == 200, after_pickup.text
     assert after_pickup.json()["status"] == "out_for_delivery"
 
-    delivered = client.patch(
+    blocked_direct_delivery = client.patch(
         f"/api/v1/delivery/{delivery_id}/status",
         headers=auth(delivery_token),
         json={"status": "delivered"},
+    )
+    assert blocked_direct_delivery.status_code == 422
+
+    blocked_without_proof = client.post(
+        f"/api/v1/delivery/{delivery_id}/complete",
+        headers=auth(delivery_token),
+    )
+    assert blocked_without_proof.status_code == 409
+
+    challenge = client.post(
+        f"/api/v1/delivery/{delivery_id}/proof/challenge",
+        headers=auth(delivery_token),
+    )
+    assert challenge.status_code == 200, challenge.text
+
+    notifications = client.get("/api/v1/notifications/me", headers=auth(customer_token))
+    assert notifications.status_code == 200, notifications.text
+    otp_event = next(item for item in notifications.json() if item["event_type"] == "delivery.otp")
+    delivery_otp = re.search(r"\b(\d{6})\b", otp_event["body"])
+    assert delivery_otp is not None
+
+    proof = client.post(
+        f"/api/v1/delivery/{delivery_id}/proof",
+        headers=auth(delivery_token),
+        json={
+            "otp": delivery_otp.group(1),
+            "recipient_name": customer_name,
+            "notes": "Handed to customer",
+        },
+    )
+    assert proof.status_code == 200, proof.text
+    assert proof.json()["verified_at"] is not None
+
+    delivered = client.post(
+        f"/api/v1/delivery/{delivery_id}/complete",
+        headers=auth(delivery_token),
     )
     assert delivered.status_code == 200, delivered.text
     assert delivered.json()["status"] == "delivered"
@@ -192,3 +229,11 @@ def test_complete_marketplace_flow() -> None:
     assert matching_orders
     assert matching_orders[0]["status"] == "delivered"
     assert matching_orders[0]["payment_status"] == "paid"
+
+    events = client.get(f"/api/v1/orders/{order_id}/events", headers=auth(customer_token))
+    assert events.status_code == 200, events.text
+    transitions = {(item["entity_type"], item["from_status"], item["to_status"]) for item in events.json()}
+    assert ("order", "ready", "out_for_delivery") in transitions
+    assert ("delivery", "assigned", "picked_up") in transitions
+    assert ("delivery", "picked_up", "delivered") in transitions
+    assert ("order", "out_for_delivery", "delivered") in transitions
