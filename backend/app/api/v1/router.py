@@ -4,6 +4,7 @@ from app.api.v1.routes.admin import router as admin_router
 from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.checkout import router as checkout_router
 from app.api.v1.routes.commerce import router as commerce_router
+from app.api.v1.routes.delivery_analytics import router as delivery_analytics_router
 from app.api.v1.routes.delivery_financials import router as delivery_financials_router
 from app.api.v1.routes.delivery_operations import router as delivery_operations_router
 from app.api.v1.routes.delivery_tasks import router as delivery_tasks_router
@@ -40,6 +41,7 @@ api_router.include_router(orders_router)
 api_router.include_router(delivery_financials_router)
 api_router.include_router(delivery_operations_router)
 api_router.include_router(dispatch_router)
+api_router.include_router(delivery_analytics_router)
 api_router.include_router(tracking_hardening_router)
 api_router.include_router(tracking_router)
 api_router.include_router(payment_hardening_router)
