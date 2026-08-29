@@ -64,8 +64,8 @@ def test_customer_sees_only_active_assigned_rider_location() -> None:
             "house_details": "House 10",
             "landmark": "Tracking Chowk",
             "directions": "Blue gate",
-            "latitude": 20.081,
-            "longitude": 73.791,
+            "latitude": 18.5210,
+            "longitude": 73.8570,
             "is_default": True,
         },
     )
@@ -114,8 +114,8 @@ def test_customer_sees_only_active_assigned_rider_location() -> None:
         f"/api/v1/delivery/{delivery_id}/location",
         headers=auth(rider_token),
         json={
-            "latitude": 20.0805,
-            "longitude": 73.7905,
+            "latitude": 18.5208,
+            "longitude": 73.8568,
             "accuracy_m": 8.5,
             "heading_deg": 135,
             "speed_mps": 4.2,
@@ -128,8 +128,8 @@ def test_customer_sees_only_active_assigned_rider_location() -> None:
         f"/api/v1/delivery/{delivery_id}/location",
         headers=auth(rider_token),
         json={
-            "latitude": 20.0806,
-            "longitude": 73.7906,
+            "latitude": 18.5209,
+            "longitude": 73.8569,
             "accuracy_m": 8.0,
             "heading_deg": 136,
             "speed_mps": 4.3,
@@ -142,11 +142,11 @@ def test_customer_sees_only_active_assigned_rider_location() -> None:
     assert tracking.status_code == 200, tracking.text
     payload = tracking.json()
     assert payload["tracking_active"] is True
-    assert payload["rider"]["latitude"] == 20.0805
-    assert payload["rider"]["longitude"] == 73.7905
+    assert payload["rider"]["latitude"] == 18.5208
+    assert payload["rider"]["longitude"] == 73.8568
     assert payload["rider_location_age_seconds"] >= 0
     assert payload["store"]["latitude"] is not None
-    assert payload["customer"]["latitude"] == 20.081
+    assert payload["customer"]["latitude"] == 18.5210
 
     picked_up = client.patch(
         f"/api/v1/delivery/{delivery_id}/status",
