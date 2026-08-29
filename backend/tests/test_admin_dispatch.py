@@ -25,6 +25,30 @@ def phone(prefix: int) -> str:
     return f"+91{prefix}{int(uuid4().hex[:8], 16) % 1_000_000_000:09d}"
 
 
+def _ready_order(customer_token: str, merchant_token: str, address_id: str, listing_id: str) -> str:
+    add = client.post(
+        "/api/v1/cart/items",
+        headers=auth(customer_token),
+        json={"store_product_id": listing_id, "quantity": 1},
+    )
+    assert add.status_code == 200, add.text
+    checkout = client.post(
+        "/api/v1/orders/checkout",
+        headers=auth(customer_token),
+        json={"address_id": address_id, "payment_method": "cod"},
+    )
+    assert checkout.status_code == 201, checkout.text
+    order_id = checkout.json()["id"]
+    for status in ["accepted", "preparing", "ready"]:
+        response = client.patch(
+            f"/api/v1/merchant/orders/{order_id}/status",
+            headers=auth(merchant_token),
+            json={"status": status},
+        )
+        assert response.status_code == 200, response.text
+    return order_id
+
+
 def test_admin_can_assign_ready_delivery_to_active_rider() -> None:
     admin_token = token("+919000000001")
     merchant_token = token("+919000000003")
@@ -57,28 +81,10 @@ def test_admin_can_assign_ready_delivery_to_active_rider() -> None:
         },
     )
     assert address.status_code == 201, address.text
-    add = client.post(
-        "/api/v1/cart/items",
-        headers=auth(customer_token),
-        json={"store_product_id": listings[0]["id"], "quantity": 1},
-    )
-    assert add.status_code == 200, add.text
-    checkout = client.post(
-        "/api/v1/orders/checkout",
-        headers=auth(customer_token),
-        json={"address_id": address.json()["id"], "payment_method": "cod"},
-    )
-    assert checkout.status_code == 201, checkout.text
-    order_id = checkout.json()["id"]
+    address_id = address.json()["id"]
+    listing_id = listings[0]["id"]
 
-    for status in ["accepted", "preparing", "ready"]:
-        response = client.patch(
-            f"/api/v1/merchant/orders/{order_id}/status",
-            headers=auth(merchant_token),
-            json={"status": status},
-        )
-        assert response.status_code == 200, response.text
-
+    order_id = _ready_order(customer_token, merchant_token, address_id, listing_id)
     available = client.get("/api/v1/delivery/tasks/available", headers=auth(admin_token))
     assert available.status_code == 200, available.text
     task = next(item for item in available.json() if item["order_id"] == order_id)
@@ -106,3 +112,14 @@ def test_admin_can_assign_ready_delivery_to_active_rider() -> None:
         json={"rider_id": rider["id"]},
     )
     assert duplicate.status_code == 409
+
+    second_order_id = _ready_order(customer_token, merchant_token, address_id, listing_id)
+    second_available = client.get("/api/v1/delivery/tasks/available", headers=auth(admin_token))
+    second_task = next(item for item in second_available.json() if item["order_id"] == second_order_id)
+    overloaded = client.post(
+        f"/api/v1/admin/deliveries/{second_task['id']}/assign",
+        headers=auth(admin_token),
+        json={"rider_id": rider["id"]},
+    )
+    assert overloaded.status_code == 409, overloaded.text
+    assert overloaded.json()["detail"] == "Rider already has an active delivery"
