@@ -3,6 +3,7 @@ import 'src/api/gaon_api.dart';
 import 'src/screens/login_screen.dart';
 import 'src/screens/customer_shell.dart';
 import 'src/screens/merchant_workspace.dart' as merchant;
+import 'src/screens/delivery_partner_workspace.dart';
 import 'src/screens/role_workspaces.dart';
 
 void main() {
@@ -56,7 +57,7 @@ class _GaonOneAppState extends State<GaonOneApp> {
     if (!loggedIn) return LoginScreen(onLoggedIn: _onLoggedIn);
     return switch (role) {
       'merchant' => merchant.MerchantWorkspace(onLogout: _logout),
-      'delivery' => DeliveryWorkspace(onLogout: _logout),
+      'delivery' => DeliveryPartnerWorkspace(onLogout: _logout),
       'admin' => AdminWorkspace(onLogout: _logout),
       _ => CustomerShell(onLogout: _logout),
     };
