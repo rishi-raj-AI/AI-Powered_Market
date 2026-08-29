@@ -34,6 +34,7 @@ from app.schemas.orders import (
     OrderStatusUpdate,
 )
 from app.services.notifications import enqueue_notification
+from app.services.order_transitions import can_transition_delivery, can_transition_order
 
 router = APIRouter(tags=["Orders & Delivery"])
 
@@ -324,7 +325,7 @@ def cancel_my_order(
     order = db.scalar(select(Order).where(Order.id == order_id).with_for_update())
     if order is None or order.user_id != user.id:
         raise HTTPException(status_code=404, detail="Order not found")
-    if order.status != OrderStatus.PLACED:
+    if not can_transition_order(order.status, OrderStatus.CANCELLED):
         raise HTTPException(status_code=409, detail="Only newly placed orders can be cancelled")
     _restore_cancelled_stock(db, order)
     order.status = OrderStatus.CANCELLED
@@ -383,12 +384,7 @@ def update_order_status(
         if merchant.status != MerchantStatus.APPROVED:
             raise HTTPException(status_code=403, detail="Merchant is not active")
 
-    allowed = {
-        OrderStatus.PLACED: {OrderStatus.ACCEPTED, OrderStatus.CANCELLED},
-        OrderStatus.ACCEPTED: {OrderStatus.PREPARING, OrderStatus.CANCELLED},
-        OrderStatus.PREPARING: {OrderStatus.READY},
-    }
-    if payload.status not in allowed.get(order.status, set()):
+    if not can_transition_order(order.status, payload.status):
         raise HTTPException(
             status_code=409,
             detail=f"Invalid transition from {order.status.value} to {payload.status.value}",
@@ -454,14 +450,17 @@ def claim_delivery(
     delivery = db.scalar(select(Delivery).where(Delivery.id == delivery_id).with_for_update())
     if delivery is None:
         raise HTTPException(status_code=404, detail="Delivery not found")
-    order = db.get(Order, delivery.order_id)
-    if delivery.status != DeliveryStatus.UNASSIGNED or order is None or order.status != OrderStatus.READY:
+    order = db.scalar(select(Order).where(Order.id == delivery.order_id).with_for_update())
+    if (
+        order is None
+        or order.status != OrderStatus.READY
+        or not can_transition_delivery(delivery.status, DeliveryStatus.ASSIGNED)
+    ):
         raise HTTPException(status_code=409, detail="Delivery is not available")
 
     delivery.delivery_partner_id = user.id
     delivery.status = DeliveryStatus.ASSIGNED
     delivery.assigned_at = datetime.now(timezone.utc)
-    order.status = OrderStatus.OUT_FOR_DELIVERY
     _notify_customer(
         db,
         order,
@@ -486,41 +485,48 @@ def update_delivery_status(
         raise HTTPException(status_code=404, detail="Delivery not found")
     if user.role != UserRole.ADMIN and delivery.delivery_partner_id != user.id:
         raise HTTPException(status_code=403, detail="Delivery is not assigned to you")
-
-    allowed = {
-        DeliveryStatus.ASSIGNED: {DeliveryStatus.PICKED_UP},
-        DeliveryStatus.PICKED_UP: {DeliveryStatus.DELIVERED},
-    }
-    if payload.status not in allowed.get(delivery.status, set()):
+    if not can_transition_delivery(delivery.status, payload.status):
         raise HTTPException(
             status_code=409,
             detail=f"Invalid delivery transition from {delivery.status.value} to {payload.status.value}",
         )
 
-    order = db.get(Order, delivery.order_id)
+    order = db.scalar(select(Order).where(Order.id == delivery.order_id).with_for_update())
+    if order is None:
+        raise HTTPException(status_code=409, detail="Delivery order is missing")
+
     if payload.status == DeliveryStatus.PICKED_UP:
+        if not can_transition_order(order.status, OrderStatus.OUT_FOR_DELIVERY):
+            raise HTTPException(
+                status_code=409,
+                detail=f"Order cannot be picked up from {order.status.value}",
+            )
         delivery.picked_up_at = datetime.now(timezone.utc)
-        if order:
-            _notify_customer(
-                db,
-                order,
-                "delivery.picked_up",
-                "Order picked up",
-                "Your order has been collected from the store and is on its way.",
-            )
+        order.status = OrderStatus.OUT_FOR_DELIVERY
+        _notify_customer(
+            db,
+            order,
+            "delivery.picked_up",
+            "Order picked up",
+            "Your order has been collected from the store and is on its way.",
+        )
     elif payload.status == DeliveryStatus.DELIVERED:
-        delivery.delivered_at = datetime.now(timezone.utc)
-        if order:
-            order.status = OrderStatus.DELIVERED
-            if order.payment_method == PaymentMethod.COD:
-                order.payment_status = PaymentStatus.PAID
-            _notify_customer(
-                db,
-                order,
-                "order.delivered",
-                "Order delivered",
-                f"Order {order.order_number} has been delivered. Thank you for using GaonOne.",
+        if not can_transition_order(order.status, OrderStatus.DELIVERED):
+            raise HTTPException(
+                status_code=409,
+                detail=f"Order cannot be delivered from {order.status.value}",
             )
+        delivery.delivered_at = datetime.now(timezone.utc)
+        order.status = OrderStatus.DELIVERED
+        if order.payment_method == PaymentMethod.COD:
+            order.payment_status = PaymentStatus.PAID
+        _notify_customer(
+            db,
+            order,
+            "order.delivered",
+            "Order delivered",
+            f"Order {order.order_number} has been delivered. Thank you for using GaonOne.",
+        )
 
     delivery.status = payload.status
     db.commit()
