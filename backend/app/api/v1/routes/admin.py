@@ -15,6 +15,7 @@ from app.models.user import User, UserRole
 from app.services.notifications import enqueue_notification
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
+ACTIVE_DELIVERY_STATUSES = {DeliveryStatus.ASSIGNED, DeliveryStatus.PICKED_UP}
 
 
 class UserRoleUpdate(BaseModel):
@@ -93,6 +94,18 @@ def admin_assign_delivery(
     rider = db.get(User, payload.rider_id)
     if rider is None or rider.role != UserRole.DELIVERY or not rider.is_active or not rider.is_verified:
         raise HTTPException(status_code=422, detail="Select an active verified delivery partner")
+
+    active_delivery = db.scalar(
+        select(Delivery.id)
+        .where(
+            Delivery.delivery_partner_id == rider.id,
+            Delivery.status.in_(ACTIVE_DELIVERY_STATUSES),
+            Delivery.id != delivery.id,
+        )
+        .limit(1)
+    )
+    if active_delivery is not None:
+        raise HTTPException(status_code=409, detail="Rider already has an active delivery")
 
     now = datetime.now(timezone.utc)
     delivery.delivery_partner_id = rider.id
