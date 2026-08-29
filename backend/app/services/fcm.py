@@ -108,24 +108,22 @@ def deliver_event(db: Session, event: NotificationEvent) -> int:
     return sent
 
 
-def _claim_pending(db: Session, limit: int) -> list[NotificationEvent]:
+def _claim_pending(db: Session, limit: int, *, event_type: str | None = None) -> list[NotificationEvent]:
     now = datetime.now(timezone.utc)
     stale_before = now - _STALE_LOCK
+    eligibility = or_(
+        NotificationEvent.status == "pending",
+        (NotificationEvent.status == "failed")
+        & or_(NotificationEvent.next_attempt_at.is_(None), NotificationEvent.next_attempt_at <= now),
+        (NotificationEvent.status == "processing")
+        & NotificationEvent.locked_at.is_not(None)
+        & (NotificationEvent.locked_at <= stale_before),
+    )
+    statement = select(NotificationEvent).where(eligibility)
+    if event_type is not None:
+        statement = statement.where(NotificationEvent.event_type == event_type)
     events = db.scalars(
-        select(NotificationEvent)
-        .where(
-            or_(
-                NotificationEvent.status == "pending",
-                (NotificationEvent.status == "failed")
-                & or_(NotificationEvent.next_attempt_at.is_(None), NotificationEvent.next_attempt_at <= now),
-                (NotificationEvent.status == "processing")
-                & NotificationEvent.locked_at.is_not(None)
-                & (NotificationEvent.locked_at <= stale_before),
-            )
-        )
-        .order_by(NotificationEvent.created_at)
-        .with_for_update(skip_locked=True)
-        .limit(limit)
+        statement.order_by(NotificationEvent.created_at).with_for_update(skip_locked=True).limit(limit)
     ).all()
     for event in events:
         event.status = "processing"
