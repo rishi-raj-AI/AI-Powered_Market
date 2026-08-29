@@ -12,6 +12,7 @@ from app.services.notifications import enqueue_notification
 
 def test_notification_outbox_is_idempotent_correlated_and_claimed_once() -> None:
     key = f"test-outbox-{uuid4()}"
+    event_type = f"test.outbox.{uuid4()}"
     correlation = f"req-{uuid4()}"
     token = request_id_var.set(correlation)
     event_id = None
@@ -22,7 +23,7 @@ def test_notification_outbox_is_idempotent_correlated_and_claimed_once() -> None
             first = enqueue_notification(
                 db,
                 user_id=user.id,
-                event_type="test.outbox",
+                event_type=event_type,
                 title="Test",
                 body="Reliable event",
                 idempotency_key=key,
@@ -30,7 +31,7 @@ def test_notification_outbox_is_idempotent_correlated_and_claimed_once() -> None
             duplicate = enqueue_notification(
                 db,
                 user_id=user.id,
-                event_type="test.outbox",
+                event_type=event_type,
                 title="Test",
                 body="Reliable event",
                 idempotency_key=key,
@@ -41,15 +42,15 @@ def test_notification_outbox_is_idempotent_correlated_and_claimed_once() -> None
             event_id = first.id
 
         with SessionLocal() as db:
-            claimed = _claim_pending(db, 100)
-            matching = [event for event in claimed if event.id == event_id]
-            assert len(matching) == 1
-            assert matching[0].status == "processing"
-            assert matching[0].attempts == 1
-            assert matching[0].locked_at is not None
+            claimed = _claim_pending(db, 10, event_type=event_type)
+            assert len(claimed) == 1
+            assert claimed[0].id == event_id
+            assert claimed[0].status == "processing"
+            assert claimed[0].attempts == 1
+            assert claimed[0].locked_at is not None
 
         with SessionLocal() as db:
-            second_claim = _claim_pending(db, 100)
+            second_claim = _claim_pending(db, 10, event_type=event_type)
             assert all(event.id != event_id for event in second_claim)
     finally:
         request_id_var.reset(token)
