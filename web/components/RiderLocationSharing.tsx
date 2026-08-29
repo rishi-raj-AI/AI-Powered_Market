@@ -63,7 +63,7 @@ export function RiderLocationSharing({deliveryId,active}:{deliveryId:string;acti
       if(mountedRef.current)setMessage(`Sharing live • accuracy ≈ ${Math.round(c.accuracy)} m`);
     }catch(e:any){
       if(mountedRef.current)setMessage(typeof navigator!=='undefined'&&!navigator.onLine?'Offline • GPS sharing will resume automatically.':e.message||'Unable to share location. Retrying with the next GPS fix.');
-    }finally{s endingRef.current=false}
+    }finally{sendingRef.current=false}
   }
 
   function start(){
