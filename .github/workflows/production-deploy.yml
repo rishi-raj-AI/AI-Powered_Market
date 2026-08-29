@@ -102,6 +102,7 @@ jobs:
           fi
           git checkout main
           git reset --hard "$GAONONE_EXPECTED_SHA"
+          chmod 0755 deploy/release.sh
 
       - name: Deploy audited green commit
         env:
