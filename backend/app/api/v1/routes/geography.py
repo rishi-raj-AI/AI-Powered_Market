@@ -9,31 +9,25 @@ from app.api.deps import get_current_user, get_db, require_roles
 from app.models.geography import Address, ServiceArea, Village
 from app.models.user import User, UserRole
 from app.schemas.geography import AddressCreate, AddressRead, PlaceDetailsRead, PlaceSuggestion, ReverseGeocodeRead, ServiceAreaCreate, ServiceAreaRead, ServiceabilityRead, VillageCreate, VillageRead
-from app.services.places import PlacesUnavailable, autocomplete, distance_km, place_details, reverse_geocode
+from app.services.places import PlacesUnavailable, autocomplete, place_details, reverse_geocode
 from app.services.rate_limit import RateLimitExceeded, RateLimitUnavailable, rate_limiter
+from app.services.spatial import serviceability_for_point
 
 router = APIRouter(tags=["Geography"])
 
 
 def _serviceability(db: Session, latitude: float, longitude: float) -> ServiceabilityRead:
-    areas = db.scalars(select(ServiceArea).where(ServiceArea.is_active.is_(True))).all()
-    best = None
-    for area in areas:
-        hub = db.get(Village, area.hub_village_id)
-        if hub is None or hub.latitude is None or hub.longitude is None:
-            continue
-        km = distance_km(latitude, longitude, hub.latitude, hub.longitude)
-        if best is None or km < best[0]:
-            best = (km, area)
+    best = serviceability_for_point(db, latitude, longitude)
     if best is None:
         return ServiceabilityRead(serviceable=False)
-    km, area = best
+    distance_km = float(best["distance_km"])
+    radius_km = float(best["radius_km"])
     return ServiceabilityRead(
-        serviceable=km <= area.radius_km,
-        service_area_id=area.id,
-        service_area_name=area.name,
-        distance_km=round(km, 2),
-        radius_km=area.radius_km,
+        serviceable=distance_km <= radius_km,
+        service_area_id=best["id"],
+        service_area_name=best["name"],
+        distance_km=round(distance_km, 2),
+        radius_km=radius_km,
     )
 
 

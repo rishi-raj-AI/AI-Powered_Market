@@ -8,11 +8,12 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
 from app.models.commerce import Merchant, MerchantStatus, Store, StoreProduct
-from app.models.geography import Address
+from app.models.geography import Address, Village
 from app.models.orders import Cart, CartItem, Delivery, Order, OrderItem
 from app.models.user import User
 from app.schemas.orders import CheckoutRequest, OrderRead
 from app.services.notifications import enqueue_notification
+from app.services.spatial import point_is_in_service_area
 
 router = APIRouter(tags=["Orders & Checkout"])
 
@@ -52,6 +53,15 @@ def _existing_idempotent_order(db: Session, user_id: uuid.UUID, key: str | None)
     )
 
 
+def _address_point(db: Session, address: Address) -> tuple[float, float] | None:
+    if address.latitude is not None and address.longitude is not None:
+        return float(address.latitude), float(address.longitude)
+    village = db.get(Village, address.village_id)
+    if village and village.latitude is not None and village.longitude is not None:
+        return float(village.latitude), float(village.longitude)
+    return None
+
+
 @router.post("/orders/checkout", response_model=OrderRead, status_code=status.HTTP_201_CREATED)
 def safe_checkout(
     payload: CheckoutRequest,
@@ -71,12 +81,8 @@ def safe_checkout(
     if address is None or address.user_id != user.id:
         raise HTTPException(status_code=404, detail="Address not found")
 
-    # Lock the customer's cart first. This serializes duplicate checkout attempts
-    # for the same user before inventory is touched.
     cart = db.scalar(select(Cart).where(Cart.user_id == user.id).with_for_update())
 
-    # Recheck after acquiring the cart lock. A concurrent request with the same
-    # key may have completed while this request was waiting.
     existing = _existing_idempotent_order(db, user.id, idempotency_key)
     if existing:
         return existing
@@ -98,6 +104,12 @@ def safe_checkout(
         raise HTTPException(status_code=409, detail="Store is currently unavailable")
     if not store.delivery_enabled:
         raise HTTPException(status_code=409, detail="This store does not currently support delivery")
+
+    address_point = _address_point(db, address)
+    if store.service_area_id is None or address_point is None:
+        raise HTTPException(status_code=409, detail="Delivery serviceability cannot be verified for this order")
+    if not point_is_in_service_area(db, store.service_area_id, address_point[0], address_point[1]):
+        raise HTTPException(status_code=409, detail="This store does not deliver to the selected address")
 
     listing_ids = sorted((item.store_product_id for item in items), key=str)
     locked_listings = db.scalars(
@@ -162,8 +174,6 @@ def safe_checkout(
     _notify_customer(db, order)
     _notify_merchant(db, order, store)
 
-    # Inventory decrement, order creation, delivery creation, cart clearing and
-    # notification outbox writes are committed atomically.
     db.commit()
     db.refresh(order)
     return order
