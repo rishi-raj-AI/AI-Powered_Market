@@ -44,3 +44,7 @@ key.properties
 # Coverage
 .coverage
 htmlcov/
+
+# Production runtime state
+backups/
+.deployed-sha
