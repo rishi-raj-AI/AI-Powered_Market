@@ -6,7 +6,6 @@ import 'package:geolocator/geolocator.dart';
 import '../api/resilient_api.dart';
 import '../api/rider_api.dart';
 import '../models/models.dart';
-import '../offline/offline_support.dart';
 
 class DeliveryPartnerWorkspace extends StatefulWidget {
   final VoidCallback onLogout;
