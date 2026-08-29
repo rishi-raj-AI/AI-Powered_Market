@@ -23,9 +23,9 @@ test('approved merchant can resolve a storefront and auto-select service area',a
   const search=page.getByPlaceholder(/Search village, road, landmark or address/i);
   await search.fill('Niphad');
   await page.getByRole('button',{name:/Niphad.*Maharashtra/i}).click();
-  await expect(page.getByText(/Delivery available in Niphad Local/i)).toBeVisible();
+  await expect(page.getByText(/Store is inside Niphad Local/i)).toBeVisible();
   await expect(page.getByLabel('Service area')).toHaveValue('area-niphad');
-  await expect(page.getByLabel('Landmark')).toHaveValue(/Niphad, Nashik/i);
+  await expect(page.getByLabel(/Landmark/)).toHaveValue(/Niphad, Nashik/i);
 });
 
 test('@a11y location picker has no serious or critical accessibility violations',async({page})=>{
