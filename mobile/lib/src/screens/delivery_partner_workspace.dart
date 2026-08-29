@@ -3,9 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
-import '../api/gaon_api.dart';
+import '../api/resilient_api.dart';
 import '../api/rider_api.dart';
 import '../models/models.dart';
+import '../offline/offline_support.dart';
 
 class DeliveryPartnerWorkspace extends StatefulWidget {
   final VoidCallback onLogout;
@@ -21,6 +22,8 @@ class _DeliveryPartnerWorkspaceState extends State<DeliveryPartnerWorkspace> {
   bool loading = true;
   bool online = false;
   bool presenceBusy = false;
+  bool cachedTasks = false;
+  DateTime? cachedAt;
   String? error;
   String? locationMessage;
   StreamSubscription<Position>? locationStream;
@@ -41,13 +44,21 @@ class _DeliveryPartnerWorkspaceState extends State<DeliveryPartnerWorkspace> {
 
   Future<void> load() async {
     try {
-      final results = await Future.wait([RiderApi.availableTasks(), RiderApi.myTasks(), RiderApi.presence()]);
+      final availableResult = await ResilientApi.availableTasks();
+      final mineResult = await ResilientApi.myTasks();
+      Map<String, dynamic>? presence;
+      try {
+        presence = await RiderApi.presence();
+      } catch (_) {
+        presence = null;
+      }
       if (!mounted) return;
       setState(() {
-        available = results[0] as List<DeliveryTaskModel>;
-        mine = results[1] as List<DeliveryTaskModel>;
-        final presence = results[2] as Map<String, dynamic>?;
-        online = presence?['is_online'] == true;
+        available = availableResult.data;
+        mine = mineResult.data;
+        cachedTasks = availableResult.fromCache || mineResult.fromCache;
+        cachedAt = mineResult.cachedAt ?? availableResult.cachedAt;
+        if (presence != null) online = presence['is_online'] == true;
         loading = false;
         error = null;
       });
@@ -57,7 +68,13 @@ class _DeliveryPartnerWorkspaceState extends State<DeliveryPartnerWorkspace> {
   }
 
   void snack(String message) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message.replaceFirst('Exception: ', ''))));
+  }
+
+  bool _requireLiveState() {
+    if (!cachedTasks) return true;
+    snack('Reconnect before changing delivery state. Saved tasks may be out of date.');
+    return false;
   }
 
   Future<Position> _position() async {
@@ -74,11 +91,19 @@ class _DeliveryPartnerWorkspaceState extends State<DeliveryPartnerWorkspace> {
     setState(() => presenceBusy = true);
     try {
       final position = await _position();
-      await RiderApi.updatePresence(latitude: position.latitude, longitude: position.longitude, isOnline: value);
+      final result = await RiderApi.updatePresence(latitude: position.latitude, longitude: position.longitude, isOnline: value);
       if (!mounted) return;
-      setState(() { online = value; locationMessage = value ? 'Online • dispatch can see your fresh location' : 'Offline'; });
+      final queued = result['queued_for_sync'] == true;
+      setState(() {
+        online = value;
+        locationMessage = queued
+            ? '${value ? 'Online' : 'Offline'} change saved locally • will sync when connection returns'
+            : value
+                ? 'Online • dispatch can see your fresh location'
+                : 'Offline';
+      });
       if (!value) await stopSharing();
-      await load();
+      if (!queued) await load();
     } catch (e) {
       snack('$e');
     } finally {
@@ -87,27 +112,27 @@ class _DeliveryPartnerWorkspaceState extends State<DeliveryPartnerWorkspace> {
   }
 
   Future<void> claim(DeliveryTaskModel task) async {
-    try {
-      await RiderApi.claim(task.id);
-      await load();
-    } catch (e) { snack('$e'); }
+    if (!_requireLiveState()) return;
+    try { await RiderApi.claim(task.id); await load(); } catch (e) { snack('$e'); }
   }
 
   Future<void> pickup(DeliveryTaskModel task) async {
-    try {
-      await RiderApi.markPickedUp(task.id);
-      await startSharing(task);
-      await load();
-    } catch (e) { snack('$e'); }
+    if (!_requireLiveState()) return;
+    try { await RiderApi.markPickedUp(task.id); await startSharing(task); await load(); } catch (e) { snack('$e'); }
   }
 
   Future<void> startSharing(DeliveryTaskModel task) async {
-    if (!online) {
-      snack('Go online before sharing live delivery location.');
-      return;
-    }
+    if (!online) { snack('Go online before sharing live delivery location.'); return; }
     final position = await _position();
-    await GaonApi.sendDeliveryLocation(task.id, latitude: position.latitude, longitude: position.longitude, accuracy: position.accuracy, heading: position.heading >= 0 ? position.heading : null, speed: position.speed >= 0 ? position.speed : null, recordedAt: DateTime.now().toUtc());
+    final synced = await RiderApi.sendLocation(
+      task.id,
+      latitude: position.latitude,
+      longitude: position.longitude,
+      accuracy: position.accuracy,
+      heading: position.heading >= 0 ? position.heading : null,
+      speed: position.speed >= 0 ? position.speed : null,
+      recordedAt: DateTime.now().toUtc(),
+    );
     await locationStream?.cancel();
     sharingDeliveryId = task.id;
     lastSent = DateTime.now().toUtc();
@@ -116,14 +141,22 @@ class _DeliveryPartnerWorkspaceState extends State<DeliveryPartnerWorkspace> {
       final now = DateTime.now().toUtc();
       if (sharingDeliveryId != task.id || (lastSent != null && now.difference(lastSent!) < const Duration(seconds: 8))) return;
       lastSent = now;
-      try {
-        await GaonApi.sendDeliveryLocation(task.id, latitude: position.latitude, longitude: position.longitude, accuracy: position.accuracy, heading: position.heading >= 0 ? position.heading : null, speed: position.speed >= 0 ? position.speed : null, recordedAt: now);
-        if (mounted) setState(() => locationMessage = 'Live GPS • accuracy ~${position.accuracy.round()} m');
-      } catch (e) {
-        if (mounted) setState(() => locationMessage = 'GPS upload paused: $e');
+      final uploaded = await RiderApi.sendLocation(
+        task.id,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        accuracy: position.accuracy,
+        heading: position.heading >= 0 ? position.heading : null,
+        speed: position.speed >= 0 ? position.speed : null,
+        recordedAt: now,
+      );
+      if (mounted) {
+        setState(() => locationMessage = uploaded
+            ? 'Live GPS • accuracy ~${position.accuracy.round()} m'
+            : 'GPS saved locally • latest point will sync after reconnect');
       }
     });
-    if (mounted) setState(() => locationMessage = 'Live GPS started for ${task.orderNumber}');
+    if (mounted) setState(() => locationMessage = synced ? 'Live GPS started for ${task.orderNumber}' : 'GPS queued locally for ${task.orderNumber}');
   }
 
   Future<void> stopSharing() async {
@@ -135,6 +168,7 @@ class _DeliveryPartnerWorkspaceState extends State<DeliveryPartnerWorkspace> {
   }
 
   Future<void> reportFailure(DeliveryTaskModel task) async {
+    if (!_requireLiveState()) return;
     String reason = 'customer_unavailable';
     final notes = TextEditingController();
     final ok = await showDialog<bool>(
@@ -174,6 +208,7 @@ class _DeliveryPartnerWorkspaceState extends State<DeliveryPartnerWorkspace> {
   }
 
   Future<void> completeWithOtp(DeliveryTaskModel task) async {
+    if (!_requireLiveState()) return;
     try {
       final challenge = await RiderApi.issueProofChallenge(task.id);
       if (!mounted) return;
@@ -208,27 +243,22 @@ class _DeliveryPartnerWorkspaceState extends State<DeliveryPartnerWorkspace> {
 
   Widget taskCard(DeliveryTaskModel task, {required bool availableTask}) {
     final active = task.status == 'assigned' || task.status == 'picked_up';
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [Expanded(child: Text(task.orderNumber, style: const TextStyle(fontWeight: FontWeight.w800))), Chip(label: Text(task.status.replaceAll('_', ' ')))]),
-          Text(task.storeName, style: const TextStyle(fontWeight: FontWeight.w700)),
-          Text('Pickup: ${task.storeLandmark ?? 'Store location'}'),
-          Text('Drop: ${task.houseDetails ?? ''} ${task.customerLandmark}'),
-          if (task.recipientName != null) Text('Customer: ${task.recipientName}${task.recipientPhone == null ? '' : ' • ${task.recipientPhone}'}'),
-          Text('₹${task.total} • ${task.paymentMethod.toUpperCase()} • ${task.paymentStatus}'),
-          const SizedBox(height: 10),
-          Wrap(spacing: 8, runSpacing: 8, children: [
-            if (availableTask) FilledButton.icon(onPressed: online ? () => claim(task) : null, icon: const Icon(Icons.task_alt), label: const Text('Claim')),
-            if (!availableTask && task.status == 'assigned') FilledButton.icon(onPressed: () => pickup(task), icon: const Icon(Icons.inventory_2_outlined), label: const Text('Confirm pickup')),
-            if (!availableTask && active && sharingDeliveryId != task.id) OutlinedButton.icon(onPressed: () => startSharing(task), icon: const Icon(Icons.location_on_outlined), label: const Text('Share GPS')),
-            if (!availableTask && task.status == 'picked_up') FilledButton.icon(onPressed: () => completeWithOtp(task), icon: const Icon(Icons.verified_outlined), label: const Text('OTP & deliver')),
-            if (!availableTask && active) TextButton.icon(onPressed: () => reportFailure(task), icon: const Icon(Icons.report_problem_outlined), label: const Text('Report issue')),
-          ]),
-        ]),
-      ),
-    );
+    return Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [Expanded(child: Text(task.orderNumber, style: const TextStyle(fontWeight: FontWeight.w800))), Chip(label: Text(task.status.replaceAll('_', ' ')))]),
+      Text(task.storeName, style: const TextStyle(fontWeight: FontWeight.w700)),
+      Text('Pickup: ${task.storeLandmark ?? 'Store location'}'),
+      Text('Drop: ${task.houseDetails ?? ''} ${task.customerLandmark}'),
+      if (task.recipientName != null) Text('Customer: ${task.recipientName}${task.recipientPhone == null ? '' : ' • ${task.recipientPhone}'}'),
+      Text('₹${task.total} • ${task.paymentMethod.toUpperCase()} • ${task.paymentStatus}'),
+      const SizedBox(height: 10),
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        if (availableTask) FilledButton.icon(onPressed: online && !cachedTasks ? () => claim(task) : null, icon: const Icon(Icons.task_alt), label: const Text('Claim')),
+        if (!availableTask && task.status == 'assigned') FilledButton.icon(onPressed: cachedTasks ? null : () => pickup(task), icon: const Icon(Icons.inventory_2_outlined), label: const Text('Confirm pickup')),
+        if (!availableTask && active && sharingDeliveryId != task.id) OutlinedButton.icon(onPressed: () => startSharing(task), icon: const Icon(Icons.location_on_outlined), label: const Text('Share GPS')),
+        if (!availableTask && task.status == 'picked_up') FilledButton.icon(onPressed: cachedTasks ? null : () => completeWithOtp(task), icon: const Icon(Icons.verified_outlined), label: const Text('OTP & deliver')),
+        if (!availableTask && active) TextButton.icon(onPressed: cachedTasks ? null : () => reportFailure(task), icon: const Icon(Icons.report_problem_outlined), label: const Text('Report issue')),
+      ]),
+    ])));
   }
 
   @override
@@ -241,15 +271,14 @@ class _DeliveryPartnerWorkspaceState extends State<DeliveryPartnerWorkspace> {
       body: RefreshIndicator(
         onRefresh: load,
         child: ListView(padding: const EdgeInsets.all(16), children: [
-          Card(
-            child: SwitchListTile(
-              title: Text(online ? 'You are online' : 'You are offline', style: const TextStyle(fontWeight: FontWeight.w800)),
-              subtitle: Text(locationMessage ?? (online ? 'Eligible for nearby dispatch' : 'Go online to receive deliveries')),
-              value: online,
-              onChanged: presenceBusy ? null : setOnline,
-              secondary: presenceBusy ? const CircularProgressIndicator() : Icon(online ? Icons.delivery_dining : Icons.offline_bolt_outlined),
-            ),
-          ),
+          if (cachedTasks) Card(child: ListTile(leading: const Icon(Icons.cloud_off_outlined), title: const Text('Showing saved delivery tasks'), subtitle: Text(cachedAt == null ? 'Reconnect before changing delivery state.' : 'Last synced ${cachedAt!.toLocal()}. Lifecycle actions are paused; GPS can still queue locally.'))),
+          Card(child: SwitchListTile(
+            title: Text(online ? 'You are online' : 'You are offline', style: const TextStyle(fontWeight: FontWeight.w800)),
+            subtitle: Text(locationMessage ?? (online ? 'Eligible for nearby dispatch' : 'Go online to receive deliveries')),
+            value: online,
+            onChanged: presenceBusy ? null : setOnline,
+            secondary: presenceBusy ? const CircularProgressIndicator() : Icon(online ? Icons.delivery_dining : Icons.offline_bolt_outlined),
+          )),
           if (error != null) Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
           const SizedBox(height: 8),
           Text('Active delivery', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
