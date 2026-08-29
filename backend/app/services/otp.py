@@ -119,6 +119,10 @@ class OTPService:
 
         if settings.APP_ENV == "development":
             if supplied_otp == settings.DEV_OTP:
+                try:
+                    self._redis.delete(self._otp_key(phone), self._verify_key(phone))
+                except RedisError:
+                    pass
                 return True
             try:
                 expected = self._redis.get(self._otp_key(phone))
