@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import '../api/gaon_api.dart';
 import '../models/models.dart';
 
@@ -153,28 +156,103 @@ class _DeliveryWorkspaceState extends State<DeliveryWorkspace> {
   List<DeliveryTaskModel> available = [], mine = [];
   bool loading = true;
   String? error;
+  StreamSubscription<Position>? _locationSubscription;
+  String? _sharingDeliveryId;
+  DateTime? _lastLocationSentAt;
+  String? _locationMessage;
+
+  bool get sharing => _locationSubscription != null;
   @override void initState() { super.initState(); load(); }
-  Future<void> load() async { try { final result = await Future.wait([GaonApi.availableDeliveryTasks(), GaonApi.myDeliveryTasks()]); if (mounted) setState(() { available = result[0]; mine = result[1]; loading = false; error = null; }); } catch (e) { if (mounted) setState(() { loading = false; error = '$e'; }); } }
-  Future<void> claim(String id) async { try { await GaonApi.claimDelivery(id); await load(); } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'))); } }
-  Future<void> update(DeliveryTaskModel task, String status) async { try { await GaonApi.updateDelivery(task.id, status); await load(); } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'))); } }
-  Widget card(DeliveryTaskModel task, bool canClaim) => Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Row(children: [Expanded(child: Text(task.orderNumber, style: const TextStyle(fontWeight: FontWeight.w800))), Chip(label: Text(task.status.replaceAll('_', ' ')))]),
-    Text('₹${task.total} • ${task.paymentMethod.toUpperCase()} • ${task.paymentStatus}'),
-    Text('Pickup: ${task.storeName} • ${task.storeLandmark ?? 'location pending'}'),
-    Text('Drop: ${task.recipientName ?? 'Customer'} • ${task.customerLandmark}'),
-    if (task.recipientPhone != null) SelectableText('Customer: ${task.recipientPhone}'),
-    if (task.customerDirections?.isNotEmpty == true) Text('Directions: ${task.customerDirections}'),
-    const SizedBox(height: 10),
-    if (canClaim) FilledButton.icon(onPressed: () => claim(task.id), icon: const Icon(Icons.delivery_dining), label: const Text('Claim delivery'))
-    else if (task.status == 'assigned') FilledButton(onPressed: () => update(task, 'picked_up'), child: const Text('Mark picked up'))
-    else if (task.status == 'picked_up') FilledButton(onPressed: () => update(task, 'delivered'), child: const Text('Mark delivered')),
-  ])));
+  @override void dispose() { _locationSubscription?.cancel(); super.dispose(); }
+
+  void snack(String message) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message))); }
+
+  Future<void> load() async {
+    try {
+      final result = await Future.wait([GaonApi.availableDeliveryTasks(), GaonApi.myDeliveryTasks()]);
+      if (!mounted) return;
+      final nextMine = result[1] as List<DeliveryTaskModel>;
+      final sharingStillActive = _sharingDeliveryId == null || nextMine.any((task) => task.id == _sharingDeliveryId && (task.status == 'assigned' || task.status == 'picked_up'));
+      if (!sharingStillActive) await stopLocationSharing(message: 'Live location stopped because the delivery is no longer active.');
+      if (mounted) setState(() { available = result[0] as List<DeliveryTaskModel>; mine = nextMine; loading = false; error = null; });
+    } catch (e) { if (mounted) setState(() { loading = false; error = '$e'; }); }
+  }
+
+  Future<void> claim(String id) async { try { await GaonApi.claimDelivery(id); await load(); } catch (e) { snack('$e'); } }
+
+  Future<void> update(DeliveryTaskModel task, String status) async {
+    try {
+      await GaonApi.updateDelivery(task.id, status);
+      if (status == 'delivered' && _sharingDeliveryId == task.id) await stopLocationSharing(message: 'Delivery completed. Live location sharing stopped.');
+      await load();
+    } catch (e) { snack('$e'); }
+  }
+
+  Future<void> startLocationSharing(DeliveryTaskModel task) async {
+    if (!['assigned','picked_up'].contains(task.status)) { snack('Live location is available only for an active delivery.'); return; }
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) { setState(() => _locationMessage = 'Turn on device location services to share live GPS.'); return; }
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        setState(() => _locationMessage = permission == LocationPermission.deniedForever ? 'Location permission is blocked in system settings.' : 'Location permission was denied.');
+        return;
+      }
+      await _locationSubscription?.cancel();
+      _sharingDeliveryId = task.id;
+      _lastLocationSentAt = null;
+      setState(() => _locationMessage = 'Live location sharing is on for ${task.orderNumber}.');
+      const settings = LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 8);
+      _locationSubscription = Geolocator.getPositionStream(locationSettings: settings).listen((position) async {
+        if (_sharingDeliveryId != task.id) return;
+        final now = DateTime.now().toUtc();
+        if (_lastLocationSentAt != null && now.difference(_lastLocationSentAt!) < const Duration(seconds: 8)) return;
+        _lastLocationSentAt = now;
+        try {
+          await GaonApi.sendDeliveryLocation(task.id, latitude: position.latitude, longitude: position.longitude, accuracy: position.accuracy, heading: position.heading >= 0 ? position.heading : null, speed: position.speed >= 0 ? position.speed : null, recordedAt: position.timestamp.toUtc());
+          if (mounted) setState(() => _locationMessage = 'Sharing live GPS • accuracy ≈ ${position.accuracy.round()} m');
+        } catch (e) {
+          if (mounted) setState(() => _locationMessage = 'Live GPS upload paused: $e');
+        }
+      }, onError: (Object e) { if (mounted) setState(() => _locationMessage = 'Location stream stopped: $e'); });
+      if (mounted) setState(() {});
+    } catch (e) { if (mounted) setState(() => _locationMessage = 'Could not start live location: $e'); }
+  }
+
+  Future<void> stopLocationSharing({String message = 'Live location sharing stopped.'}) async {
+    await _locationSubscription?.cancel();
+    _locationSubscription = null;
+    _sharingDeliveryId = null;
+    _lastLocationSentAt = null;
+    if (mounted) setState(() => _locationMessage = message);
+  }
+
+  Widget card(DeliveryTaskModel task, bool canClaim) {
+    final isThisSharing = sharing && _sharingDeliveryId == task.id;
+    final canShare = !canClaim && (task.status == 'assigned' || task.status == 'picked_up');
+    return Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [Expanded(child: Text(task.orderNumber, style: const TextStyle(fontWeight: FontWeight.w800))), Chip(label: Text(task.status.replaceAll('_', ' ')))]),
+      Text('₹${task.total} • ${task.paymentMethod.toUpperCase()} • ${task.paymentStatus}'),
+      Text('Pickup: ${task.storeName} • ${task.storeLandmark ?? 'location pending'}'),
+      Text('Drop: ${task.recipientName ?? 'Customer'} • ${task.customerLandmark}'),
+      if (task.recipientPhone != null) SelectableText('Customer: ${task.recipientPhone}'),
+      if (task.customerDirections?.isNotEmpty == true) Text('Directions: ${task.customerDirections}'),
+      const SizedBox(height: 10),
+      if (canShare) Padding(padding: const EdgeInsets.only(bottom: 10), child: OutlinedButton.icon(onPressed: () => isThisSharing ? stopLocationSharing() : startLocationSharing(task), icon: Icon(isThisSharing ? Icons.location_off : Icons.my_location), label: Text(isThisSharing ? 'Stop live location' : 'Share live location'))),
+      if (canClaim) FilledButton.icon(onPressed: () => claim(task.id), icon: const Icon(Icons.delivery_dining), label: const Text('Claim delivery'))
+      else if (task.status == 'assigned') FilledButton(onPressed: () => update(task, 'picked_up'), child: const Text('Mark picked up'))
+      else if (task.status == 'picked_up') FilledButton(onPressed: () => update(task, 'delivered'), child: const Text('Mark delivered')),
+    ])));
+  }
 
   @override Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Delivery workspace'), actions: [IconButton(onPressed: widget.onLogout, icon: const Icon(Icons.logout))]),
     body: loading ? const Center(child: CircularProgressIndicator()) : RefreshIndicator(onRefresh: load, child: ListView(padding: const EdgeInsets.all(16), children: [
       Text('Delivery network', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
       const Text('Claim ready jobs, collect COD where shown, and update each hand-off immediately.'),
+      const SizedBox(height: 8),
+      const Text('Live GPS is shared only when you explicitly start it for an assigned delivery, and stops after completion.'),
+      if (_locationMessage != null) Card(child: ListTile(leading: Icon(sharing ? Icons.location_on : Icons.location_off), title: Text(_locationMessage!))),
       if (error != null) Text(error!),
       const SizedBox(height: 16),
       Text('Available jobs (${available.length})', style: Theme.of(context).textTheme.titleLarge), ...available.map((task) => card(task, true)),
