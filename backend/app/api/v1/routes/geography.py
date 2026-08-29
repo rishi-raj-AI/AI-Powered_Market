@@ -10,6 +10,7 @@ from app.models.geography import Address, ServiceArea, Village
 from app.models.user import User, UserRole
 from app.schemas.geography import AddressCreate, AddressRead, PlaceDetailsRead, PlaceSuggestion, ReverseGeocodeRead, ServiceAreaCreate, ServiceAreaRead, ServiceabilityRead, VillageCreate, VillageRead
 from app.services.places import PlacesUnavailable, autocomplete, distance_km, place_details, reverse_geocode
+from app.services.rate_limit import RateLimitExceeded, RateLimitUnavailable, rate_limiter
 
 router = APIRouter(tags=["Geography"])
 
@@ -34,6 +35,15 @@ def _serviceability(db: Session, latitude: float, longitude: float) -> Serviceab
         distance_km=round(km, 2),
         radius_km=area.radius_km,
     )
+
+
+def _limit_provider(user: User, scope: str, limit: int) -> None:
+    try:
+        rate_limiter.enforce(scope, str(user.id), limit=limit, window_seconds=60)
+    except RateLimitExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except RateLimitUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.get("/villages", response_model=list[VillageRead])
@@ -70,7 +80,8 @@ def create_service_area(payload: ServiceAreaCreate, db: Session = Depends(get_db
 
 
 @router.get("/location/autocomplete", response_model=list[PlaceSuggestion])
-def location_autocomplete(q: str = Query(min_length=2, max_length=160), latitude: float | None = None, longitude: float | None = None, session_token: str | None = None, _: User = Depends(get_current_user)):
+def location_autocomplete(q: str = Query(min_length=2, max_length=160), latitude: float | None = None, longitude: float | None = None, session_token: str | None = None, user: User = Depends(get_current_user)):
+    _limit_provider(user, "maps-autocomplete", 60)
     try:
         return autocomplete(q, latitude, longitude, session_token)
     except PlacesUnavailable as exc:
@@ -80,7 +91,8 @@ def location_autocomplete(q: str = Query(min_length=2, max_length=160), latitude
 
 
 @router.get("/location/place/{place_id}", response_model=PlaceDetailsRead)
-def location_place(place_id: str, session_token: str | None = None, _: User = Depends(get_current_user)):
+def location_place(place_id: str, session_token: str | None = None, user: User = Depends(get_current_user)):
+    _limit_provider(user, "maps-place-details", 30)
     try:
         return place_details(place_id, session_token)
     except PlacesUnavailable as exc:
@@ -90,7 +102,8 @@ def location_place(place_id: str, session_token: str | None = None, _: User = De
 
 
 @router.get("/location/reverse", response_model=ReverseGeocodeRead | None)
-def location_reverse(latitude: float = Query(ge=-90, le=90), longitude: float = Query(ge=-180, le=180), _: User = Depends(get_current_user)):
+def location_reverse(latitude: float = Query(ge=-90, le=90), longitude: float = Query(ge=-180, le=180), user: User = Depends(get_current_user)):
+    _limit_provider(user, "maps-reverse", 30)
     try:
         return reverse_geocode(latitude, longitude)
     except PlacesUnavailable as exc:
