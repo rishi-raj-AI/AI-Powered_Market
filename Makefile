@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: dev-up dev-down seed test-backend test-web test-e2e test-a11y test-full web mobile-ios mobile-check prod-check prod-build prod-migrate prod-bootstrap prod-up prod-deploy prod-down prod-logs prod-status prod-smoke prod-backup prod-monitor prod-restore prod-cleanup
+.PHONY: dev-up dev-down seed test-backend test-web test-e2e test-a11y test-full web mobile-ios mobile-check prod-check prod-build prod-migrate prod-bootstrap prod-up prod-deploy prod-down prod-logs prod-status prod-smoke prod-backup prod-monitor prod-restore prod-cleanup prod-prune-tracking
 
 dev-up:
 	docker compose up --build -d
@@ -88,3 +88,6 @@ prod-restore:
 
 prod-cleanup:
 	bash deploy/cleanup.sh
+
+prod-prune-tracking: prod-check
+	docker compose --env-file .env.production -f docker-compose.prod.yml exec api python -m app.scripts.prune_delivery_locations
