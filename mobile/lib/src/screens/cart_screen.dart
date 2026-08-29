@@ -330,7 +330,8 @@ class _CartScreenState extends State<CartScreen> {
                       const Text('Add an address before checkout.')
                     else
                       DropdownButtonFormField<String>(
-                        value: selectedAddressId,
+                        key: ValueKey(selectedAddressId),
+                        initialValue: selectedAddressId,
                         decoration: const InputDecoration(labelText: 'Deliver to'),
                         items: addresses
                             .map(
@@ -356,27 +357,28 @@ class _CartScreenState extends State<CartScreen> {
                       'Payment',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                     ),
-                    RadioListTile<String>(
-                      contentPadding: EdgeInsets.zero,
-                      value: 'cod',
+                    RadioGroup<String>(
                       groupValue: paymentMethod,
-                      title: const Text('Cash on delivery'),
-                      subtitle: const Text('Pay after verified delivery'),
                       onChanged: (value) => setState(() {
-                        paymentMethod = value ?? 'cod';
+                        paymentMethod = value ?? paymentMethod;
                         _resetCheckoutAttempt();
                       }),
-                    ),
-                    RadioListTile<String>(
-                      contentPadding: EdgeInsets.zero,
-                      value: 'upi',
-                      groupValue: paymentMethod,
-                      title: const Text('UPI / online payment'),
-                      subtitle: const Text('Secure payment through Razorpay'),
-                      onChanged: (value) => setState(() {
-                        paymentMethod = value ?? 'upi';
-                        _resetCheckoutAttempt();
-                      }),
+                      child: const Column(
+                        children: [
+                          RadioListTile<String>(
+                            contentPadding: EdgeInsets.zero,
+                            value: 'cod',
+                            title: Text('Cash on delivery'),
+                            subtitle: Text('Pay after verified delivery'),
+                          ),
+                          RadioListTile<String>(
+                            contentPadding: EdgeInsets.zero,
+                            value: 'upi',
+                            title: Text('UPI / online payment'),
+                            subtitle: Text('Secure payment through Razorpay'),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),

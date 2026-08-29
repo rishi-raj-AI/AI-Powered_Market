@@ -1,6 +1,6 @@
 """Add durable payment webhook and settlement ledger support.
 
-Revision ID: 0010_tracking_payments_settlement
+Revision ID: 0010_payments_settlement
 Revises: 0009_postgis_dispatch
 """
 
@@ -8,7 +8,7 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision = "0010_tracking_payments_settlement"
+revision = "0010_payments_settlement"
 down_revision = "0009_postgis_dispatch"
 branch_labels = None
 depends_on = None

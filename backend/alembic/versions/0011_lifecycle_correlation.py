@@ -1,13 +1,13 @@
 """Correlate lifecycle audit events with HTTP requests and actors.
 
 Revision ID: 0011_lifecycle_correlation
-Revises: 0010_tracking_payments_settlement
+Revises: 0010_payments_settlement
 """
 
 from alembic import op
 
 revision = "0011_lifecycle_correlation"
-down_revision = "0010_tracking_payments_settlement"
+down_revision = "0010_payments_settlement"
 branch_labels = None
 depends_on = None
 
