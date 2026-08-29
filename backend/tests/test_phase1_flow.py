@@ -162,12 +162,21 @@ def test_complete_marketplace_flow() -> None:
     assert claimed.status_code == 200, claimed.text
     assert claimed.json()["status"] == "assigned"
 
+    after_claim = client.get(f"/api/v1/orders/{order_id}", headers=auth(customer_token))
+    assert after_claim.status_code == 200, after_claim.text
+    assert after_claim.json()["status"] == "ready"
+
     picked_up = client.patch(
         f"/api/v1/delivery/{delivery_id}/status",
         headers=auth(delivery_token),
         json={"status": "picked_up"},
     )
     assert picked_up.status_code == 200, picked_up.text
+    assert picked_up.json()["status"] == "picked_up"
+
+    after_pickup = client.get(f"/api/v1/orders/{order_id}", headers=auth(customer_token))
+    assert after_pickup.status_code == 200, after_pickup.text
+    assert after_pickup.json()["status"] == "out_for_delivery"
 
     delivered = client.patch(
         f"/api/v1/delivery/{delivery_id}/status",
@@ -175,6 +184,7 @@ def test_complete_marketplace_flow() -> None:
         json={"status": "delivered"},
     )
     assert delivered.status_code == 200, delivered.text
+    assert delivered.json()["status"] == "delivered"
 
     orders = client.get("/api/v1/orders/me", headers=auth(customer_token))
     assert orders.status_code == 200, orders.text
