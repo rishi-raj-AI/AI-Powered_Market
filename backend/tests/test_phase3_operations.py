@@ -35,7 +35,11 @@ def test_operational_controls_and_customer_cancellation() -> None:
 
     villages = client.get("/api/v1/villages").json()
     assert villages
-    village_id = villages[0]["id"]
+    village = villages[0]
+    village_id = village["id"]
+    village_latitude = village.get("latitude")
+    village_longitude = village.get("longitude")
+    assert village_latitude is not None and village_longitude is not None
     service_areas = client.get("/api/v1/service-areas").json()
     service_area_id = service_areas[0]["id"] if service_areas else None
 
@@ -62,8 +66,8 @@ def test_operational_controls_and_customer_cancellation() -> None:
         "description": "Operations regression storefront",
         "phone": merchant_phone,
         "landmark": "Near test chowk",
-        "latitude": 20.08,
-        "longitude": 73.79,
+        "latitude": village_latitude,
+        "longitude": village_longitude,
         "opens_at": "08:00:00",
         "closes_at": "21:00:00",
         "delivery_enabled": True,
@@ -146,8 +150,8 @@ def test_operational_controls_and_customer_cancellation() -> None:
             "house_details": "House 3",
             "landmark": "Near test temple",
             "directions": "Green gate",
-            "latitude": 20.081,
-            "longitude": 73.791,
+            "latitude": village_latitude,
+            "longitude": village_longitude,
             "is_default": True,
         },
     )
