@@ -1,38 +1,34 @@
 name: Production Deploy
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       ref:
         description: Commit SHA to deploy (defaults to current main)
         required: false
         type: string
-  workflow_run:
-    workflows: ["Backend CI", "Web CI", "Mobile CI", "Production CI"]
-    types: [completed]
 
 concurrency:
   group: gaonone-production
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: read
+  checks: read
 
 env:
-  DEPLOY_SHA: ${{ inputs.ref || github.event.workflow_run.head_sha }}
+  DEPLOY_SHA: ${{ inputs.ref || github.sha }}
 
 jobs:
   verify-green-main:
-    if: >-
-      ${{
-        github.event_name == 'workflow_dispatch' ||
-        (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
-      }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     outputs:
       sha: ${{ steps.gate.outputs.sha }}
     steps:
-      - name: Verify candidate is current main and all required checks passed
+      - name: Wait for current main to pass every release gate
         id: gate
         env:
           GH_TOKEN: ${{ github.token }}
@@ -48,16 +44,35 @@ jobs:
             echo "Candidate $SHA is not current main $MAIN_SHA" >&2
             exit 1
           fi
-          mapfile -t CHECKS < <(gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" --jq '.check_runs[] | [.name,.conclusion] | @tsv')
+
           required=(backend-check build-and-ui analyze-and-build-android production-compose-and-images)
-          for name in "${required[@]}"; do
-            if ! printf '%s\n' "${CHECKS[@]}" | awk -F '\t' -v n="$name" '$1==n && $2=="success" {ok=1} END {exit !ok}'; then
-              echo "Required check is not green: $name" >&2
-              exit 1
+          deadline=$((SECONDS + 780))
+          while (( SECONDS < deadline )); do
+            checks="$(gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" --jq '.check_runs[] | [.name,.status,(.conclusion // "")] | @tsv')"
+            failed=0
+            pending=0
+            for name in "${required[@]}"; do
+              line="$(printf '%s\n' "$checks" | awk -F '\t' -v n="$name" '$1==n {print; exit}')"
+              status="$(cut -f2 <<<"$line")"
+              conclusion="$(cut -f3 <<<"$line")"
+              if [[ -z "$line" || "$status" != "completed" ]]; then
+                pending=1
+              elif [[ "$conclusion" != "success" ]]; then
+                echo "Release gate failed: $name ($conclusion)" >&2
+                failed=1
+              fi
+            done
+            (( failed == 0 )) || exit 1
+            if (( pending == 0 )); then
+              echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+              echo "All release gates passed for $SHA"
+              exit 0
             fi
+            echo "Waiting for release gates for $SHA..."
+            sleep 20
           done
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-          echo "Release candidate verified: $SHA"
+          echo "Timed out waiting for release gates for $SHA" >&2
+          exit 1
 
   deploy:
     needs: verify-green-main
