@@ -10,6 +10,7 @@ from app.api.v1.routes.geography import router as geography_router
 from app.api.v1.routes.health import router as health_router
 from app.api.v1.routes.media import router as media_router
 from app.api.v1.routes.notifications import router as notifications_router
+from app.api.v1.routes.order_mutations import router as order_mutations_router
 from app.api.v1.routes.orders import router as orders_router
 from app.api.v1.routes.payments import router as payments_router
 from app.api.v1.routes.tracking import router as tracking_router
@@ -22,9 +23,10 @@ api_router.include_router(users_router)
 api_router.include_router(geography_router)
 api_router.include_router(commerce_router)
 api_router.include_router(delivery_tasks_router)
-# Register the concurrency-safe checkout before the legacy orders router so
-# POST /orders/checkout is handled by the hardened transaction path.
+# Hardened mutation routes are registered before the legacy orders router so
+# checkout and cancellation use concurrency-safe transaction boundaries.
 api_router.include_router(checkout_router)
+api_router.include_router(order_mutations_router)
 api_router.include_router(orders_router)
 api_router.include_router(delivery_operations_router)
 api_router.include_router(tracking_router)
