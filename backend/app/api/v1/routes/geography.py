@@ -14,6 +14,28 @@ from app.services.places import PlacesUnavailable, autocomplete, distance_km, pl
 router = APIRouter(tags=["Geography"])
 
 
+def _serviceability(db: Session, latitude: float, longitude: float) -> ServiceabilityRead:
+    areas = db.scalars(select(ServiceArea).where(ServiceArea.is_active.is_(True))).all()
+    best = None
+    for area in areas:
+        hub = db.get(Village, area.hub_village_id)
+        if hub is None or hub.latitude is None or hub.longitude is None:
+            continue
+        km = distance_km(latitude, longitude, hub.latitude, hub.longitude)
+        if best is None or km < best[0]:
+            best = (km, area)
+    if best is None:
+        return ServiceabilityRead(serviceable=False)
+    km, area = best
+    return ServiceabilityRead(
+        serviceable=km <= area.radius_km,
+        service_area_id=area.id,
+        service_area_name=area.name,
+        distance_km=round(km, 2),
+        radius_km=area.radius_km,
+    )
+
+
 @router.get("/villages", response_model=list[VillageRead])
 def list_villages(q: str | None = None, db: Session = Depends(get_db)):
     stmt = select(Village).where(Village.is_active.is_(True)).order_by(Village.name)
@@ -79,19 +101,7 @@ def location_reverse(latitude: float = Query(ge=-90, le=90), longitude: float = 
 
 @router.get("/location/serviceability", response_model=ServiceabilityRead)
 def location_serviceability(latitude: float = Query(ge=-90, le=90), longitude: float = Query(ge=-180, le=180), db: Session = Depends(get_db)):
-    areas = db.scalars(select(ServiceArea).where(ServiceArea.is_active.is_(True))).all()
-    best = None
-    for area in areas:
-        hub = db.get(Village, area.hub_village_id)
-        if hub is None or hub.latitude is None or hub.longitude is None:
-            continue
-        km = distance_km(latitude, longitude, hub.latitude, hub.longitude)
-        if best is None or km < best[0]:
-            best = (km, area)
-    if best is None:
-        return ServiceabilityRead(serviceable=False)
-    km, area = best
-    return ServiceabilityRead(serviceable=km <= area.radius_km, service_area_id=area.id, service_area_name=area.name, distance_km=round(km, 2), radius_km=area.radius_km)
+    return _serviceability(db, latitude, longitude)
 
 
 @router.get("/addresses/me", response_model=list[AddressRead])
@@ -101,8 +111,15 @@ def list_my_addresses(db: Session = Depends(get_db), user: User = Depends(get_cu
 
 @router.post("/addresses/me", response_model=AddressRead, status_code=status.HTTP_201_CREATED)
 def create_my_address(payload: AddressCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if db.get(Village, payload.village_id) is None:
+    village = db.get(Village, payload.village_id)
+    if village is None:
         raise HTTPException(status_code=404, detail="Village not found")
+    if (payload.latitude is None) != (payload.longitude is None):
+        raise HTTPException(status_code=422, detail="Latitude and longitude must be supplied together")
+    if payload.latitude is not None and payload.longitude is not None:
+        coverage = _serviceability(db, payload.latitude, payload.longitude)
+        if not coverage.serviceable:
+            raise HTTPException(status_code=422, detail="Delivery address is outside the active GaonOne service area")
     if payload.is_default:
         db.execute(update(Address).where(Address.user_id == user.id).values(is_default=False))
     address = Address(user_id=user.id, **payload.model_dump())
