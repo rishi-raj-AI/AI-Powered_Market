@@ -6,6 +6,7 @@ from app.api.v1.routes.checkout import router as checkout_router
 from app.api.v1.routes.commerce import router as commerce_router
 from app.api.v1.routes.delivery_operations import router as delivery_operations_router
 from app.api.v1.routes.delivery_tasks import router as delivery_tasks_router
+from app.api.v1.routes.dispatch import router as dispatch_router
 from app.api.v1.routes.geography import router as geography_router
 from app.api.v1.routes.health import router as health_router
 from app.api.v1.routes.media import router as media_router
@@ -29,6 +30,7 @@ api_router.include_router(checkout_router)
 api_router.include_router(order_mutations_router)
 api_router.include_router(orders_router)
 api_router.include_router(delivery_operations_router)
+api_router.include_router(dispatch_router)
 api_router.include_router(tracking_router)
 api_router.include_router(payments_router)
 api_router.include_router(notifications_router)
