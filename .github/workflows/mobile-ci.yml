@@ -2,8 +2,7 @@ name: Mobile CI
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  pull_request: {}
 jobs:
   analyze-and-build-android:
     runs-on: ubuntu-latest

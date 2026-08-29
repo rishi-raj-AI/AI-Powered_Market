@@ -2,8 +2,7 @@ name: Web CI
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  pull_request: {}
 
 jobs:
   build-and-ui:
