@@ -19,6 +19,8 @@ class _FakeResponse:
 
 
 class _FakeClient:
+    calls = 0
+
     def __init__(self, *args, **kwargs):
         self.request = None
 
@@ -29,6 +31,7 @@ class _FakeClient:
         return False
 
     def post(self, url, json, headers):
+        type(self).calls += 1
         assert url == maps.ROUTES_URL
         assert headers["X-Goog-FieldMask"] == maps.FIELD_MASK
         assert json["travelMode"] == "TWO_WHEELER"
@@ -36,7 +39,14 @@ class _FakeClient:
         return _FakeResponse()
 
 
+def _clear_cache():
+    with maps._route_cache_lock:
+        maps._route_cache.clear()
+    _FakeClient.calls = 0
+
+
 def test_maps_service_is_disabled_without_provider(monkeypatch):
+    _clear_cache()
     monkeypatch.setattr(settings, "MAPS_PROVIDER", "none")
     monkeypatch.setattr(settings, "MAPS_API_KEY", None)
     assert maps.maps_enabled() is False
@@ -44,6 +54,7 @@ def test_maps_service_is_disabled_without_provider(monkeypatch):
 
 
 def test_google_route_is_parsed_with_minimal_field_mask(monkeypatch):
+    _clear_cache()
     monkeypatch.setattr(settings, "MAPS_PROVIDER", "google")
     monkeypatch.setattr(settings, "MAPS_API_KEY", "test-key")
     monkeypatch.setattr(maps.httpx, "Client", _FakeClient)
@@ -52,3 +63,16 @@ def test_google_route_is_parsed_with_minimal_field_mask(monkeypatch):
     assert result.distance_meters == 2450
     assert result.duration_seconds == 612
     assert result.encoded_polyline == "abc123"
+
+
+def test_near_identical_route_requests_reuse_short_lived_cache(monkeypatch):
+    _clear_cache()
+    monkeypatch.setattr(settings, "MAPS_PROVIDER", "google")
+    monkeypatch.setattr(settings, "MAPS_API_KEY", "test-key")
+    monkeypatch.setattr(maps.httpx, "Client", _FakeClient)
+
+    first = maps.compute_route(20.00001, 73.00001, 20.10001, 73.10001)
+    second = maps.compute_route(20.00002, 73.00002, 20.10002, 73.10002)
+
+    assert first == second
+    assert _FakeClient.calls == 1
