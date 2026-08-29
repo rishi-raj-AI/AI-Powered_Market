@@ -39,153 +39,59 @@ def test_customer_sees_only_active_assigned_rider_location() -> None:
 
     rider_me = client.get("/api/v1/users/me", headers=auth(rider_token))
     assert rider_me.status_code == 200
-    promote = client.patch(
-        f"/api/v1/admin/users/{rider_me.json()['id']}/role",
-        headers=auth(admin_token),
-        json={"role": "delivery", "is_active": True},
-    )
+    promote = client.patch(f"/api/v1/admin/users/{rider_me.json()['id']}/role", headers=auth(admin_token), json={"role": "delivery", "is_active": True})
     assert promote.status_code == 200, promote.text
 
-    stores = client.get("/api/v1/stores").json()
-    assert stores
+    stores = client.get("/api/v1/stores").json(); assert stores
     store = stores[0]
-    listings = client.get(f"/api/v1/stores/{store['id']}/products").json()
-    assert listings
-    villages = client.get("/api/v1/villages").json()
-    assert villages
+    listings = client.get(f"/api/v1/stores/{store['id']}/products").json(); assert listings
+    villages = client.get("/api/v1/villages").json(); assert villages
     village = villages[0]
-    customer_latitude = village.get("latitude")
-    customer_longitude = village.get("longitude")
+    customer_latitude = village.get("latitude"); customer_longitude = village.get("longitude")
     assert customer_latitude is not None and customer_longitude is not None
-    rider_latitude = customer_latitude + 0.0005
-    rider_longitude = customer_longitude + 0.0005
+    rider_latitude = customer_latitude + 0.0005; rider_longitude = customer_longitude + 0.0005
 
-    address = client.post(
-        "/api/v1/addresses/me",
-        headers=auth(customer_token),
-        json={
-            "village_id": village["id"],
-            "label": "Home",
-            "recipient_name": "Tracking Customer",
-            "phone": customer_phone,
-            "house_details": "House 10",
-            "landmark": "Tracking Chowk",
-            "directions": "Blue gate",
-            "latitude": customer_latitude,
-            "longitude": customer_longitude,
-            "is_default": True,
-        },
-    )
+    address = client.post("/api/v1/addresses/me", headers=auth(customer_token), json={"village_id": village["id"], "label": "Home", "recipient_name": "Tracking Customer", "phone": customer_phone, "house_details": "House 10", "landmark": "Tracking Chowk", "directions": "Blue gate", "latitude": customer_latitude, "longitude": customer_longitude, "is_default": True})
     assert address.status_code == 201, address.text
-
-    add = client.post(
-        "/api/v1/cart/items",
-        headers=auth(customer_token),
-        json={"store_product_id": listings[0]["id"], "quantity": 1},
-    )
+    add = client.post("/api/v1/cart/items", headers=auth(customer_token), json={"store_product_id": listings[0]["id"], "quantity": 1})
     assert add.status_code == 200, add.text
-    checkout = client.post(
-        "/api/v1/orders/checkout",
-        headers=auth(customer_token),
-        json={"address_id": address.json()["id"], "payment_method": "cod"},
-    )
+    checkout = client.post("/api/v1/orders/checkout", headers=auth(customer_token), json={"address_id": address.json()["id"], "payment_method": "cod"})
     assert checkout.status_code == 201, checkout.text
     order_id = checkout.json()["id"]
 
     for status in ["accepted", "preparing", "ready"]:
-        transition = client.patch(
-            f"/api/v1/merchant/orders/{order_id}/status",
-            headers=auth(merchant_token),
-            json={"status": status},
-        )
+        transition = client.patch(f"/api/v1/merchant/orders/{order_id}/status", headers=auth(merchant_token), json={"status": status})
         assert transition.status_code == 200, transition.text
 
-    available = client.get("/api/v1/delivery/available", headers=auth(rider_token))
-    assert available.status_code == 200, available.text
-    delivery = next(item for item in available.json() if item["order_id"] == order_id)
-    delivery_id = delivery["id"]
+    available = client.get("/api/v1/delivery/available", headers=auth(rider_token)); assert available.status_code == 200, available.text
+    delivery = next(item for item in available.json() if item["order_id"] == order_id); delivery_id = delivery["id"]
+    claimed = client.post(f"/api/v1/delivery/{delivery_id}/claim", headers=auth(rider_token)); assert claimed.status_code == 200, claimed.text
 
-    claimed = client.post(f"/api/v1/delivery/{delivery_id}/claim", headers=auth(rider_token))
-    assert claimed.status_code == 200, claimed.text
-
-    tracking_before = client.get(f"/api/v1/orders/{order_id}/tracking", headers=auth(customer_token))
-    assert tracking_before.status_code == 200, tracking_before.text
-    assert tracking_before.json()["tracking_active"] is True
-    assert tracking_before.json()["rider"] is None
-
-    forbidden = client.get(f"/api/v1/orders/{order_id}/tracking", headers=auth(stranger_token))
-    assert forbidden.status_code == 403
+    tracking_before = client.get(f"/api/v1/orders/{order_id}/tracking", headers=auth(customer_token)); assert tracking_before.status_code == 200, tracking_before.text
+    assert tracking_before.json()["tracking_active"] is True; assert tracking_before.json()["rider"] is None
+    forbidden = client.get(f"/api/v1/orders/{order_id}/tracking", headers=auth(stranger_token)); assert forbidden.status_code == 403
 
     first_recorded_at = datetime.now(timezone.utc)
-    ping = client.post(
-        f"/api/v1/delivery/{delivery_id}/location",
-        headers=auth(rider_token),
-        json={
-            "latitude": rider_latitude,
-            "longitude": rider_longitude,
-            "accuracy_m": 8.5,
-            "heading_deg": 135,
-            "speed_mps": 4.2,
-            "recorded_at": first_recorded_at.isoformat(),
-        },
-    )
+    ping = client.post(f"/api/v1/delivery/{delivery_id}/location", headers=auth(rider_token), json={"latitude": rider_latitude, "longitude": rider_longitude, "accuracy_m": 8.5, "heading_deg": 135, "speed_mps": 4.2, "recorded_at": first_recorded_at.isoformat()})
     assert ping.status_code == 201, ping.text
 
-    too_fast = client.post(
-        f"/api/v1/delivery/{delivery_id}/location",
-        headers=auth(rider_token),
-        json={
-            "latitude": rider_latitude + 0.0001,
-            "longitude": rider_longitude + 0.0001,
-            "accuracy_m": 8.0,
-            "heading_deg": 136,
-            "speed_mps": 4.3,
-            "recorded_at": (first_recorded_at + timedelta(seconds=1)).isoformat(),
-        },
-    )
+    too_fast = client.post(f"/api/v1/delivery/{delivery_id}/location", headers=auth(rider_token), json={"latitude": rider_latitude + 0.0001, "longitude": rider_longitude + 0.0001, "accuracy_m": 8.0, "heading_deg": 136, "speed_mps": 4.3, "recorded_at": (first_recorded_at + timedelta(seconds=1)).isoformat()})
     assert too_fast.status_code == 429, too_fast.text
 
-    tracking = client.get(f"/api/v1/orders/{order_id}/tracking", headers=auth(customer_token))
-    assert tracking.status_code == 200, tracking.text
-    payload = tracking.json()
-    assert payload["tracking_active"] is True
-    assert payload["rider"]["latitude"] == rider_latitude
-    assert payload["rider"]["longitude"] == rider_longitude
-    assert payload["rider_location_age_seconds"] >= 0
-    assert payload["store"]["latitude"] is not None
-    assert payload["customer"]["latitude"] == customer_latitude
+    impossible_jump = client.post(f"/api/v1/delivery/{delivery_id}/location", headers=auth(rider_token), json={"latitude": rider_latitude + 0.5, "longitude": rider_longitude + 0.5, "accuracy_m": 10.0, "heading_deg": 140, "speed_mps": 10.0, "recorded_at": (first_recorded_at + timedelta(seconds=10)).isoformat()})
+    assert impossible_jump.status_code == 422, impossible_jump.text
 
-    picked_up = client.patch(
-        f"/api/v1/delivery/{delivery_id}/status",
-        headers=auth(rider_token),
-        json={"status": "picked_up"},
-    )
-    assert picked_up.status_code == 200, picked_up.text
+    tracking = client.get(f"/api/v1/orders/{order_id}/tracking", headers=auth(customer_token)); assert tracking.status_code == 200, tracking.text
+    payload = tracking.json(); assert payload["tracking_active"] is True
+    assert payload["rider"]["latitude"] == rider_latitude; assert payload["rider"]["longitude"] == rider_longitude
+    assert payload["rider_location_age_seconds"] >= 0; assert payload["store"]["latitude"] is not None; assert payload["customer"]["latitude"] == customer_latitude
 
-    challenge = client.post(
-        f"/api/v1/delivery/{delivery_id}/proof/challenge",
-        headers=auth(rider_token),
-    )
-    assert challenge.status_code == 200, challenge.text
-    notifications = client.get("/api/v1/notifications/me", headers=auth(customer_token))
-    assert notifications.status_code == 200, notifications.text
+    picked_up = client.patch(f"/api/v1/delivery/{delivery_id}/status", headers=auth(rider_token), json={"status": "picked_up"}); assert picked_up.status_code == 200, picked_up.text
+    challenge = client.post(f"/api/v1/delivery/{delivery_id}/proof/challenge", headers=auth(rider_token)); assert challenge.status_code == 200, challenge.text
+    notifications = client.get("/api/v1/notifications/me", headers=auth(customer_token)); assert notifications.status_code == 200, notifications.text
     otp_event = next(item for item in notifications.json() if item["event_type"] == "delivery.otp")
-    otp_match = re.search(r"\b(\d{6})\b", otp_event["body"])
-    assert otp_match is not None
-    proof = client.post(
-        f"/api/v1/delivery/{delivery_id}/proof",
-        headers=auth(rider_token),
-        json={"otp": otp_match.group(1), "recipient_name": "Tracking Customer"},
-    )
-    assert proof.status_code == 200, proof.text
-
-    delivered = client.post(
-        f"/api/v1/delivery/{delivery_id}/complete",
-        headers=auth(rider_token),
-    )
-    assert delivered.status_code == 200, delivered.text
-
-    tracking_after = client.get(f"/api/v1/orders/{order_id}/tracking", headers=auth(customer_token))
-    assert tracking_after.status_code == 200, tracking_after.text
-    assert tracking_after.json()["tracking_active"] is False
-    assert tracking_after.json()["rider"] is None
+    otp_match = re.search(r"\b(\d{6})\b", otp_event["body"]); assert otp_match is not None
+    proof = client.post(f"/api/v1/delivery/{delivery_id}/proof", headers=auth(rider_token), json={"otp": otp_match.group(1), "recipient_name": "Tracking Customer"}); assert proof.status_code == 200, proof.text
+    delivered = client.post(f"/api/v1/delivery/{delivery_id}/complete", headers=auth(rider_token)); assert delivered.status_code == 200, delivered.text
+    tracking_after = client.get(f"/api/v1/orders/{order_id}/tracking", headers=auth(customer_token)); assert tracking_after.status_code == 200, tracking_after.text
+    assert tracking_after.json()["tracking_active"] is False; assert tracking_after.json()["rider"] is None
