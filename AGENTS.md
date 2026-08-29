@@ -52,5 +52,19 @@ Run the relevant commands for the changed surface. Prefer repository Makefile ta
 
 Do not use `Ride`, `PassengerTrip`, `Taxi`, or equivalent passenger-mobility abstractions for delivery.
 
+## Automation and deployment contract
+- Feature work happens on feature branches/worktrees; agents must not develop directly on `main`.
+- A task is complete only when its relevant CI checks pass and its acceptance criteria are demonstrated by tests or reproducible validation.
+- `main` is the deployable integration branch.
+- The current server is a staging environment even though legacy filenames still use `.env.production` and `docker-compose.prod.yml`.
+- Do not rename or replace server environment files merely for naming consistency; treat that as an explicit infrastructure migration.
+- Agents may prepare staging deployment changes, but must not delete persistent volumes, restore databases, rotate credentials, alter firewalls, or perform destructive schema changes without explicit approval.
+- Database migrations must be forward-safe for staging deployment. Prefer additive/expand-contract changes over destructive changes.
+- Staging deployment must preserve pre-deploy backup, exact commit verification, health checks, smoke checks, and deployed-SHA recording.
+- Never add automatic database rollback for a failed deployment unless the migration itself has been proven safely reversible.
+- Failed staging smoke/health checks block acceptance of the release and must be investigated before further feature promotion.
+
 ## Agent workflow
 For substantial work: inspect existing models/routes/tests first, implement the smallest coherent vertical slice, add migrations/tests, run validation, then summarize changed files, migration impact, API impact and remaining risks. Avoid unrelated refactors in feature branches.
+
+For automation-mode execution, take tasks in priority order from `docs/AUTOMATION_BACKLOG.md`. A coding agent owns implementation; a review pass checks correctness, security, state transitions and tests; CI is the final machine gate. Do not mark a backlog item complete merely because code was written.
