@@ -1,0 +1,11 @@
+[Unit]
+Description=Run GaonOne production maintenance daily
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+RandomizedDelaySec=10m
+Unit=gaonone-maintenance.service
+
+[Install]
+WantedBy=timers.target
