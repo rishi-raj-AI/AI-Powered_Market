@@ -60,6 +60,9 @@ def test_admin_can_assign_recover_and_reassign_ready_delivery() -> None:
 
     second_order=_ready_order(customer_token,merchant_token,address_id,listing_id)
     second_task=next(item for item in client.get("/api/v1/delivery/tasks/available",headers=auth(admin_token)).json() if item["order_id"]==second_order)
+    rider_available=client.get("/api/v1/delivery/tasks/available",headers=auth(rider_token))
+    assert rider_available.status_code==200,rider_available.text
+    assert rider_available.json()==[]
     overloaded=client.post(f"/api/v1/admin/deliveries/{second_task['id']}/assign",headers=auth(admin_token),json={"rider_id":rider["id"]})
     assert overloaded.status_code==409,overloaded.text
     assert overloaded.json()["detail"]=="Rider already has an active delivery"
