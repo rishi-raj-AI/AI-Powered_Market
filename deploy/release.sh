@@ -17,9 +17,13 @@ if [[ ! -f .env.production ]]; then
   echo "Missing $ROOT_DIR/.env.production" >&2
   exit 1
 fi
-if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
-  echo "Tracked production checkout has local changes; refusing automated deployment." >&2
-  git status --short
+
+# Production setup scripts may be chmod'd locally during bootstrap. Ignore file-mode
+# metadata while still refusing any tracked content/index changes.
+git config core.filemode false
+if ! git diff --quiet --ignore-submodules -- || ! git diff --cached --quiet --ignore-submodules --; then
+  echo "Tracked production checkout has local content changes; refusing automated deployment." >&2
+  git status --short --untracked-files=no
   exit 1
 fi
 
