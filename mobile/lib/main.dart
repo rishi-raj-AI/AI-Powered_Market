@@ -4,7 +4,7 @@ import 'src/screens/login_screen.dart';
 import 'src/screens/customer_shell.dart';
 import 'src/screens/merchant_workspace.dart' as merchant;
 import 'src/screens/delivery_partner_workspace.dart';
-import 'src/screens/role_workspaces.dart';
+import 'src/screens/admin_operations_console.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -58,7 +58,7 @@ class _GaonOneAppState extends State<GaonOneApp> {
     return switch (role) {
       'merchant' => merchant.MerchantWorkspace(onLogout: _logout),
       'delivery' => DeliveryPartnerWorkspace(onLogout: _logout),
-      'admin' => AdminWorkspace(onLogout: _logout),
+      'admin' => AdminOperationsConsole(onLogout: _logout),
       _ => CustomerShell(onLogout: _logout),
     };
   }
