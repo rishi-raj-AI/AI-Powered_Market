@@ -1,0 +1,14 @@
+[Unit]
+Description=GaonOne daily backup, privacy cleanup and production monitor
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/home/ubuntu/gaonone
+ExecStart=/bin/bash -lc 'make prod-backup && make prod-prune-tracking && make prod-monitor'
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
