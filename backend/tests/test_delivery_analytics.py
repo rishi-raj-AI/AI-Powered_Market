@@ -57,8 +57,14 @@ def create_ready_order(customer_token: str, customer_phone: str, merchant_token:
     )
     assert address.status_code == 201, address.text
 
-    store = client.get("/api/v1/stores").json()[0]
-    listing = client.get(f"/api/v1/stores/{store['id']}/products").json()[0]
+    mine = client.get("/api/v1/stores/mine", headers=auth(merchant_token))
+    assert mine.status_code == 200, mine.text
+    stores = mine.json()
+    assert stores
+    store = stores[0]
+    listings = client.get(f"/api/v1/stores/{store['id']}/products").json()
+    assert listings
+    listing = listings[0]
     added = client.post(
         "/api/v1/cart/items",
         headers=auth(customer_token),
