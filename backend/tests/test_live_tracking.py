@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -109,6 +109,7 @@ def test_customer_sees_only_active_assigned_rider_location() -> None:
     forbidden = client.get(f"/api/v1/orders/{order_id}/tracking", headers=auth(stranger_token))
     assert forbidden.status_code == 403
 
+    first_recorded_at = datetime.now(timezone.utc)
     ping = client.post(
         f"/api/v1/delivery/{delivery_id}/location",
         headers=auth(rider_token),
@@ -118,10 +119,24 @@ def test_customer_sees_only_active_assigned_rider_location() -> None:
             "accuracy_m": 8.5,
             "heading_deg": 135,
             "speed_mps": 4.2,
-            "recorded_at": datetime.now(timezone.utc).isoformat(),
+            "recorded_at": first_recorded_at.isoformat(),
         },
     )
     assert ping.status_code == 201, ping.text
+
+    too_fast = client.post(
+        f"/api/v1/delivery/{delivery_id}/location",
+        headers=auth(rider_token),
+        json={
+            "latitude": 20.0806,
+            "longitude": 73.7906,
+            "accuracy_m": 8.0,
+            "heading_deg": 136,
+            "speed_mps": 4.3,
+            "recorded_at": (first_recorded_at + timedelta(seconds=1)).isoformat(),
+        },
+    )
+    assert too_fast.status_code == 429, too_fast.text
 
     tracking = client.get(f"/api/v1/orders/{order_id}/tracking", headers=auth(customer_token))
     assert tracking.status_code == 200, tracking.text
