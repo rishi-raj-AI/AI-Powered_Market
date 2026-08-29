@@ -150,3 +150,38 @@ def test_concurrent_checkout_cannot_oversell_last_unit() -> None:
     assert len(successful_orders) == 1
 
     set_stock(merchant_token, store_id, listing_id, 20)
+
+
+def test_cancellation_restores_stock_exactly_once() -> None:
+    merchant_token, store_id, listing_id = seeded_listing()
+    set_stock(merchant_token, store_id, listing_id, 3)
+
+    phone = customer_phone(6)
+    customer_token = token(phone, "Cancellation Safety Customer")
+    address_id = create_address(customer_token, phone)
+    added = client.post(
+        "/api/v1/cart/items",
+        headers=auth(customer_token),
+        json={"store_product_id": listing_id, "quantity": 1},
+    )
+    assert added.status_code == 200, added.text
+
+    checkout = client.post(
+        "/api/v1/orders/checkout",
+        headers={**auth(customer_token), "Idempotency-Key": f"cancel-{uuid4()}"},
+        json={"address_id": address_id, "payment_method": "cod"},
+    )
+    assert checkout.status_code == 201, checkout.text
+    order_id = checkout.json()["id"]
+    assert stock_quantity(merchant_token, store_id, listing_id) == 2
+
+    first_cancel = client.post(f"/api/v1/orders/{order_id}/cancel", headers=auth(customer_token))
+    assert first_cancel.status_code == 200, first_cancel.text
+    assert first_cancel.json()["status"] == "cancelled"
+    assert stock_quantity(merchant_token, store_id, listing_id) == 3
+
+    retry_cancel = client.post(f"/api/v1/orders/{order_id}/cancel", headers=auth(customer_token))
+    assert retry_cancel.status_code == 409, retry_cancel.text
+    assert stock_quantity(merchant_token, store_id, listing_id) == 3
+
+    set_stock(merchant_token, store_id, listing_id, 20)
