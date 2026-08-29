@@ -81,6 +81,28 @@ jobs:
     environment:
       name: production
     steps:
+      - name: Sync audited release bootstrap
+        env:
+          GAONONE_EXPECTED_SHA: ${{ needs.verify-green-main.outputs.sha }}
+        run: |
+          set -euo pipefail
+          ROOT=/home/ubuntu/gaonone
+          cd "$ROOT"
+          git config core.filemode false
+          if ! git diff --quiet --ignore-submodules -- || ! git diff --cached --quiet --ignore-submodules --; then
+            echo "Tracked production checkout has local content changes; refusing bootstrap sync." >&2
+            git status --short --untracked-files=no
+            exit 1
+          fi
+          git fetch --prune origin main
+          REMOTE_SHA="$(git rev-parse origin/main)"
+          if [[ "$REMOTE_SHA" != "$GAONONE_EXPECTED_SHA" ]]; then
+            echo "Expected $GAONONE_EXPECTED_SHA but origin/main is $REMOTE_SHA" >&2
+            exit 1
+          fi
+          git checkout main
+          git reset --hard "$GAONONE_EXPECTED_SHA"
+
       - name: Deploy audited green commit
         env:
           GAONONE_EXPECTED_SHA: ${{ needs.verify-green-main.outputs.sha }}
