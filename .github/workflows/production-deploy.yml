@@ -1,0 +1,72 @@
+name: Production Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit SHA to deploy (defaults to current main)
+        required: false
+        type: string
+  workflow_run:
+    workflows: ["Backend CI", "Web CI", "Mobile CI", "Production CI"]
+    types: [completed]
+
+concurrency:
+  group: gaonone-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  DEPLOY_SHA: ${{ inputs.ref || github.event.workflow_run.head_sha }}
+
+jobs:
+  verify-green-main:
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+      }}
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.gate.outputs.sha }}
+    steps:
+      - name: Verify candidate is current main and all required checks passed
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          SHA="$DEPLOY_SHA"
+          if [[ -z "$SHA" ]]; then
+            SHA="$(gh api "repos/$REPO/commits/main" --jq .sha)"
+          fi
+          MAIN_SHA="$(gh api "repos/$REPO/commits/main" --jq .sha)"
+          if [[ "$SHA" != "$MAIN_SHA" ]]; then
+            echo "Candidate $SHA is not current main $MAIN_SHA" >&2
+            exit 1
+          fi
+          mapfile -t CHECKS < <(gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" --jq '.check_runs[] | [.name,.conclusion] | @tsv')
+          required=(backend-check build-and-ui analyze-and-build-android production-compose-and-images)
+          for name in "${required[@]}"; do
+            if ! printf '%s\n' "${CHECKS[@]}" | awk -F '\t' -v n="$name" '$1==n && $2=="success" {ok=1} END {exit !ok}'; then
+              echo "Required check is not green: $name" >&2
+              exit 1
+            fi
+          done
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Release candidate verified: $SHA"
+
+  deploy:
+    needs: verify-green-main
+    runs-on: [self-hosted, linux, gaonone-production]
+    timeout-minutes: 30
+    environment:
+      name: production
+    steps:
+      - name: Deploy audited green commit
+        env:
+          GAONONE_EXPECTED_SHA: ${{ needs.verify-green-main.outputs.sha }}
+        run: sudo /home/ubuntu/gaonone/deploy/release.sh
