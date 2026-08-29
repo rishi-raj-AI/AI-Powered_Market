@@ -51,8 +51,8 @@ def test_admin_can_assign_ready_delivery_to_active_rider() -> None:
             "village_id": villages[0]["id"],
             "label": "Home",
             "landmark": "Dispatch Chowk",
-            "latitude": 20.081,
-            "longitude": 73.791,
+            "latitude": 18.5208,
+            "longitude": 73.8572,
             "is_default": True,
         },
     )
