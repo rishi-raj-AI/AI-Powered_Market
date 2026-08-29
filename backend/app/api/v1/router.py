@@ -20,6 +20,7 @@ from app.api.v1.routes.orders import router as orders_router
 from app.api.v1.routes.payment_hardening import router as payment_hardening_router
 from app.api.v1.routes.payments import router as payments_router
 from app.api.v1.routes.store_discovery import router as store_discovery_router
+from app.api.v1.routes.support import router as support_router
 from app.api.v1.routes.tracking import router as tracking_router
 from app.api.v1.routes.tracking_hardening import router as tracking_hardening_router
 from app.api.v1.routes.users import router as users_router
@@ -47,4 +48,5 @@ api_router.include_router(notifications_router)
 api_router.include_router(media_router)
 api_router.include_router(ai_assist_router)
 api_router.include_router(merchant_intelligence_router)
+api_router.include_router(support_router)
 api_router.include_router(admin_router)
