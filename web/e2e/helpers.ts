@@ -14,6 +14,7 @@ const village={id:'village-niphad',name:'Niphad',taluka:'Niphad',district:'Nashi
 const serviceArea={id:'area-niphad',name:'Niphad Local',hub_village_id:village.id,radius_km:10,is_active:true};
 const deliveryTask={id:'delivery-ready',order_id:'order-ready',order_number:'GO260829000001',status:'unassigned',payment_method:'cod',payment_status:'pending',total:'240',store_name:'Nimbu Kirana',store_landmark:'Niphad Bus Stand',store_latitude:20.0778,store_longitude:74.1118,recipient_name:'Kiran',recipient_phone:'+919284800336',house_details:'House 10',customer_landmark:'Main Chowk',customer_directions:'Blue gate',customer_latitude:20.081,customer_longitude:74.115};
 const assignedTask={...deliveryTask,id:'delivery-assigned',order_id:'order-assigned',order_number:'GO260829000002',status:'assigned'};
+const activeDelivery={id:'delivery-active-admin',order_id:'order-active-admin',order_number:'GO260829000003',delivery_partner_id:activeRider.id,rider_name:'Bhushan',rider_phone:activeRider.phone,status:'assigned',assigned_at:'2026-08-29T00:10:00Z',store_name:'Nimbu Kirana',store_landmark:'Niphad Bus Stand',customer_landmark:'Main Chowk'};
 export async function installApiMocks(page:Page,currentUser:MockUser=customer){
   await page.addInitScript(()=>localStorage.setItem('gaonone_token','e2e-token'));
   await page.route('http://localhost:8000/api/v1/**',async route=>{
@@ -21,6 +22,8 @@ export async function installApiMocks(page:Page,currentUser:MockUser=customer){
     if(path==='/users/me')return route.fulfill({json:currentUser});
     if(path==='/admin/overview')return route.fulfill({json:overview});
     if(path==='/admin/users')return route.fulfill({json:[superAdmin,normalAdmin,activeRider,riderCandidate,customer,merchantUser]});
+    if(path==='/admin/deliveries/active')return route.fulfill({json:[activeDelivery]});
+    if(path==='/admin/deliveries/delivery-active-admin/unassign'&&method==='POST')return route.fulfill({json:{...activeDelivery,delivery_partner_id:null,rider_name:null,rider_phone:null,status:'unassigned',assigned_at:null}});
     if(path==='/delivery/tasks/available')return route.fulfill({json:[deliveryTask]});
     if(path==='/delivery/tasks/me')return route.fulfill({json:[assignedTask]});
     if(path==='/delivery/delivery-assigned/location'&&method==='POST')return route.fulfill({status:201,json:{id:'location-1',delivery_id:'delivery-assigned',...request.postDataJSON()}});
