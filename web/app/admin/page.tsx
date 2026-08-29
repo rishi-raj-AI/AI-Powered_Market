@@ -4,7 +4,7 @@ import {useEffect,useMemo,useState} from 'react';
 import {
   AlertTriangle,Boxes,IndianRupee,MapPinned,PackageCheck,RefreshCw,ShieldCheck,Store,Truck,Users,
 } from 'lucide-react';
-import {AdminOverview,gaonApi,Merchant,MerchantStatus,User} from '@/lib/api';
+import {AdminOverview,DeliveryTask,gaonApi,Merchant,MerchantStatus,User} from '@/lib/api';
 import {Nav} from '@/components/Nav';
 
 const money=(value:string|number)=>new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(Number(value||0));
@@ -14,6 +14,8 @@ type AdminUser=User&{is_super_admin?:boolean};
 export default function Admin(){
   const[merchants,setMerchants]=useState<Merchant[]>([]);
   const[users,setUsers]=useState<AdminUser[]>([]);
+  const[tasks,setTasks]=useState<DeliveryTask[]>([]);
+  const[riderFor,setRiderFor]=useState<Record<string,string>>({});
   const[me,setMe]=useState<AdminUser|null>(null);
   const[overview,setOverview]=useState<AdminOverview|null>(null);
   const[msg,setMsg]=useState('');
@@ -21,13 +23,14 @@ export default function Admin(){
 
   async function load(){
     try{
-      const[current,m,o,u]=await Promise.all([
-        gaonApi.me(),gaonApi.merchants(),gaonApi.adminOverview(),gaonApi.adminUsers(),
+      const[current,m,o,u,t]=await Promise.all([
+        gaonApi.me(),gaonApi.merchants(),gaonApi.adminOverview(),gaonApi.adminUsers(),gaonApi.availableDeliveryTasks(),
       ]);
       setMe(current as AdminUser);
       setMerchants(m);
       setOverview(o);
       setUsers(u as AdminUser[]);
+      setTasks(t);
       setMsg('');
     }catch(error:any){setMsg(error.message)}
   }
@@ -52,6 +55,19 @@ export default function Admin(){
     }catch(error:any){setMsg(error.message)}finally{setBusy('')}
   }
 
+  async function assign(task:DeliveryTask){
+    const riderId=riderFor[task.id];
+    if(!riderId){setMsg('Select a rider before assigning this delivery.');return}
+    setBusy(task.id);
+    try{
+      await gaonApi.assignDelivery(task.id,riderId);
+      const rider=users.find(user=>user.id===riderId);
+      setMsg(`${task.order_number} assigned to ${rider?.full_name||rider?.phone||'delivery partner'}.`);
+      setRiderFor(current=>{const next={...current};delete next[task.id];return next});
+      await load();
+    }catch(error:any){setMsg(error.message)}finally{setBusy('')}
+  }
+
   async function push(){
     setBusy('push');
     try{
@@ -61,6 +77,7 @@ export default function Admin(){
   }
 
   const pipeline=useMemo(()=>overview?Object.entries(overview.orders.by_status):[],[overview]);
+  const riders=useMemo(()=>users.filter(user=>user.role==='delivery'&&user.is_active&&user.is_verified),[users]);
   const isSuperAdmin=Boolean(me?.is_super_admin);
 
   return <><Nav/><main className="container section">
@@ -68,7 +85,7 @@ export default function Admin(){
       <div>
         <span className="eyebrow">Pilot command centre</span>
         <h2>{isSuperAdmin?'Super Admin dashboard':'Admin dashboard'}</h2>
-        <p className="muted">Marketplace health, merchant approvals, rider activation and notification operations.</p>
+        <p className="muted">Marketplace health, merchant approvals, rider dispatch and notification operations.</p>
       </div>
       <div className="row">
         {isSuperAdmin&&<span className="badge"><ShieldCheck size={15}/> Protected Super Admin</span>}
@@ -94,6 +111,14 @@ export default function Admin(){
       <div className="panel"><h2 className="subhead">Order pipeline</h2><div className="stack">{pipeline.map(([status,count])=><div className="metricRow" key={status}><span>{label(status)}</span><strong>{count}</strong></div>)}</div></div>
       <div className="panel"><h2 className="subhead">Merchant health</h2><div className="stack"><div className="metricRow"><span>Pending review</span><strong>{overview?.merchants.pending??0}</strong></div><div className="metricRow"><span>Approved</span><strong>{overview?.merchants.approved??0}</strong></div><div className="metricRow"><span>Suspended</span><strong>{overview?.merchants.suspended??0}</strong></div></div></div>
     </section>
+
+    <section className="section"><div className="panel">
+      <div className="row space"><div><h2 className="subhead">Delivery dispatch</h2><p className="muted">Assign ready orders to active verified riders. Riders can still self-claim unassigned work.</p></div><span className="badge">{tasks.length} awaiting assignment</span></div>
+      <div className="tableWrap"><table className="table"><thead><tr><th>Order</th><th>Pickup</th><th>Drop</th><th>Total</th><th>Rider</th><th>Action</th></tr></thead><tbody>
+        {tasks.map(task=><tr key={task.id}><td><strong>{task.order_number}</strong><div className="muted small">{label(task.payment_method)} • {label(task.payment_status)}</div></td><td><strong>{task.store_name}</strong><div className="muted small">{task.store_landmark||'Exact store pin available in rider workspace'}</div></td><td><strong>{task.recipient_name||'Customer'}</strong><div className="muted small">{task.customer_landmark}</div></td><td>{money(task.total)}</td><td><select aria-label={`Rider for ${task.order_number}`} value={riderFor[task.id]||''} onChange={event=>setRiderFor(current=>({...current,[task.id]:event.target.value}))}><option value="">Select rider</option>{riders.map(rider=><option key={rider.id} value={rider.id}>{rider.full_name||rider.phone}</option>)}</select></td><td><button className="btn" disabled={busy===task.id||!riderFor[task.id]} onClick={()=>assign(task)}>Assign</button></td></tr>)}
+        {!tasks.length&&<tr><td colSpan={6} className="muted">No ready deliveries are waiting for assignment.</td></tr>}
+      </tbody></table></div>
+    </div></section>
 
     <section className="section"><div className="panel">
       <h2 className="subhead">Merchant control</h2>
