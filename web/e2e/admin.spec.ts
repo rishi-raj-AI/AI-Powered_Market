@@ -21,6 +21,16 @@ test('normal admin can run operations but cannot manage administrator privilege'
   await expect(page.getByRole('button',{name:'Remove admin'})).toHaveCount(0);
 });
 
+test('admin assigns a ready order to an active rider',async({page})=>{
+  await installApiMocks(page,normalAdmin);
+  await page.goto('/admin');
+  await expect(page.getByRole('heading',{name:'Delivery dispatch'})).toBeVisible();
+  const riderSelect=page.getByRole('combobox',{name:'Rider for GO260829000001'});
+  await riderSelect.selectOption({label:'Bhushan'});
+  await page.getByRole('button',{name:'Assign'}).click();
+  await expect(page.getByText(/GO260829000001 assigned to Bhushan/)).toBeVisible();
+});
+
 test('@a11y super admin dashboard has no serious accessibility violations',async({page})=>{
   await installApiMocks(page,superAdmin);
   await page.goto('/admin');
