@@ -1,7 +1,7 @@
 import uuid
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
@@ -31,13 +31,21 @@ def _serviceability(db: Session, latitude: float, longitude: float) -> Serviceab
     )
 
 
-def _limit_provider(user: User, scope: str, limit: int) -> None:
+def _limit_provider(identifier: str, scope: str, limit: int) -> None:
     try:
-        rate_limiter.enforce(scope, str(user.id), limit=limit, window_seconds=60)
+        rate_limiter.enforce(scope, identifier, limit=limit, window_seconds=60)
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
     except RateLimitUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+def _public_location_identifier(request: Request, session_token: str | None) -> str:
+    if session_token and len(session_token) >= 8:
+        return f"session:{session_token}"
+    forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    client_ip = forwarded or (request.client.host if request.client else "unknown")
+    return f"ip:{client_ip}"
 
 
 @router.get("/villages", response_model=list[VillageRead])
@@ -74,19 +82,25 @@ def create_service_area(payload: ServiceAreaCreate, db: Session = Depends(get_db
 
 
 @router.get("/location/autocomplete", response_model=list[PlaceSuggestion])
-def location_autocomplete(q: str = Query(min_length=2, max_length=160), latitude: float | None = None, longitude: float | None = None, session_token: str | None = None, user: User = Depends(get_current_user)):
-    _limit_provider(user, "maps-autocomplete", 60)
+def location_autocomplete(
+    request: Request,
+    q: str = Query(min_length=2, max_length=160),
+    latitude: float | None = None,
+    longitude: float | None = None,
+    session_token: str | None = None,
+):
+    _limit_provider(_public_location_identifier(request, session_token), "maps-autocomplete", 60)
     try:
         return autocomplete(q, latitude, longitude, session_token)
     except PlacesUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail="Address search provider unavailable") from exc
+        raise HTTPException(status_code=502, detail="Location search provider unavailable") from exc
 
 
 @router.get("/location/place/{place_id}", response_model=PlaceDetailsRead)
-def location_place(place_id: str, session_token: str | None = None, user: User = Depends(get_current_user)):
-    _limit_provider(user, "maps-place-details", 30)
+def location_place(request: Request, place_id: str, session_token: str | None = None):
+    _limit_provider(_public_location_identifier(request, session_token), "maps-place-details", 30)
     try:
         return place_details(place_id, session_token)
     except PlacesUnavailable as exc:
@@ -96,8 +110,13 @@ def location_place(place_id: str, session_token: str | None = None, user: User =
 
 
 @router.get("/location/reverse", response_model=ReverseGeocodeRead | None)
-def location_reverse(latitude: float = Query(ge=-90, le=90), longitude: float = Query(ge=-180, le=180), user: User = Depends(get_current_user)):
-    _limit_provider(user, "maps-reverse", 30)
+def location_reverse(
+    request: Request,
+    latitude: float = Query(ge=-90, le=90),
+    longitude: float = Query(ge=-180, le=180),
+    session_token: str | None = None,
+):
+    _limit_provider(_public_location_identifier(request, session_token), "maps-reverse", 30)
     try:
         return reverse_geocode(latitude, longitude)
     except PlacesUnavailable as exc:
