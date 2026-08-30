@@ -17,6 +17,9 @@ class OrderStatus(str, enum.Enum):
     READY = "ready"
     OUT_FOR_DELIVERY = "out_for_delivery"
     DELIVERED = "delivered"
+    # Goods left the merchant but came back: the physical outcome of a delivery
+    # that failed after pickup. Terminal, and never implies payment.
+    RETURNED = "returned"
     CANCELLED = "cancelled"
 
 
