@@ -22,6 +22,18 @@ def _median(values: list[float]) -> float | None:
     return (ordered[middle - 1] + ordered[middle]) / 2
 
 
+def _utc(value: datetime) -> datetime:
+    """Normalize DB timestamps for safe arithmetic.
+
+    PostgreSQL deployments may return aware timestamps while SQLite/test fixtures can
+    return naive values. Existing order timestamps are UTC, so naive values are
+    interpreted as UTC rather than mixed with aware datetimes.
+    """
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 @router.get("/me/repeat-purchase-cadence")
 def repeat_purchase_cadence(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     rows = db.execute(
@@ -33,7 +45,7 @@ def repeat_purchase_cadence(db: Session = Depends(get_db), user: User = Depends(
 
     history: dict[object, list[tuple[str, datetime]]] = defaultdict(list)
     for product_id, product_name, created_at in rows:
-        history[product_id].append((product_name, created_at))
+        history[product_id].append((product_name, _utc(created_at)))
 
     now = datetime.now(timezone.utc)
     items = []
