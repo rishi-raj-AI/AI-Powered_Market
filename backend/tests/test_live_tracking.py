@@ -7,6 +7,26 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 client = TestClient(app)
+
+def seeded_village() -> dict:
+    """The seeded pilot village, by identity rather than listing position."""
+    villages = client.get("/api/v1/villages").json()
+    for village in villages:
+        if village["name"] == "Pilot Village":
+            return village
+    assert villages, "no villages are seeded"
+    return villages[0]
+
+
+def seeded_store() -> dict:
+    """The seeded pilot store, by slug rather than listing position."""
+    stores = client.get("/api/v1/stores").json()
+    for store in stores:
+        if store["slug"] == "patil-kirana-pilot":
+            return store
+    assert stores, "no stores are seeded"
+    return stores[0]
+
 OTP = "123456"
 
 
@@ -43,10 +63,10 @@ def test_customer_sees_only_active_assigned_rider_location() -> None:
     assert promote.status_code == 200, promote.text
 
     stores = client.get("/api/v1/stores").json(); assert stores
-    store = stores[0]
+    store = seeded_store()
     listings = client.get(f"/api/v1/stores/{store['id']}/products").json(); assert listings
     villages = client.get("/api/v1/villages").json(); assert villages
-    village = villages[0]
+    village = seeded_village()
     customer_latitude = village.get("latitude"); customer_longitude = village.get("longitude")
     assert customer_latitude is not None and customer_longitude is not None
     rider_latitude = customer_latitude + 0.0005; rider_longitude = customer_longitude + 0.0005

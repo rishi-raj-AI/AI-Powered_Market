@@ -6,6 +6,26 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 client = TestClient(app)
+
+def seeded_village() -> dict:
+    """The seeded pilot village, by identity rather than listing position."""
+    villages = client.get("/api/v1/villages").json()
+    for village in villages:
+        if village["name"] == "Pilot Village":
+            return village
+    assert villages, "no villages are seeded"
+    return villages[0]
+
+
+def seeded_store() -> dict:
+    """The seeded pilot store, by slug rather than listing position."""
+    stores = client.get("/api/v1/stores").json()
+    for store in stores:
+        if store["slug"] == "patil-kirana-pilot":
+            return store
+    assert stores, "no stores are seeded"
+    return stores[0]
+
 OTP = "123456"
 
 
@@ -51,7 +71,7 @@ def set_presence(rider_token: str, latitude: float, longitude: float, online: bo
 def create_ready_order(customer_token: str, customer_phone: str, merchant_token: str) -> tuple[str, str]:
     villages = client.get("/api/v1/villages").json()
     assert villages
-    village = villages[0]
+    village = seeded_village()
     address = client.post(
         "/api/v1/addresses/me",
         headers=auth(customer_token),
@@ -73,7 +93,7 @@ def create_ready_order(customer_token: str, customer_phone: str, merchant_token:
     assert mine.status_code == 200, mine.text
     stores = mine.json()
     assert stores
-    store = stores[0]
+    store = seeded_store()
     listings = client.get(f"/api/v1/stores/{store['id']}/products").json()
     assert listings
     listing = listings[0]
@@ -111,7 +131,7 @@ def test_postgis_discovery_serviceability_and_nearest_dispatch() -> None:
     merchant_token = token("+919000000003")
     villages = client.get("/api/v1/villages").json()
     assert villages
-    village = villages[0]
+    village = seeded_village()
 
     serviceability = client.get(
         "/api/v1/location/serviceability",
@@ -166,7 +186,7 @@ def test_postgis_discovery_serviceability_and_nearest_dispatch() -> None:
 def test_concurrent_dispatch_does_not_double_assign_one_rider() -> None:
     admin_token = token("+919000000001")
     merchant_token = token("+919000000003")
-    village = client.get("/api/v1/villages").json()[0]
+    village = seeded_village()
 
     rider_token = token(phone(4), "Race Rider")
     rider_id = promote_rider(admin_token, rider_token)

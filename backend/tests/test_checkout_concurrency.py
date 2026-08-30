@@ -6,6 +6,26 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 client = TestClient(app)
+
+def seeded_village() -> dict:
+    """The seeded pilot village, by identity rather than listing position."""
+    villages = client.get("/api/v1/villages").json()
+    for village in villages:
+        if village["name"] == "Pilot Village":
+            return village
+    assert villages, "no villages are seeded"
+    return villages[0]
+
+
+def seeded_store() -> dict:
+    """The seeded pilot store, by slug rather than listing position."""
+    stores = client.get("/api/v1/stores").json()
+    for store in stores:
+        if store["slug"] == "patil-kirana-pilot":
+            return store
+    assert stores, "no stores are seeded"
+    return stores[0]
+
 OTP = "123456"
 
 
@@ -27,7 +47,7 @@ def customer_phone(prefix: int = 7) -> str:
 
 
 def create_address(customer_token: str, phone: str) -> str:
-    village = client.get("/api/v1/villages").json()[0]
+    village = seeded_village()
     response = client.post(
         "/api/v1/addresses/me",
         headers=auth(customer_token),
@@ -49,9 +69,7 @@ def create_address(customer_token: str, phone: str) -> str:
 
 def seeded_listing() -> tuple[str, str, str]:
     merchant_token = token("+919000000003")
-    stores = client.get("/api/v1/stores").json()
-    assert stores
-    store_id = stores[0]["id"]
+    store_id = seeded_store()["id"]
     inventory = client.get(f"/api/v1/stores/{store_id}/inventory", headers=auth(merchant_token))
     assert inventory.status_code == 200, inventory.text
     assert inventory.json()

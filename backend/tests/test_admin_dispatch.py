@@ -5,6 +5,26 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 client = TestClient(app)
+
+def seeded_village() -> dict:
+    """The seeded pilot village, by identity rather than listing position."""
+    villages = client.get("/api/v1/villages").json()
+    for village in villages:
+        if village["name"] == "Pilot Village":
+            return village
+    assert villages, "no villages are seeded"
+    return villages[0]
+
+
+def seeded_store() -> dict:
+    """The seeded pilot store, by slug rather than listing position."""
+    stores = client.get("/api/v1/stores").json()
+    for store in stores:
+        if store["slug"] == "patil-kirana-pilot":
+            return store
+    assert stores, "no stores are seeded"
+    return stores[0]
+
 OTP = "123456"
 
 
@@ -42,7 +62,7 @@ def test_admin_can_assign_recover_and_reassign_ready_delivery() -> None:
     rider=client.get("/api/v1/users/me",headers=auth(rider_token)).json()
     promote=client.patch(f"/api/v1/admin/users/{rider['id']}/role",headers=auth(admin_token),json={"role":"delivery","is_active":True})
     assert promote.status_code==200,promote.text
-    store=client.get("/api/v1/stores").json()[0];listing_id=client.get(f"/api/v1/stores/{store['id']}/products").json()[0]["id"];village_id=client.get("/api/v1/villages").json()[0]["id"]
+    store=seeded_store();listing_id=client.get(f"/api/v1/stores/{store['id']}/products").json()[0]["id"];village_id=seeded_village()["id"]
     address=client.post("/api/v1/addresses/me",headers=auth(customer_token),json={"village_id":village_id,"label":"Home","landmark":"Dispatch Chowk","latitude":18.5208,"longitude":73.8572,"is_default":True})
     assert address.status_code==201,address.text
     address_id=address.json()["id"]
