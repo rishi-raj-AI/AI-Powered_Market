@@ -21,6 +21,7 @@ from app.api.v1.routes.geography import router as geography_router
 from app.api.v1.routes.health import router as health_router
 from app.api.v1.routes.media import router as media_router
 from app.api.v1.routes.merchant_intelligence import router as merchant_intelligence_router
+from app.api.v1.routes.merchant_reliability import router as merchant_reliability_router
 from app.api.v1.routes.notifications import router as notifications_router
 from app.api.v1.routes.order_mutations import router as order_mutations_router
 from app.api.v1.routes.order_recovery import router as order_recovery_router
@@ -59,6 +60,7 @@ api_router.include_router(basket_recommendations_router)
 api_router.include_router(store_availability_router)
 api_router.include_router(cart_health_router)
 api_router.include_router(preparation_estimate_router)
+api_router.include_router(merchant_reliability_router)
 api_router.include_router(commerce_router)
 api_router.include_router(delivery_tasks_router)
 api_router.include_router(checkout_quote_router)
