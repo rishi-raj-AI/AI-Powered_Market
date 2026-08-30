@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
+from app.models.commerce import StoreProduct
 from app.models.orders import Order, OrderItem, OrderStatus
 from app.models.user import User
 
@@ -23,12 +24,7 @@ def _median(values: list[float]) -> float | None:
 
 
 def _utc(value: datetime) -> datetime:
-    """Normalize DB timestamps for safe arithmetic.
-
-    PostgreSQL deployments may return aware timestamps while SQLite/test fixtures can
-    return naive values. Existing order timestamps are UTC, so naive values are
-    interpreted as UTC rather than mixed with aware datetimes.
-    """
+    """Normalize DB timestamps for safe arithmetic across DB/test drivers."""
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
@@ -37,15 +33,21 @@ def _utc(value: datetime) -> datetime:
 @router.get("/me/repeat-purchase-cadence")
 def repeat_purchase_cadence(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     rows = db.execute(
-        select(OrderItem.product_id, OrderItem.product_name, Order.created_at)
+        select(
+            OrderItem.product_id,
+            OrderItem.product_name,
+            Order.created_at,
+            Order.id,
+            Order.store_id,
+        )
         .join(Order, Order.id == OrderItem.order_id)
         .where(Order.user_id == user.id, Order.status == OrderStatus.DELIVERED)
         .order_by(OrderItem.product_id, Order.created_at)
     ).all()
 
-    history: dict[object, list[tuple[str, datetime]]] = defaultdict(list)
-    for product_id, product_name, created_at in rows:
-        history[product_id].append((product_name, _utc(created_at)))
+    history: dict[object, list[tuple[str, datetime, object, object]]] = defaultdict(list)
+    for product_id, product_name, created_at, order_id, store_id in rows:
+        history[product_id].append((product_name, _utc(created_at), order_id, store_id))
 
     now = datetime.now(timezone.utc)
     items = []
@@ -59,17 +61,29 @@ def repeat_purchase_cadence(db: Session = Depends(get_db), user: User = Depends(
         cadence_days = _median(intervals)
         if cadence_days is None:
             continue
-        last_at = purchases[-1][1]
+        last_name, last_at, last_order_id, last_store_id = purchases[-1]
         days_since = max(0.0, (now - last_at).total_seconds() / 86400.0)
         due_ratio = days_since / max(cadence_days, 1.0)
+        listing = db.scalar(
+            select(StoreProduct).where(
+                StoreProduct.store_id == last_store_id,
+                StoreProduct.product_id == product_id,
+                StoreProduct.is_available.is_(True),
+                StoreProduct.stock_quantity > 0,
+            )
+        )
         items.append({
             "product_id": str(product_id),
-            "product_name": purchases[-1][0],
+            "product_name": last_name,
             "purchase_count": len(purchases),
             "cadence_days": round(cadence_days, 1),
             "days_since_last_purchase": round(days_since, 1),
             "due": due_ratio >= 0.85,
             "urgency_score": round(min(due_ratio, 2.0), 3),
+            "last_order_id": str(last_order_id),
+            "last_store_id": str(last_store_id),
+            "listing_id": str(listing.id) if listing is not None else None,
+            "available_now": listing is not None,
         })
 
     items.sort(key=lambda item: (-item["urgency_score"], -item["purchase_count"], item["product_name"].casefold()))
