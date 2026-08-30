@@ -64,6 +64,50 @@ def create_razorpay_order(*, amount: Decimal, receipt: str, gaonone_order_id: st
     return data
 
 
+def create_razorpay_refund(
+    *,
+    provider_payment_id: str,
+    amount: Decimal,
+    idempotency_key: str,
+    notes: dict[str, str] | None = None,
+) -> dict:
+    """Ask Razorpay to refund a captured payment.
+
+    The provider idempotency header makes a repeated call for the same logical
+    refund return the original refund instead of creating a second one, so a
+    retry after a network timeout cannot pay the customer twice.
+    """
+    if not razorpay_enabled():
+        raise PaymentProviderUnavailable("Razorpay credentials are not configured")
+
+    payload: dict = {"amount": amount_to_subunits(amount), "speed": "normal"}
+    if notes:
+        payload["notes"] = notes
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            response = client.post(
+                f"https://api.razorpay.com/v1/payments/{provider_payment_id}/refund",
+                auth=(settings.RAZORPAY_KEY_ID or "", settings.RAZORPAY_KEY_SECRET or ""),
+                headers={"X-Payment-Idempotency-Key": idempotency_key},
+                json=payload,
+            )
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise PaymentProviderError(
+            f"Razorpay rejected the refund request ({exc.response.status_code})"
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise PaymentProviderError("Unable to reach Razorpay") from exc
+
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise PaymentProviderError("Razorpay returned an invalid refund response") from exc
+    if not isinstance(data, dict) or not data.get("id"):
+        raise PaymentProviderError("Razorpay returned an invalid refund response")
+    return data
+
+
 def verify_razorpay_signature(
     *, provider_order_id: str, provider_payment_id: str, received_signature: str
 ) -> bool:

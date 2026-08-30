@@ -7,11 +7,16 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, require_roles
 from app.models.commerce import Merchant, MerchantStatus, Store, StoreProduct
-from app.models.orders import Order, OrderItem, OrderStatus, PaymentStatus
+from app.models.orders import Order, OrderItem, OrderStatus
 from app.models.user import User, UserRole
 from app.schemas.orders import OrderRead, OrderStatusUpdate
 from app.services.notifications import enqueue_notification
 from app.services.order_transitions import can_transition_order, transition_order
+from app.services.refunds import (
+    REFUND_REASON_CANCELLED,
+    ensure_refund_request,
+    try_dispatch_order_refund,
+)
 
 router = APIRouter(tags=["Order Mutations"])
 
@@ -88,15 +93,19 @@ def cancel_my_order_safely(
 
     _restore_stock_once(db, order)
     transition_order(order, OrderStatus.CANCELLED)
-    if order.payment_status == PaymentStatus.PAID:
-        order.payment_status = PaymentStatus.REFUNDED
+    refund = ensure_refund_request(db, order, reason=REFUND_REASON_CANCELLED)
 
     _notify_customer(
         db,
         order,
         "order.cancelled",
         "Order cancelled",
-        f"Order {order.order_number} was cancelled successfully.",
+        (
+            f"Order {order.order_number} was cancelled. Your refund of ₹{order.total} has been "
+            "requested and will reach your original payment method shortly."
+            if refund is not None
+            else f"Order {order.order_number} was cancelled successfully."
+        ),
     )
     _notify_merchant(
         db,
@@ -106,6 +115,8 @@ def cancel_my_order_safely(
         f"Order {order.order_number} was cancelled before acceptance.",
     )
     db.commit()
+    if refund is not None:
+        try_dispatch_order_refund(db, order.id)
     db.refresh(order)
     return order
 
@@ -135,16 +146,21 @@ def update_order_status_safely(
             detail=f"Invalid transition from {order.status.value} to {payload.status.value}",
         )
 
+    store_refund = None
     if payload.status == OrderStatus.CANCELLED:
         _restore_stock_once(db, order)
-        if order.payment_status == PaymentStatus.PAID:
-            order.payment_status = PaymentStatus.REFUNDED
+        store_refund = ensure_refund_request(db, order, reason=REFUND_REASON_CANCELLED)
         _notify_customer(
             db,
             order,
             "order.cancelled",
             "Order cancelled",
-            f"Order {order.order_number} was cancelled by the store.",
+            (
+                f"Order {order.order_number} was cancelled by the store. Your refund of "
+                f"₹{order.total} has been requested."
+                if store_refund is not None
+                else f"Order {order.order_number} was cancelled by the store."
+            ),
         )
     elif payload.status == OrderStatus.ACCEPTED:
         _notify_customer(db, order, "order.accepted", "Order accepted", "The store accepted your order.")
@@ -161,5 +177,7 @@ def update_order_status_safely(
 
     transition_order(order, payload.status)
     db.commit()
+    if store_refund is not None:
+        try_dispatch_order_refund(db, order.id)
     db.refresh(order)
     return order

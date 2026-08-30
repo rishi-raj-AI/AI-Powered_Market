@@ -65,3 +65,20 @@ class PaymentVerifyResponse(BaseModel):
     order_id: uuid.UUID
     payment_status: str
     provider_payment_id: str
+
+
+class PaymentRefundRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    order_id: uuid.UUID
+    amount: Decimal
+    currency: str
+    status: str
+    reason: str
+    provider_refund_id: str | None = None
+    provider_status: str | None = None
+    failure_reason: str | None = None
+    attempt_count: int
+    requested_at: datetime
+    processed_at: datetime | None = None
+    failed_at: datetime | None = None

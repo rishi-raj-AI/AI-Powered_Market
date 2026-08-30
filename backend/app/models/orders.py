@@ -29,6 +29,9 @@ class PaymentStatus(str, enum.Enum):
     PENDING = "pending"
     PAID = "paid"
     FAILED = "failed"
+    # Money was captured and a refund is owed but not yet confirmed by the
+    # provider. REFUNDED is only ever written after provider-confirmed success.
+    REFUND_PENDING = "refund_pending"
     REFUNDED = "refunded"
 
 
