@@ -6,8 +6,8 @@ test('customer can discover and verify an exact delivery location',async({page})
   await installApiMocks(page);
   await page.goto('/checkout');
   await page.getByRole('button',{name:/Add address/i}).click();
-  await page.getByLabel(/Village/).selectOption('village-niphad');
-  const search=page.getByPlaceholder(/Search village, road, landmark or address/i);
+  await page.getByLabel(/Service-area fallback/).selectOption('village-niphad');
+  const search=page.getByPlaceholder(/Search area, road, landmark or address/i);
   await search.fill('Niphad');
   await expect(page.getByRole('button',{name:/Niphad.*Maharashtra/i})).toBeVisible();
   await page.getByRole('button',{name:/Niphad.*Maharashtra/i}).click();
@@ -20,7 +20,7 @@ test('approved merchant can resolve a storefront and auto-select service area',a
   await page.goto('/merchant');
   await page.getByLabel('Store name').fill('Nimbu Kirana Niphad');
   await page.getByLabel('Village').selectOption('village-niphad');
-  const search=page.getByPlaceholder(/Search village, road, landmark or address/i);
+  const search=page.getByPlaceholder(/Search area, road, landmark or address/i);
   await search.fill('Niphad');
   await page.getByRole('button',{name:/Niphad.*Maharashtra/i}).click();
   await expect(page.getByText(/Store is inside Niphad Local/i)).toBeVisible();

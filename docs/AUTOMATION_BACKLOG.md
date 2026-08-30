@@ -64,6 +64,14 @@ This is the execution queue for automation-mode development. Tasks are taken in 
 - [ ] S03 Dispatch scoring and batching.
 - [ ] S04 ETA and delivery performance analytics.
 - [ ] S05 Multilingual/voice ordering and merchant catalog assistance.
+- [ ] S06 Demand forecasting and merchant recommendations.
+- [ ] S07 AI-assisted support and issue triage.
+
+## Wave 7 — Universal discovery and location intelligence
+
+- [ ] X01 Universal India location discovery across area, colony, neighbourhood, village, town, city, landmark and pincode, with GPS fallback.
+- [ ] X02 Location-aware commerce search across nearby stores, available products and categories with relevance and distance ranking.
+- [ ] X03 Remember recent locations, surface serviceability context, preserve selected-location filters and provide useful coverage fallback when GaonOne is not yet live at the exact point.
 
 ## Execution rule
 

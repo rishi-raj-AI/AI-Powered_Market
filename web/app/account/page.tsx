@@ -4,6 +4,7 @@ import {FormEvent,useEffect,useState} from 'react';
 import {useRouter} from 'next/navigation';
 import {BriefcaseBusiness,CheckCircle2,ShieldCheck,UserRound} from 'lucide-react';
 import {ApiError,gaonApi,Merchant,User} from '@/lib/api';
+import {DueAgainPanel} from '@/components/DueAgainPanel';
 import {Nav} from '@/components/Nav';
 
 export default function AccountPage(){
@@ -71,5 +72,6 @@ export default function AccountPage(){
         </form>
       </section>:<section className="panel stack"><h3>Role workspace</h3><p className="muted">Your current role is <strong>{me?.role}</strong>. Use the navigation above to open its workspace.</p></section>}
     </div>
+    {me?.role==='customer'&&<div style={{marginTop:18}}><DueAgainPanel/></div>}
   </main></>;
 }
