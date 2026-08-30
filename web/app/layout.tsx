@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { Providers } from './providers';
+import { ConnectivityBanner } from '@/components/ConnectivityBanner';
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://gaonone.in'),
@@ -31,7 +32,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
-        <Providers>{children}</Providers>
+        <Providers><ConnectivityBanner/>{children}</Providers>
       </body>
     </html>
   );
