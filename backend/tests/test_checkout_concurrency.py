@@ -114,6 +114,47 @@ def test_checkout_idempotency_returns_original_order_and_decrements_once() -> No
     set_stock(merchant_token, store_id, listing_id, 20)
 
 
+def test_concurrent_duplicate_checkout_returns_one_order_and_decrements_once() -> None:
+    merchant_token, store_id, listing_id = seeded_listing()
+    set_stock(merchant_token, store_id, listing_id, 5)
+
+    phone = customer_phone(5)
+    customer_token = token(phone, "Concurrent Idempotent Customer")
+    address_id = create_address(customer_token, phone)
+    added = client.post(
+        "/api/v1/cart/items",
+        headers=auth(customer_token),
+        json={"store_product_id": listing_id, "quantity": 1},
+    )
+    assert added.status_code == 200, added.text
+
+    key = f"duplicate-race-{uuid4()}"
+
+    def do_checkout(_: int):
+        return client.post(
+            "/api/v1/orders/checkout",
+            headers={**auth(customer_token), "Idempotency-Key": key},
+            json={"address_id": address_id, "payment_method": "cod"},
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(do_checkout, range(2)))
+
+    assert [response.status_code for response in responses] == [201, 201], [response.text for response in responses]
+    order_ids = {response.json()["id"] for response in responses}
+    order_numbers = {response.json()["order_number"] for response in responses}
+    assert len(order_ids) == 1
+    assert len(order_numbers) == 1
+    assert stock_quantity(merchant_token, store_id, listing_id) == 4
+
+    orders = client.get("/api/v1/orders/me", headers=auth(customer_token))
+    assert orders.status_code == 200, orders.text
+    matching = [item for item in orders.json() if item["id"] in order_ids]
+    assert len(matching) == 1
+
+    set_stock(merchant_token, store_id, listing_id, 20)
+
+
 def test_concurrent_checkout_cannot_oversell_last_unit() -> None:
     merchant_token, store_id, listing_id = seeded_listing()
     set_stock(merchant_token, store_id, listing_id, 1)
