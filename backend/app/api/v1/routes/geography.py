@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -113,7 +114,11 @@ def location_serviceability(latitude: float = Query(ge=-90, le=90), longitude: f
 
 @router.get("/addresses/me", response_model=list[AddressRead])
 def list_my_addresses(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return db.scalars(select(Address).where(Address.user_id == user.id).order_by(Address.is_default.desc(), Address.created_at.desc())).all()
+    return db.scalars(
+        select(Address)
+        .where(Address.user_id == user.id, Address.archived_at.is_(None))
+        .order_by(Address.is_default.desc(), Address.created_at.desc())
+    ).all()
 
 
 @router.post("/addresses/me", response_model=AddressRead, status_code=status.HTTP_201_CREATED)
@@ -128,7 +133,11 @@ def create_my_address(payload: AddressCreate, db: Session = Depends(get_db), use
         if not coverage.serviceable:
             raise HTTPException(status_code=422, detail="Delivery address is outside the active GaonOne service area")
     if payload.is_default:
-        db.execute(update(Address).where(Address.user_id == user.id).values(is_default=False))
+        db.execute(
+            update(Address)
+            .where(Address.user_id == user.id, Address.archived_at.is_(None))
+            .values(is_default=False)
+        )
     address = Address(user_id=user.id, **payload.model_dump())
     db.add(address)
     db.commit()
@@ -138,8 +147,15 @@ def create_my_address(payload: AddressCreate, db: Session = Depends(get_db), use
 
 @router.delete("/addresses/me/{address_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_my_address(address_id: uuid.UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Archive an address.
+
+    A hard delete raised a foreign-key violation for any address an order had
+    ever referenced, which reached the customer as a 500, and would have erased
+    where a past order was actually delivered.
+    """
     address = db.get(Address, address_id)
-    if address is None or address.user_id != user.id:
+    if address is None or address.user_id != user.id or address.archived_at is not None:
         raise HTTPException(status_code=404, detail="Address not found")
-    db.delete(address)
+    address.archived_at = datetime.now(timezone.utc)
+    address.is_default = False
     db.commit()

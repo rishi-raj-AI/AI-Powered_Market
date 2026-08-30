@@ -54,6 +54,24 @@ def _existing_idempotent_order(db: Session, user_id: uuid.UUID, key: str | None)
     )
 
 
+def _address_snapshot(address: Address) -> dict:
+    """Freeze where this order is going, so order history cannot drift."""
+    return {
+        key: value
+        for key, value in {
+            "recipient_name": address.recipient_name,
+            "phone": address.phone,
+            "house_details": address.house_details,
+            "landmark": address.landmark,
+            "directions": address.directions,
+            "latitude": address.latitude,
+            "longitude": address.longitude,
+            "village_id": str(address.village_id),
+        }.items()
+        if value is not None
+    }
+
+
 def _address_point(db: Session, address: Address) -> tuple[float, float] | None:
     if address.latitude is not None and address.longitude is not None:
         return float(address.latitude), float(address.longitude)
@@ -79,7 +97,7 @@ def safe_checkout(
             return existing
 
     address = db.get(Address, payload.address_id)
-    if address is None or address.user_id != user.id:
+    if address is None or address.user_id != user.id or address.archived_at is not None:
         raise HTTPException(status_code=404, detail="Address not found")
 
     cart = db.scalar(select(Cart).where(Cart.user_id == user.id).with_for_update())
@@ -152,6 +170,7 @@ def safe_checkout(
         store_id=cart.store_id,
         address_id=address.id,
         idempotency_key=idempotency_key,
+        delivery_address=_address_snapshot(address),
         payment_method=payload.payment_method,
         subtotal=subtotal,
         delivery_fee=delivery_fee,
