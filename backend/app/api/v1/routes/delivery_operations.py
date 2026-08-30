@@ -38,6 +38,7 @@ from app.services.order_transitions import (
     transition_delivery,
     transition_order,
 )
+from app.services.settlements import ensure_settlement_entry
 
 router = APIRouter(tags=["Delivery Operations"])
 OTP_TTL_MINUTES = 15
@@ -286,6 +287,7 @@ def complete_delivery(
     transition_order(order, OrderStatus.DELIVERED)
     if order.payment_method == PaymentMethod.COD:
         order.payment_status = PaymentStatus.PAID
+        ensure_settlement_entry(db, order)
 
     enqueue_notification(
         db,
