@@ -10,6 +10,7 @@ from app.models.commerce import Merchant, MerchantStatus, Store, StoreProduct
 from app.models.geography import Address, Village
 from app.models.orders import Cart, CartItem, Delivery, DeliveryStatus, Order, OrderStatus
 from app.models.user import User
+from app.services.pricing import checkout_totals
 from app.services.spatial import point_is_in_service_area
 
 router = APIRouter(tags=["Commerce Intelligence"])
@@ -102,8 +103,7 @@ def checkout_decision_summary(
     if sample_count >= 5 and reliability < 0.65:
         warnings.append("store_reliability_below_target")
 
-    delivery_fee = Decimal("20.00")
-    total = subtotal + delivery_fee
+    delivery_fee, total = checkout_totals(subtotal=subtotal, serviceable=serviceable)
     ready = not blockers
     if ready and warnings:
         recommendation = "review_then_checkout"
@@ -118,7 +118,7 @@ def checkout_decision_summary(
         "ready": ready,
         "store_id": str(cart.store_id),
         "address_id": str(address_id),
-        "subtotal": str(subtotal),
+        "subtotal": str(subtotal.quantize(Decimal("0.01"))),
         "delivery_fee": str(delivery_fee),
         "total": str(total),
         "delivery_serviceable": serviceable,
