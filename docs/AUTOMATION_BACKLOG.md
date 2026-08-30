@@ -43,7 +43,7 @@ This is the execution queue for automation-mode development. Tasks are taken in 
 
 ## Wave 4 — Tracking, payments and settlement
 
-- [ ] T01 Harden live tracking authorization and event validation.
+- [x] T01 Harden live tracking authorization and event validation.
 - [ ] T02 Add stale-location and impossible-coordinate safeguards.
 - [ ] P01 Audit payment webhook signature/idempotency behavior.
 - [ ] P02 Model COD collection separately from commercial payment status where required.
