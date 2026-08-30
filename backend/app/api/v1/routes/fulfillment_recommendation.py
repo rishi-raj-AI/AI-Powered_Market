@@ -14,14 +14,12 @@ INDIA_TZ = ZoneInfo("Asia/Kolkata")
 
 
 def recommend_mode(*, delivery: bool, pickup: bool, serviceable: bool, is_open: bool) -> tuple[str, list[str]]:
-    reasons: list[str] = []
     if delivery and serviceable and is_open:
         return "delivery_now", ["delivery_enabled", "serviceable", "store_open"]
     if pickup and is_open:
         return "pickup_now", ["pickup_enabled", "store_open"]
     if delivery and serviceable:
-        reasons.extend(["delivery_enabled", "serviceable", "store_closed_now"])
-        return "scheduled_delivery", reasons
+        return "scheduled_delivery", ["delivery_enabled", "serviceable", "store_closed_now"]
     if pickup:
         return "scheduled_pickup", ["pickup_enabled", "store_closed_now"]
     return "unavailable", ["no_supported_fulfillment_mode"]
@@ -47,23 +45,14 @@ def fulfillment_recommendation(
     merchant = db.get(Merchant, store.merchant_id) if store else None
     if store is None or not store.is_active or merchant is None or merchant.status != MerchantStatus.APPROVED:
         raise HTTPException(status_code=404, detail="Store not found")
-
-    serviceable = bool(
-        store.delivery_enabled
-        and store.service_area_id
-        and point_is_in_service_area(db, store.service_area_id, latitude, longitude)
-    )
+    serviceable = bool(store.delivery_enabled and store.service_area_id and point_is_in_service_area(db, store.service_area_id, latitude, longitude))
     open_now = is_store_open(opens_at=store.opens_at, closes_at=store.closes_at)
-
-    mode, reasons = recommend_mode(
-        delivery=store.delivery_enabled,
-        pickup=store.pickup_enabled,
-        serviceable=serviceable,
-        is_open=open_now,
-    )
+    mode, reasons = recommend_mode(delivery=store.delivery_enabled, pickup=store.pickup_enabled, serviceable=serviceable, is_open=open_now)
     return {
         "store_id": str(store.id),
         "recommended_mode": mode,
+        "delivery_enabled": bool(store.delivery_enabled),
+        "pickup_enabled": bool(store.pickup_enabled),
         "delivery_serviceable": serviceable,
         "store_open": open_now,
         "timezone": "Asia/Kolkata",
