@@ -12,20 +12,22 @@ class CommerceIntelligenceApi {
     return {'Content-Type': 'application/json', if (token != null) 'Authorization': 'Bearer $token'};
   }
 
-  static Future<Map<String, dynamic>> _get(String path) async {
+  static Future<dynamic> _getAny(String path) async {
     final response = await http.get(Uri.parse('${GaonApi.baseUrl}$path'), headers: await _headers()).timeout(GaonApi.timeout);
     final body = response.body.isEmpty ? null : jsonDecode(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final detail = body is Map ? body['detail'] : null;
       throw Exception(detail is String ? detail : 'Request failed (${response.statusCode})');
     }
-    return Map<String, dynamic>.from(body as Map);
+    return body;
   }
 
+  static Future<Map<String, dynamic>> _get(String path) async => Map<String, dynamic>.from(await _getAny(path) as Map);
   static Future<Map<String, dynamic>> preparationEstimate(String storeId) => _get('/stores/$storeId/preparation-estimate');
   static Future<List<Map<String, dynamic>>> basketRecommendations() async { final data = await _get('/cart/recommendations'); return (data['items'] as List? ?? const []).map((item) => Map<String, dynamic>.from(item as Map)).toList(); }
   static Future<Map<String, dynamic>> personalizedFeed({required double latitude, required double longitude}) { final query = Uri(queryParameters: {'latitude': '$latitude', 'longitude': '$longitude', 'radius_km': '20', 'limit': '20'}).query; return _get('/discovery/for-you?$query'); }
   static Future<List<Map<String, dynamic>>> substitutions(String listingId) async { final data = await _get('/store-products/$listingId/substitutions'); return (data['items'] as List? ?? const []).map((item) => Map<String, dynamic>.from(item as Map)).toList(); }
+  static Future<List<Map<String, dynamic>>> fulfillmentWindows(String storeId, String mode) async { final data = await _getAny('/stores/$storeId/fulfillment-windows?mode=$mode&days=3'); return (data as List).map((item) => Map<String, dynamic>.from(item as Map)).toList(); }
   static Future<Map<String, dynamic>> fulfillmentRecommendation(String storeId, {required double latitude, required double longitude}) { final query = Uri(queryParameters: {'latitude': '$latitude', 'longitude': '$longitude'}).query; return _get('/stores/$storeId/fulfillment-recommendation?$query'); }
   static Future<List<Map<String, dynamic>>> repeatPurchaseCadence() async { final data = await _get('/me/repeat-purchase-cadence'); return (data['items'] as List? ?? const []).map((item) => Map<String, dynamic>.from(item as Map)).toList(); }
   static Future<Map<String, dynamic>> merchantReliability(String storeId) => _get('/stores/$storeId/reliability');

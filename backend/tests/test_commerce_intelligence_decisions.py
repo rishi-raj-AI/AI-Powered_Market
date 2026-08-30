@@ -2,6 +2,7 @@ from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
 
 from app.api.v1.routes.cart_health import assess_cart_item
+from app.api.v1.routes.delivery_windows import INDIA_TZ, _generate_windows
 from app.api.v1.routes.fulfillment_recommendation import is_store_open, recommend_mode
 from app.api.v1.routes.merchant_reliability import reliability_score
 from app.api.v1.routes.repeat_cadence import _median, _utc
@@ -37,6 +38,15 @@ def test_store_hours_use_india_local_time_and_support_overnight_windows():
     at_one_ist = datetime(2026, 8, 30, 19, 30, tzinfo=timezone.utc)
     assert is_store_open(opens_at=time(20), closes_at=time(2), now=at_one_ist)
     assert not is_store_open(opens_at=time(9), closes_at=time(18), now=at_one_ist)
+
+
+def test_fulfillment_windows_use_india_local_business_hours():
+    late_utc = datetime(2026, 8, 30, 20, 30, tzinfo=timezone.utc)  # 02:00 IST next day
+    slots = _generate_windows(late_utc, days=1)
+    assert slots
+    assert all(start.tzinfo == INDIA_TZ and end.tzinfo == INDIA_TZ for start, end in slots)
+    assert all(7 <= start.hour < 21 and end.hour <= 22 for start, end in slots)
+    assert slots[0][0].date().isoformat() == "2026-08-31"
 
 
 def test_reliability_score_is_bounded_and_penalizes_failures():

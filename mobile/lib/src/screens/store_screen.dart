@@ -6,6 +6,7 @@ import '../api/resilient_api.dart';
 import '../models/models.dart';
 import '../widgets/basket_recommendations_card.dart';
 import '../widgets/fulfillment_recommendation_card.dart';
+import '../widgets/fulfillment_windows_card.dart';
 import '../widgets/store_trust_card.dart';
 import '../widgets/substitution_button.dart';
 
@@ -57,7 +58,9 @@ class _StoreScreenState extends State<StoreScreen> {
       Text(widget.store.name, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)), const SizedBox(height: 4), Text(widget.store.landmark ?? widget.store.description ?? 'Local store'), StoreTrustCard(storeId: widget.store.id),
       if (preparation != null) Card(child: ListTile(leading: const Icon(Icons.schedule_outlined), title: Text(CommerceIntelligenceApi.preparationCopy(preparation!)), subtitle: Text('${CommerceIntelligenceApi.preparationDetail(preparation!)} Preparation time is an estimate, not a delivery ETA.'))),
       if (preparationError != null) const Card(child: ListTile(leading: Icon(Icons.schedule_outlined), title: Text('Preparation estimate unavailable'), subtitle: Text('You can still browse and order. Pull to refresh when the network improves.'))),
-      FulfillmentRecommendationCard(storeId: widget.store.id), const BasketRecommendationsCard(),
+      FulfillmentRecommendationCard(storeId: widget.store.id),
+      FulfillmentWindowsCard(storeId: widget.store.id, deliveryEnabled: widget.store.deliveryEnabled, pickupEnabled: widget.store.pickupEnabled),
+      const BasketRecommendationsCard(),
       if (cached) Card(child: ListTile(leading: const Icon(Icons.cloud_off_outlined), title: const Text('Saved catalogue'), subtitle: Text(cachedAt == null ? 'Prices and stock may have changed.' : 'Last synced ${cachedAt!.toLocal()}. Cart changes are paused until reconnect.'))),
       const SizedBox(height: 16), TextField(decoration: const InputDecoration(prefixIcon: Icon(Icons.search), labelText: 'Search this store', hintText: 'Rice, milk, vegetables…'), onChanged: (value) => setState(() => query = value)), const SizedBox(height: 16),
       if (error != null) Card(child: Padding(padding: const EdgeInsets.all(16), child: Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)))),
