@@ -30,6 +30,7 @@ from app.api.v1.routes.payments import router as payments_router
 from app.api.v1.routes.personalized_feed import router as personalized_feed_router
 from app.api.v1.routes.preparation_estimate import router as preparation_estimate_router
 from app.api.v1.routes.reorder import router as reorder_router
+from app.api.v1.routes.repeat_cadence import router as repeat_cadence_router
 from app.api.v1.routes.search_suggestions import router as search_suggestions_router
 from app.api.v1.routes.store_availability import router as store_availability_router
 from app.api.v1.routes.store_discovery import router as store_discovery_router
@@ -52,6 +53,7 @@ api_router.include_router(fulfillment_recommendation_router)
 api_router.include_router(delivery_windows_router)
 api_router.include_router(substitutions_router)
 api_router.include_router(reorder_router)
+api_router.include_router(repeat_cadence_router)
 api_router.include_router(personalized_feed_router)
 api_router.include_router(basket_recommendations_router)
 api_router.include_router(store_availability_router)
