@@ -40,6 +40,7 @@ def test_complete_marketplace_flow() -> None:
     delivery_token = token_for("+919000000002")
     customer_token = token_for(customer_phone, customer_name)
     merchant_token = token_for(merchant_phone, merchant_name)
+    stranger_token = token_for(f"+917{int(suffix, 16) % 1_000_000_000:09d}", "Unauthorised event viewer")
 
     villages = client.get("/api/v1/villages")
     assert villages.status_code == 200
@@ -237,3 +238,6 @@ def test_complete_marketplace_flow() -> None:
     assert ("delivery", "assigned", "picked_up") in transitions
     assert ("delivery", "picked_up", "delivered") in transitions
     assert ("order", "out_for_delivery", "delivered") in transitions
+
+    forbidden_events = client.get(f"/api/v1/orders/{order_id}/events", headers=auth(stranger_token))
+    assert forbidden_events.status_code == 403
