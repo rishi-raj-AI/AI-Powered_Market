@@ -2,7 +2,7 @@ import {api} from './api';
 
 export type PreparationEstimate={store_id:string;estimated_preparation_minutes:number;confidence:'low'|'medium'|'high';sample_count:number;basis:string};
 export type FulfillmentMode='delivery_now'|'pickup_now'|'scheduled_delivery'|'scheduled_pickup'|'unavailable';
-export type FulfillmentRecommendation={store_id:string;recommended_mode:FulfillmentMode;delivery_serviceable:boolean;store_open:boolean;timezone?:string;reasons:string[]};
+export type FulfillmentRecommendation={store_id:string;recommended_mode:FulfillmentMode;delivery_enabled:boolean;pickup_enabled:boolean;delivery_serviceable:boolean;store_open:boolean;timezone?:string;reasons:string[]};
 export type RepeatCadenceItem={product_id:string;product_name:string;purchase_count:number;cadence_days:number;days_since_last_purchase:number;due:boolean;urgency_score:number;last_order_id:string;last_store_id:string;listing_id?:string|null;available_now:boolean};
 export type MerchantReliability={store_id:string;score:number;confidence:'low'|'medium'|'high';total_orders:number;terminal_orders?:number;delivered_orders:number;cancelled_orders:number;failed_deliveries:number;basis:string};
 
