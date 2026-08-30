@@ -50,15 +50,7 @@ def _reliability(db: Session, store_id: uuid.UUID) -> tuple[float, int]:
         )
         or 0
     )
-    score = max(
-        0.0,
-        min(
-            1.0,
-            delivered / terminal_total
-            - 0.45 * cancelled / terminal_total
-            - 0.35 * failed / terminal_total,
-        ),
-    )
+    score = max(0.0, min(1.0, delivered / terminal_total - 0.45 * cancelled / terminal_total - 0.35 * failed / terminal_total))
     return round(score, 3), terminal_total
 
 
@@ -122,7 +114,7 @@ def checkout_decision_summary(
     else:
         recommendation = "resolve_blockers"
 
-    return {
+    response = {
         "ready": ready,
         "store_id": str(cart.store_id),
         "address_id": str(address_id),
@@ -130,10 +122,12 @@ def checkout_decision_summary(
         "delivery_fee": str(delivery_fee),
         "total": str(total),
         "delivery_serviceable": serviceable,
-        "merchant_reliability": reliability,
         "merchant_reliability_samples": sample_count,
         "merchant_reliability_basis": "terminal_operational_history",
         "blockers": sorted(set(blockers)),
         "warnings": sorted(set(warnings)),
         "recommendation": recommendation,
     }
+    if sample_count >= 5:
+        response["merchant_reliability"] = reliability
+    return response
