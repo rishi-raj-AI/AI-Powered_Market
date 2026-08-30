@@ -18,6 +18,20 @@ export type FulfillmentRecommendation={
   reasons:string[];
 };
 
+export type RepeatCadenceItem={
+  product_id:string;
+  product_name:string;
+  purchase_count:number;
+  cadence_days:number;
+  days_since_last_purchase:number;
+  due:boolean;
+  urgency_score:number;
+  last_order_id:string;
+  last_store_id:string;
+  listing_id?:string|null;
+  available_now:boolean;
+};
+
 export async function preparationEstimate(storeId:string){
   return api<PreparationEstimate>(`/stores/${storeId}/preparation-estimate`);
 }
@@ -25,6 +39,10 @@ export async function preparationEstimate(storeId:string){
 export async function fulfillmentRecommendation(storeId:string,latitude:number,longitude:number){
   const query=new URLSearchParams({latitude:String(latitude),longitude:String(longitude)});
   return api<FulfillmentRecommendation>(`/stores/${storeId}/fulfillment-recommendation?${query}`);
+}
+
+export async function repeatPurchaseCadence(){
+  return api<{items:RepeatCadenceItem[]}>('/me/repeat-purchase-cadence');
 }
 
 export function preparationCopy(estimate:PreparationEstimate){
@@ -40,13 +58,7 @@ export function preparationDetail(estimate:PreparationEstimate){
 }
 
 export function fulfillmentLabel(mode:FulfillmentMode){
-  return ({
-    delivery_now:'Delivery now',
-    pickup_now:'Pickup now',
-    scheduled_delivery:'Schedule delivery',
-    scheduled_pickup:'Schedule pickup',
-    unavailable:'Unavailable right now',
-  } as const)[mode];
+  return ({delivery_now:'Delivery now',pickup_now:'Pickup now',scheduled_delivery:'Schedule delivery',scheduled_pickup:'Schedule pickup',unavailable:'Unavailable right now'} as const)[mode];
 }
 
 export function fulfillmentDetail(result:FulfillmentRecommendation){
@@ -55,4 +67,10 @@ export function fulfillmentDetail(result:FulfillmentRecommendation){
   if(result.recommended_mode==='scheduled_delivery')return 'Delivery is serviceable, but the store is currently closed. Schedule for an open window.';
   if(result.recommended_mode==='scheduled_pickup')return 'Pickup is supported after the store reopens.';
   return 'This store cannot fulfil this location/mode right now.';
+}
+
+export function cadenceCopy(item:RepeatCadenceItem){
+  if(item.due)return `Due again • usually every ${Math.round(item.cadence_days)} days`;
+  const remaining=Math.max(0,Math.round(item.cadence_days-item.days_since_last_purchase));
+  return `Likely due in about ${remaining} days`;
 }
