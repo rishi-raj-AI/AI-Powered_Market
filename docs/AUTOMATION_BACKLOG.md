@@ -55,7 +55,7 @@ This is the execution queue for automation-mode development. Tasks are taken in 
 - [x] U02 Merchant acceptance/preparation/readiness workflow.
 - [x] U03 Delivery-partner assignment/pickup/tracking/POD workflow.
 - [x] U04 Admin operations view for orders, deliveries, exceptions and refunds.
-- [ ] U05 Low-bandwidth/offline-tolerant behavior for rural delivery operations.
+- [x] U05 Low-bandwidth/offline-tolerant behavior for rural delivery operations.
 
 ## Wave 6 — Scale and intelligence
 
