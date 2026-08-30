@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -12,6 +13,7 @@ from app.api.deps import get_db
 from app.models.commerce import Merchant, MerchantStatus, Store
 
 router = APIRouter(tags=["Fulfillment"])
+INDIA_TZ = ZoneInfo("Asia/Kolkata")
 
 
 class FulfillmentWindowRead(BaseModel):
@@ -29,8 +31,9 @@ def _ceil_half_hour(value: datetime) -> datetime:
 
 
 def _generate_windows(now: datetime, *, days: int = 3, slot_minutes: int = 60) -> list[tuple[datetime, datetime]]:
-    cursor = _ceil_half_hour(now + timedelta(minutes=45))
-    end = now + timedelta(days=days)
+    local_now = now.astimezone(INDIA_TZ)
+    cursor = _ceil_half_hour(local_now + timedelta(minutes=45))
+    end = local_now + timedelta(days=days)
     slots: list[tuple[datetime, datetime]] = []
     while cursor < end and len(slots) < 24:
         slot_end = cursor + timedelta(minutes=slot_minutes)
@@ -59,6 +62,5 @@ def fulfillment_windows(
     if mode == 'pickup' and not store.pickup_enabled:
         return []
 
-    now = datetime.now(timezone.utc)
-    slots = _generate_windows(now, days=days)
+    slots = _generate_windows(datetime.now(INDIA_TZ), days=days)
     return [FulfillmentWindowRead(start_at=start, end_at=end, mode=mode) for start, end in slots]
