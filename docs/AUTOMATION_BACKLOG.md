@@ -62,7 +62,7 @@ This is the execution queue for automation-mode development. Tasks are taken in 
 - [x] S01 Observability/correlation IDs across order-delivery-payment lifecycle.
 - [x] S02 Outbox/event reliability for notifications and asynchronous side effects.
 - [x] S03 Dispatch scoring and batching.
-- [ ] S04 ETA and delivery performance analytics.
+- [x] S04 ETA and delivery performance analytics.
 - [ ] S05 Multilingual/voice ordering and merchant catalog assistance.
 
 ## Execution rule
