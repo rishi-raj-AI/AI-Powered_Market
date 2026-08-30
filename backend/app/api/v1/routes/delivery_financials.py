@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_roles
+from app.models.integrations import CodCollection
 from app.models.orders import (
     Delivery,
     DeliveryProof,
@@ -50,6 +51,15 @@ def complete_delivery_with_financials(
     proof = db.scalar(select(DeliveryProof).where(DeliveryProof.delivery_id == delivery.id).with_for_update())
     if proof is None or proof.verified_at is None:
         raise HTTPException(status_code=409, detail="Verified proof of delivery is required")
+
+    if order.payment_method == PaymentMethod.COD:
+        collection = db.scalar(
+            select(CodCollection).where(CodCollection.delivery_id == delivery.id).with_for_update()
+        )
+        if collection is None:
+            raise HTTPException(status_code=409, detail="Recorded COD collection is required before completion")
+        if collection.order_id != order.id or collection.amount != order.total:
+            raise HTTPException(status_code=409, detail="Recorded COD collection does not match this order")
 
     transition_delivery(delivery, DeliveryStatus.DELIVERED)
     delivery.delivered_at = datetime.now(timezone.utc)
