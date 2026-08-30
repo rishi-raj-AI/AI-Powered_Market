@@ -21,6 +21,7 @@ class RiderPresenceRead(BaseModel):
 
 class AutoDispatchRequest(BaseModel):
     max_radius_km: float = Field(default=15.0, gt=0, le=100)
+    allow_batch: bool = False
 
 
 class AutoDispatchRead(BaseModel):
@@ -30,3 +31,6 @@ class AutoDispatchRead(BaseModel):
     rider_name: str | None = None
     distance_km: float
     assigned_at: datetime
+    score: float | None = None
+    active_tasks: int = 0
+    batched: bool = False

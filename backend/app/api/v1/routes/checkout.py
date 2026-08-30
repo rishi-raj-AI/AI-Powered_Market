@@ -13,6 +13,7 @@ from app.models.orders import Cart, CartItem, Delivery, Order, OrderItem
 from app.models.user import User
 from app.schemas.orders import CheckoutRequest, OrderRead
 from app.services.notifications import enqueue_notification
+from app.services.pricing import checkout_totals
 from app.services.spatial import point_is_in_service_area
 
 router = APIRouter(tags=["Orders & Checkout"])
@@ -26,6 +27,7 @@ def _notify_customer(db: Session, order: Order) -> None:
         title="Order placed",
         body=f"Your order {order.order_number} has been placed successfully.",
         data={"order_id": str(order.id), "order_number": order.order_number},
+        idempotency_key=f"order:{order.id}:placed:customer",
     )
 
 
@@ -39,18 +41,14 @@ def _notify_merchant(db: Session, order: Order, store: Store) -> None:
             title="New order received",
             body=f"Order {order.order_number} is waiting for confirmation.",
             data={"order_id": str(order.id), "order_number": order.order_number},
+            idempotency_key=f"order:{order.id}:received:merchant:{merchant.id}",
         )
 
 
 def _existing_idempotent_order(db: Session, user_id: uuid.UUID, key: str | None) -> Order | None:
     if not key:
         return None
-    return db.scalar(
-        select(Order).where(
-            Order.user_id == user_id,
-            Order.idempotency_key == key,
-        )
-    )
+    return db.scalar(select(Order).where(Order.user_id == user_id, Order.idempotency_key == key))
 
 
 def _address_point(db: Session, address: Address) -> tuple[float, float] | None:
@@ -82,19 +80,13 @@ def safe_checkout(
         raise HTTPException(status_code=404, detail="Address not found")
 
     cart = db.scalar(select(Cart).where(Cart.user_id == user.id).with_for_update())
-
     existing = _existing_idempotent_order(db, user.id, idempotency_key)
     if existing:
         return existing
-
     if cart is None or cart.store_id is None:
         raise HTTPException(status_code=400, detail="Cart is empty")
 
-    items = db.scalars(
-        select(CartItem)
-        .where(CartItem.cart_id == cart.id)
-        .order_by(CartItem.store_product_id)
-    ).all()
+    items = db.scalars(select(CartItem).where(CartItem.cart_id == cart.id).order_by(CartItem.store_product_id)).all()
     if not items:
         raise HTTPException(status_code=400, detail="Cart is empty")
 
@@ -112,14 +104,8 @@ def safe_checkout(
         raise HTTPException(status_code=409, detail="This store does not deliver to the selected address")
 
     listing_ids = sorted((item.store_product_id for item in items), key=str)
-    locked_listings = db.scalars(
-        select(StoreProduct)
-        .where(StoreProduct.id.in_(listing_ids))
-        .order_by(StoreProduct.id)
-        .with_for_update()
-    ).all()
+    locked_listings = db.scalars(select(StoreProduct).where(StoreProduct.id.in_(listing_ids)).order_by(StoreProduct.id).with_for_update()).all()
     listings_by_id = {listing.id: listing for listing in locked_listings}
-
     if len(listings_by_id) != len(listing_ids):
         raise HTTPException(status_code=409, detail="Cart inventory changed; review your cart")
 
@@ -134,7 +120,7 @@ def safe_checkout(
         subtotal += listing.price * item.quantity
         validated.append((item, listing))
 
-    delivery_fee = Decimal("20.00")
+    delivery_fee, total = checkout_totals(subtotal=subtotal, serviceable=True)
     order = Order(
         order_number=f"GO{datetime.now(timezone.utc).strftime('%y%m%d%H%M%S%f')[-14:]}",
         user_id=user.id,
@@ -144,7 +130,7 @@ def safe_checkout(
         payment_method=payload.payment_method,
         subtotal=subtotal,
         delivery_fee=delivery_fee,
-        total=subtotal + delivery_fee,
+        total=total,
     )
     db.add(order)
     db.flush()
@@ -152,17 +138,7 @@ def safe_checkout(
     for item, listing in validated:
         product = listing.product
         line_total = listing.price * item.quantity
-        db.add(
-            OrderItem(
-                order_id=order.id,
-                product_id=product.id,
-                product_name=product.name,
-                unit=product.unit,
-                unit_price=listing.price,
-                quantity=item.quantity,
-                line_total=line_total,
-            )
-        )
+        db.add(OrderItem(order_id=order.id, product_id=product.id, product_name=product.name, unit=product.unit, unit_price=listing.price, quantity=item.quantity, line_total=line_total))
         listing.stock_quantity -= item.quantity
         if listing.stock_quantity == 0:
             listing.is_available = False
@@ -170,10 +146,8 @@ def safe_checkout(
     db.add(Delivery(order_id=order.id))
     db.execute(delete(CartItem).where(CartItem.cart_id == cart.id))
     cart.store_id = None
-
     _notify_customer(db, order)
     _notify_merchant(db, order, store)
-
     db.commit()
     db.refresh(order)
     return order
