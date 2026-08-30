@@ -6,6 +6,7 @@ import {Clock3,MapPin,Minus,Plus,Search,ShoppingCart,Truck} from 'lucide-react';
 import {gaonApi,Store,StoreProduct} from '@/lib/api';
 import {PreparationEstimate,preparationCopy,preparationDetail,preparationEstimate} from '@/lib/commerceIntelligence';
 import {FulfillmentRecommendationPanel} from '@/components/FulfillmentRecommendationPanel';
+import {StoreTrustSignal} from '@/components/StoreTrustSignal';
 import {Nav} from '@/components/Nav';
 
 const money=(v:string|number)=>new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR'}).format(Number(v));
@@ -26,6 +27,7 @@ export default function StorePage(){
   function amount(p:StoreProduct){return Math.min(qty[p.id]||1,p.stock_quantity)}
   async function add(p:StoreProduct){setBusy(p.id);try{const cart=await gaonApi.addCart(p.id,amount(p));setCartCount(cart.items.reduce((a,i)=>a+i.quantity,0));setMsg(`${amount(p)} × ${p.product.name} added to cart.`)}catch(e:any){setMsg(e.status===401?'Login with your phone to add items.':e.message)}finally{setBusy('')}}
   return <><Nav/><main className="container section">{store&&<div className="storeHero"><div><span className="eyebrow">Verified local storefront</span><h2>{store.name}</h2><p className="muted">{store.description||'Local essentials available near you.'}</p><div className="row muted" style={{flexWrap:'wrap'}}>{store.landmark&&<span className="row"><MapPin size={15}/>{store.landmark}</span>}{(store.opens_at||store.closes_at)&&<span className="row"><Clock3 size={15}/>{store.opens_at?.slice(0,5)||'—'}–{store.closes_at?.slice(0,5)||'—'}</span>}{store.delivery_enabled&&<span className="row"><Truck size={15}/> Doorstep delivery</span>}</div></div><Link href="/cart" className="btn"><ShoppingCart size={17}/> Cart {cartCount>0&&`(${cartCount})`}</Link></div>}
+  <StoreTrustSignal storeId={id}/>
   {prep&&<div className="notice"><div className="row"><Clock3 size={18}/><strong>{preparationCopy(prep)}</strong></div><div className="muted small">{preparationDetail(prep)} Preparation time is an estimate, not a delivery ETA.</div></div>}
   {prepError&&<div className="notice muted">Preparation estimate is temporarily unavailable. You can still browse and order.</div>}
   <FulfillmentRecommendationPanel storeId={id}/>
