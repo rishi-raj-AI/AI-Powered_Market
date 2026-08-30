@@ -36,7 +36,7 @@ This is the execution queue for automation-mode development. Tasks are taken in 
 
 - [x] G01 Audit current geography schema and PostGIS usage.
 - [x] G02 Move production store-nearby/serviceability queries to indexed PostGIS operations.
-- [ ] G03 Add explicit delivery/service area rules.
+- [x] G03 Add explicit delivery/service area rules.
 - [ ] G04 Add delivery-partner availability/location eligibility.
 - [ ] G05 Implement dispatch V1: nearest eligible available partner.
 - [ ] G06 Add dispatch tests including no-partner and race conditions.
