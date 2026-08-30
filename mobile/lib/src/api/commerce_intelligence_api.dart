@@ -9,49 +9,32 @@ class CommerceIntelligenceApi {
   static Future<Map<String, String>> _headers() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token');
-    return {
-      'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
-    };
+    return {'Content-Type': 'application/json', if (token != null) 'Authorization': 'Bearer $token'};
   }
 
   static Future<Map<String, dynamic>> _get(String path) async {
-    final response = await http
-        .get(Uri.parse('${GaonApi.baseUrl}$path'), headers: await _headers())
-        .timeout(GaonApi.timeout);
+    final response = await http.get(Uri.parse('${GaonApi.baseUrl}$path'), headers: await _headers()).timeout(GaonApi.timeout);
     final body = response.body.isEmpty ? null : jsonDecode(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final detail = body is Map ? body['detail'] : null;
-      throw Exception(
-        detail is String ? detail : 'Request failed (${response.statusCode})',
-      );
+      throw Exception(detail is String ? detail : 'Request failed (${response.statusCode})');
     }
     return Map<String, dynamic>.from(body as Map);
   }
 
-  static Future<Map<String, dynamic>> preparationEstimate(String storeId) =>
-      _get('/stores/$storeId/preparation-estimate');
+  static Future<Map<String, dynamic>> preparationEstimate(String storeId) => _get('/stores/$storeId/preparation-estimate');
 
-  static Future<Map<String, dynamic>> fulfillmentRecommendation(
-    String storeId, {
-    required double latitude,
-    required double longitude,
-  }) {
-    final query = Uri(
-      queryParameters: {
-        'latitude': '$latitude',
-        'longitude': '$longitude',
-      },
-    ).query;
+  static Future<Map<String, dynamic>> fulfillmentRecommendation(String storeId, {required double latitude, required double longitude}) {
+    final query = Uri(queryParameters: {'latitude': '$latitude', 'longitude': '$longitude'}).query;
     return _get('/stores/$storeId/fulfillment-recommendation?$query');
   }
 
   static Future<List<Map<String, dynamic>>> repeatPurchaseCadence() async {
     final data = await _get('/me/repeat-purchase-cadence');
-    return (data['items'] as List? ?? const [])
-        .map((item) => Map<String, dynamic>.from(item as Map))
-        .toList();
+    return (data['items'] as List? ?? const []).map((item) => Map<String, dynamic>.from(item as Map)).toList();
   }
+
+  static Future<Map<String, dynamic>> merchantReliability(String storeId) => _get('/stores/$storeId/reliability');
 
   static String preparationCopy(Map<String, dynamic> estimate) {
     final minutes = estimate['estimated_preparation_minutes'] as int? ?? 30;
@@ -65,9 +48,7 @@ class CommerceIntelligenceApi {
   static String preparationDetail(Map<String, dynamic> estimate) {
     final samples = estimate['sample_count'] as int? ?? 0;
     final confidence = estimate['confidence'] as String? ?? 'low';
-    if (samples <= 0) {
-      return 'Early estimate while this store builds order history.';
-    }
+    if (samples <= 0) return 'Early estimate while this store builds order history.';
     return 'Based on $samples recent fulfilled orders • $confidence confidence';
   }
 
@@ -97,5 +78,22 @@ class CommerceIntelligenceApi {
     if (item['due'] == true) return 'Due again • usually every $cadence days';
     final remaining = (cadence - since).clamp(0, cadence);
     return 'Likely due in about $remaining days';
+  }
+
+  static String trustLabel(Map<String, dynamic> result) {
+    final confidence = result['confidence'] as String? ?? 'low';
+    final score = ((result['score'] as num?) ?? 0.5).toDouble();
+    if (confidence == 'low') return 'Limited fulfilment history';
+    if (score >= 0.9) return 'Very consistent fulfilment';
+    if (score >= 0.75) return 'Consistent fulfilment';
+    if (score >= 0.6) return 'Mixed fulfilment history';
+    return 'Fulfilment needs attention';
+  }
+
+  static String trustDetail(Map<String, dynamic> result) {
+    final samples = (result['terminal_orders'] ?? result['total_orders'] ?? 0) as int;
+    final confidence = result['confidence'] as String? ?? 'low';
+    if (samples < 5) return 'Only $samples completed/cancelled orders are available, so this is not a strong trust signal.';
+    return 'Operational signal from $samples completed/cancelled orders • $confidence confidence. This is not a customer star rating.';
   }
 }
