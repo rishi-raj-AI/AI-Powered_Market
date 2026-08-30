@@ -51,7 +51,7 @@ This is the execution queue for automation-mode development. Tasks are taken in 
 
 ## Wave 5 — Product applications
 
-- [ ] U01 Customer order lifecycle UI against hardened APIs.
+- [x] U01 Customer order lifecycle UI against hardened APIs.
 - [ ] U02 Merchant acceptance/preparation/readiness workflow.
 - [ ] U03 Delivery-partner assignment/pickup/tracking/POD workflow.
 - [ ] U04 Admin operations view for orders, deliveries, exceptions and refunds.
