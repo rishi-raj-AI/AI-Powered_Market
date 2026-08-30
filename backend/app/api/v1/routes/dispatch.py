@@ -10,8 +10,14 @@ from app.models.commerce import Store
 from app.models.dispatch import RiderPresence
 from app.models.orders import Delivery, DeliveryStatus, Order, OrderStatus
 from app.models.user import User, UserRole
-from app.schemas.dispatch import AutoDispatchRead, AutoDispatchRequest, RiderPresenceRead, RiderPresenceUpdate
+from app.schemas.dispatch import (
+    AutoDispatchRead,
+    AutoDispatchRequest,
+    RiderPresenceRead,
+    RiderPresenceUpdate,
+)
 from app.services.notifications import enqueue_notification
+from app.services.order_transitions import transition_delivery
 from app.services.spatial import nearest_eligible_rider
 
 router = APIRouter(tags=["Dispatch"])
@@ -81,7 +87,7 @@ def auto_assign_delivery(
 
     now = datetime.now(timezone.utc)
     delivery.delivery_partner_id = rider.id
-    delivery.status = DeliveryStatus.ASSIGNED
+    transition_delivery(delivery, DeliveryStatus.ASSIGNED)
     delivery.assigned_at = now
 
     enqueue_notification(
