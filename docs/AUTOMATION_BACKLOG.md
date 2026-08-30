@@ -35,7 +35,7 @@ This is the execution queue for automation-mode development. Tasks are taken in 
 ## Wave 3 — Geography and dispatch
 
 - [x] G01 Audit current geography schema and PostGIS usage.
-- [ ] G02 Move production store-nearby/serviceability queries to indexed PostGIS operations.
+- [x] G02 Move production store-nearby/serviceability queries to indexed PostGIS operations.
 - [ ] G03 Add explicit delivery/service area rules.
 - [ ] G04 Add delivery-partner availability/location eligibility.
 - [ ] G05 Implement dispatch V1: nearest eligible available partner.
