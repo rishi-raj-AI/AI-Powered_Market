@@ -4,6 +4,7 @@ import '../api/commerce_intelligence_api.dart';
 import '../api/gaon_api.dart';
 import '../api/resilient_api.dart';
 import '../models/models.dart';
+import '../widgets/fulfillment_recommendation_card.dart';
 
 class StoreScreen extends StatefulWidget {
   final StoreModel store;
@@ -37,8 +38,7 @@ class _StoreScreenState extends State<StoreScreen> {
           widget.store.id,
         );
       } catch (exception) {
-        nextPreparationError =
-            '$exception'.replaceFirst('Exception: ', '');
+        nextPreparationError = '$exception'.replaceFirst('Exception: ', '');
       }
       if (!mounted) return;
       setState(() {
@@ -117,9 +117,7 @@ class _StoreScreenState extends State<StoreScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              '$exception'.replaceFirst('Exception: ', ''),
-            ),
+            content: Text('$exception'.replaceFirst('Exception: ', '')),
           ),
         );
       }
@@ -184,6 +182,7 @@ class _StoreScreenState extends State<StoreScreen> {
                         ),
                       ),
                     ),
+                  FulfillmentRecommendationCard(storeId: widget.store.id),
                   if (cached)
                     Card(
                       child: ListTile(
