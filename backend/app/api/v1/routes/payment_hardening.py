@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_db, require_roles
 from app.models.commerce import Merchant
 from app.models.integrations import PaymentAttempt, PaymentWebhookEvent, SettlementEntry
-from app.models.orders import Order, PaymentStatus
+from app.models.orders import Order, OrderStatus, PaymentStatus
 from app.models.user import User, UserRole
 from app.schemas.integrations import PaymentVerifyRequest, PaymentVerifyResponse
 from app.services.payments import PaymentProviderUnavailable, verify_razorpay_signature, verify_razorpay_webhook_signature
@@ -31,9 +31,24 @@ def _apply_paid(db: Session, attempt: PaymentAttempt, order: Order, provider_pay
         if duplicate:
             raise HTTPException(status_code=409, detail="Payment ID has already been used")
         attempt.provider_payment_id = provider_payment_id
+
+    # Provider capture is a financial fact, but it must not reopen a cancelled
+    # commercial order or recreate merchant settlement after cancellation/refund.
     attempt.status = "paid"
+    if order.status == OrderStatus.CANCELLED or order.payment_status == PaymentStatus.REFUNDED:
+        return
+
     order.payment_status = PaymentStatus.PAID
     ensure_settlement_entry(db, order)
+
+
+def _apply_failed(attempt: PaymentAttempt, order: Order) -> None:
+    # A late/invalid provider event must never overwrite terminal cancellation or
+    # refund state. Active unpaid orders may still transition to payment failed.
+    if order.status == OrderStatus.CANCELLED or order.payment_status in {PaymentStatus.PAID, PaymentStatus.REFUNDED}:
+        return
+    attempt.status = "failed"
+    order.payment_status = PaymentStatus.FAILED
 
 
 @router.post("/verify", response_model=PaymentVerifyResponse)
@@ -51,7 +66,8 @@ def hardened_verify_payment(
     if not attempt.provider_order_id:
         raise HTTPException(status_code=409, detail="Payment attempt has no provider order")
     if attempt.status == "paid" and attempt.provider_payment_id == payload.razorpay_payment_id:
-        ensure_settlement_entry(db, order)
+        if order.status != OrderStatus.CANCELLED and order.payment_status != PaymentStatus.REFUNDED:
+            ensure_settlement_entry(db, order)
         db.commit()
         return PaymentVerifyResponse(order_id=order.id, payment_status=order.payment_status.value, provider_payment_id=payload.razorpay_payment_id)
 
@@ -64,9 +80,7 @@ def hardened_verify_payment(
     except PaymentProviderUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     if not valid:
-        if order.payment_status != PaymentStatus.PAID:
-            attempt.status = "failed"
-            order.payment_status = PaymentStatus.FAILED
+        _apply_failed(attempt, order)
         db.commit()
         raise HTTPException(status_code=400, detail="Invalid payment signature")
 
@@ -91,9 +105,8 @@ def _process_event(db: Session, payload: dict) -> None:
         return
     if event in {"order.paid", "payment.captured"}:
         _apply_paid(db, attempt, order, provider_payment_id)
-    elif event == "payment.failed" and order.payment_status != PaymentStatus.PAID:
-        attempt.status = "failed"
-        order.payment_status = PaymentStatus.FAILED
+    elif event == "payment.failed":
+        _apply_failed(attempt, order)
 
 
 @router.post("/webhook", status_code=status.HTTP_200_OK)
