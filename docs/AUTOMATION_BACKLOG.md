@@ -67,6 +67,12 @@ This is the execution queue for automation-mode development. Tasks are taken in 
 - [ ] S06 Demand forecasting and merchant recommendations.
 - [ ] S07 AI-assisted support and issue triage.
 
+## Wave 7 — Universal discovery and location intelligence
+
+- [ ] X01 Universal India location discovery across area, colony, neighbourhood, village, town, city, landmark and pincode, with GPS fallback.
+- [ ] X02 Location-aware commerce search across nearby stores, available products and categories with relevance and distance ranking.
+- [ ] X03 Remember recent locations, surface serviceability context, preserve selected-location filters and provide useful coverage fallback when GaonOne is not yet live at the exact point.
+
 ## Execution rule
 
 Do not skip ahead to UI polish while a lower-wave correctness or reliability task is incomplete. Exceptions require an explicit dependency reason recorded in the PR/task summary.
