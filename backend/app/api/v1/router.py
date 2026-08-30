@@ -6,6 +6,7 @@ from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.basket_recommendations import router as basket_recommendations_router
 from app.api.v1.routes.cart_health import router as cart_health_router
 from app.api.v1.routes.checkout import router as checkout_router
+from app.api.v1.routes.checkout_decision import router as checkout_decision_router
 from app.api.v1.routes.checkout_quote import router as checkout_quote_router
 from app.api.v1.routes.commerce import router as commerce_router
 from app.api.v1.routes.delivery_analytics import router as delivery_analytics_router
@@ -64,6 +65,7 @@ api_router.include_router(merchant_reliability_router)
 api_router.include_router(commerce_router)
 api_router.include_router(delivery_tasks_router)
 api_router.include_router(checkout_quote_router)
+api_router.include_router(checkout_decision_router)
 api_router.include_router(checkout_router)
 api_router.include_router(order_recovery_router)
 api_router.include_router(order_mutations_router)
