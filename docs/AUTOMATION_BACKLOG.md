@@ -11,7 +11,7 @@ This is the execution queue for automation-mode development. Tasks are taken in 
 - [x] A04 Preserve CI release gates before staging deployment.
 - [x] A05 Preserve exact-SHA deployment, pre-deploy backup, smoke checks, monitoring, and deployed-SHA state.
 - [x] A06 Record previous deployed SHA before each staging release.
-- [ ] A07 Validate staging workflow end-to-end after this PR reaches `main`.
+- [x] A07 Validate staging workflow end-to-end after this PR reaches `main`.
 
 ## Wave 1 — Delivery lifecycle hardening
 
