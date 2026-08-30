@@ -15,7 +15,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm install
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # npm ci installs exactly the locked tree and fails if package.json and
+      # the lockfile disagree, so the same SHA always builds the same code.
+      - run: npm ci
       - run: npm run build
         env:
           NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1

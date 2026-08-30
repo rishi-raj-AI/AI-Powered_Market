@@ -8,12 +8,17 @@ WORKDIR /app
 
 RUN addgroup --system gaonone && adduser --system --ingroup gaonone gaonone
 
+# Dependencies come from the hash-pinned lock, so the same SHA always builds
+# the same tree. The application itself is installed without re-resolving.
+COPY requirements.lock.txt ./
+RUN pip install --require-hashes --no-cache-dir -r requirements.lock.txt
+
 COPY pyproject.toml ./
-RUN pip install .
 
 COPY alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app
+RUN pip install --no-deps --no-cache-dir .
 
 RUN mkdir -p /app/data/uploads && chown -R gaonone:gaonone /app
 
