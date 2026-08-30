@@ -14,6 +14,7 @@ class CartScreen extends StatefulWidget {
 
 class _CartScreenState extends State<CartScreen> {
   CartModel? cart;
+  Map<String, dynamic>? health;
   List<AddressModel> addresses = [];
   List<Village> villages = [];
   bool loading = true;
@@ -34,17 +35,20 @@ class _CartScreenState extends State<CartScreen> {
     try {
       final results = await Future.wait([
         GaonApi.cart(),
+        GaonApi.cartHealth(),
         GaonApi.addresses(),
         GaonApi.villages(),
       ]);
       if (!mounted) return;
-      final loadedAddresses = results[1] as List<AddressModel>;
+      final loadedAddresses = results[2] as List<AddressModel>;
       setState(() {
         cart = results[0] as CartModel;
+        health = results[1] as Map<String, dynamic>;
         addresses = loadedAddresses;
-        villages = results[2] as List<Village>;
+        villages = results[3] as List<Village>;
         selectedAddressId ??= loadedAddresses.isEmpty ? null : loadedAddresses.first.id;
-        if (selectedAddressId != null && !loadedAddresses.any((a) => a.id == selectedAddressId)) {
+        if (selectedAddressId != null &&
+            !loadedAddresses.any((a) => a.id == selectedAddressId)) {
           selectedAddressId = loadedAddresses.isEmpty ? null : loadedAddresses.first.id;
         }
         loading = false;
@@ -66,12 +70,9 @@ class _CartScreenState extends State<CartScreen> {
   Future<void> setQuantity(CartItemModel item, int quantity) async {
     if (quantity < 1 || quantity > item.product.stock) return;
     try {
-      final updated = await GaonApi.addToCart(item.product.id, quantity: quantity);
-      if (!mounted) return;
-      setState(() {
-        cart = updated;
-        _resetCheckoutAttempt();
-      });
+      await GaonApi.addToCart(item.product.id, quantity: quantity);
+      _resetCheckoutAttempt();
+      await load();
     } catch (e) {
       _snack(e.toString());
     }
@@ -79,12 +80,9 @@ class _CartScreenState extends State<CartScreen> {
 
   Future<void> remove(String storeProductId) async {
     try {
-      final updated = await GaonApi.removeCartItem(storeProductId);
-      if (!mounted) return;
-      setState(() {
-        cart = updated;
-        _resetCheckoutAttempt();
-      });
+      await GaonApi.removeCartItem(storeProductId);
+      _resetCheckoutAttempt();
+      await load();
     } catch (e) {
       _snack(e.toString());
     }
@@ -99,7 +97,8 @@ class _CartScreenState extends State<CartScreen> {
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
     }
-    if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
       _snack('Location permission was not granted. Landmark-only address will still work.');
       return null;
     }
@@ -128,6 +127,10 @@ class _CartScreenState extends State<CartScreen> {
               children: [
                 DropdownButtonFormField<String>(
                   initialValue: villageId,
+                  decoration: const InputDecoration(
+                    labelText: 'Service-area fallback',
+                    helperText: 'Use your landmark or GPS for the exact delivery point.',
+                  ),
                   items: villages
                       .map((v) => DropdownMenuItem(value: v.id, child: Text(v.name)))
                       .toList(),
@@ -136,7 +139,7 @@ class _CartScreenState extends State<CartScreen> {
                 const SizedBox(height: 10),
                 TextField(controller: label, decoration: const InputDecoration(labelText: 'Label')),
                 const SizedBox(height: 10),
-                TextField(controller: house, decoration: const InputDecoration(labelText: 'House / locality')),
+                TextField(controller: house, decoration: const InputDecoration(labelText: 'House / area / locality')),
                 const SizedBox(height: 10),
                 TextField(controller: landmark, decoration: const InputDecoration(labelText: 'Landmark *')),
                 const SizedBox(height: 10),
@@ -151,7 +154,7 @@ class _CartScreenState extends State<CartScreen> {
                           setLocal(() => locating = false);
                         },
                   icon: const Icon(Icons.my_location),
-                  label: Text(position == null ? 'Attach GPS location' : 'GPS location attached'),
+                  label: Text(position == null ? 'Attach current GPS location' : 'GPS location attached'),
                 ),
               ],
             ),
@@ -188,7 +191,8 @@ class _CartScreenState extends State<CartScreen> {
   Future<void> checkout() async {
     final currentCart = cart;
     final addressId = selectedAddressId;
-    if (currentCart == null || currentCart.items.isEmpty || addressId == null || checkoutBusy) return;
+    final blocked = health?['status'] == 'blocked';
+    if (currentCart == null || currentCart.items.isEmpty || addressId == null || checkoutBusy || blocked) return;
 
     checkoutAttemptKey ??= 'mobile-${currentCart.id}-${DateTime.now().microsecondsSinceEpoch}';
     setState(() => checkoutBusy = true);
@@ -214,19 +218,13 @@ class _CartScreenState extends State<CartScreen> {
           context: context,
           builder: (_) => AlertDialog(
             title: const Text('Order placed'),
-            content: Text(
-              'Order ${order.orderNumber}\nTotal ₹${order.total}\nPayment: Cash on delivery',
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
-            ],
+            content: Text('Order ${order.orderNumber}\nTotal ₹${order.total}\nPayment: Cash on delivery'),
+            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
           ),
         );
       }
       await load();
     } catch (e) {
-      // Keep the same idempotency key after transport/provider uncertainty so a
-      // customer retry cannot create a duplicate order.
       _snack(e.toString());
     } finally {
       if (mounted) setState(() => checkoutBusy = false);
@@ -245,6 +243,8 @@ class _CartScreenState extends State<CartScreen> {
   Widget build(BuildContext context) {
     if (loading) return const Center(child: CircularProgressIndicator());
     final c = cart;
+    final blocked = health?['status'] == 'blocked';
+    final warning = health?['status'] == 'warning';
     final selectedAddress = selectedAddressId == null
         ? null
         : addresses.where((a) => a.id == selectedAddressId).firstOrNull;
@@ -254,20 +254,22 @@ class _CartScreenState extends State<CartScreen> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text(
-            'Your cart',
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
-          ),
+          Text('Your cart', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
           if (error != null)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
             ),
-          if (c == null || c.items.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(40),
-              child: Center(child: Text('Your cart is empty.')),
+          if (c != null && c.items.isNotEmpty)
+            Card(
+              child: ListTile(
+                leading: Icon(blocked ? Icons.error_outline : warning ? Icons.warning_amber_rounded : Icons.verified_outlined),
+                title: Text(blocked ? 'Cart needs attention' : warning ? 'Low stock warning' : 'Cart ready'),
+                subtitle: Text(blocked ? 'Adjust unavailable quantities before checkout.' : warning ? 'Some items are running low.' : 'Live inventory check passed.'),
+              ),
             ),
+          if (c == null || c.items.isEmpty)
+            const Padding(padding: EdgeInsets.all(40), child: Center(child: Text('Your cart is empty.'))),
           if (c != null)
             ...c.items.map(
               (item) => Card(
@@ -281,27 +283,14 @@ class _CartScreenState extends State<CartScreen> {
                           children: [
                             Text(item.product.name, style: const TextStyle(fontWeight: FontWeight.w700)),
                             Text('₹${item.product.price} • ${item.product.unit}'),
+                            Text('${item.product.stock} in stock', style: Theme.of(context).textTheme.bodySmall),
                           ],
                         ),
                       ),
-                      IconButton(
-                        tooltip: 'Decrease quantity',
-                        onPressed: item.quantity > 1 ? () => setQuantity(item, item.quantity - 1) : null,
-                        icon: const Icon(Icons.remove_circle_outline),
-                      ),
+                      IconButton(tooltip: 'Decrease quantity', onPressed: item.quantity > 1 ? () => setQuantity(item, item.quantity - 1) : null, icon: const Icon(Icons.remove_circle_outline)),
                       Text('${item.quantity}', style: const TextStyle(fontWeight: FontWeight.w800)),
-                      IconButton(
-                        tooltip: 'Increase quantity',
-                        onPressed: item.quantity < item.product.stock
-                            ? () => setQuantity(item, item.quantity + 1)
-                            : null,
-                        icon: const Icon(Icons.add_circle_outline),
-                      ),
-                      IconButton(
-                        tooltip: 'Remove item',
-                        icon: const Icon(Icons.delete_outline),
-                        onPressed: () => remove(item.product.id),
-                      ),
+                      IconButton(tooltip: 'Increase quantity', onPressed: item.quantity < item.product.stock ? () => setQuantity(item, item.quantity + 1) : null, icon: const Icon(Icons.add_circle_outline)),
+                      IconButton(tooltip: 'Remove item', icon: const Icon(Icons.delete_outline), onPressed: () => remove(item.product.id)),
                     ],
                   ),
                 ),
@@ -315,17 +304,7 @@ class _CartScreenState extends State<CartScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Delivery address',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                        TextButton.icon(onPressed: addAddress, icon: const Icon(Icons.add), label: const Text('Add')),
-                      ],
-                    ),
+                    Row(children: [Expanded(child: Text('Delivery address', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700))), TextButton.icon(onPressed: addAddress, icon: const Icon(Icons.add), label: const Text('Add'))]),
                     if (addresses.isEmpty)
                       const Text('Add an address before checkout.')
                     else
@@ -333,52 +312,24 @@ class _CartScreenState extends State<CartScreen> {
                         key: ValueKey(selectedAddressId),
                         initialValue: selectedAddressId,
                         decoration: const InputDecoration(labelText: 'Deliver to'),
-                        items: addresses
-                            .map(
-                              (a) => DropdownMenuItem(
-                                value: a.id,
-                                child: Text('${a.label} • ${a.landmark}', overflow: TextOverflow.ellipsis),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (value) => setState(() {
-                          selectedAddressId = value;
-                          _resetCheckoutAttempt();
-                        }),
+                        items: addresses.map((a) => DropdownMenuItem(value: a.id, child: Text('${a.label} • ${a.landmark}', overflow: TextOverflow.ellipsis))).toList(),
+                        onChanged: (value) => setState(() { selectedAddressId = value; _resetCheckoutAttempt(); }),
                       ),
                     if (selectedAddress != null) ...[
                       const SizedBox(height: 8),
                       Text('${selectedAddress.houseDetails ?? ''} ${selectedAddress.landmark}'.trim()),
                       if (selectedAddress.latitude == null)
-                        const Text('GPS not attached; serviceability will use village coverage.'),
+                        const Text('Exact GPS point not attached; serviceability will use the available service-area fallback.'),
                     ],
                     const SizedBox(height: 18),
-                    Text(
-                      'Payment',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                    ),
+                    Text('Payment', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
                     RadioGroup<String>(
                       groupValue: paymentMethod,
-                      onChanged: (value) => setState(() {
-                        paymentMethod = value ?? paymentMethod;
-                        _resetCheckoutAttempt();
-                      }),
-                      child: const Column(
-                        children: [
-                          RadioListTile<String>(
-                            contentPadding: EdgeInsets.zero,
-                            value: 'cod',
-                            title: Text('Cash on delivery'),
-                            subtitle: Text('Pay after verified delivery'),
-                          ),
-                          RadioListTile<String>(
-                            contentPadding: EdgeInsets.zero,
-                            value: 'upi',
-                            title: Text('UPI / online payment'),
-                            subtitle: Text('Secure payment through Razorpay'),
-                          ),
-                        ],
-                      ),
+                      onChanged: (value) => setState(() { paymentMethod = value ?? paymentMethod; _resetCheckoutAttempt(); }),
+                      child: const Column(children: [
+                        RadioListTile<String>(contentPadding: EdgeInsets.zero, value: 'cod', title: Text('Cash on delivery'), subtitle: Text('Pay after verified delivery')),
+                        RadioListTile<String>(contentPadding: EdgeInsets.zero, value: 'upi', title: Text('UPI / online payment'), subtitle: Text('Secure payment through Razorpay')),
+                      ]),
                     ),
                   ],
                 ),
@@ -388,38 +339,20 @@ class _CartScreenState extends State<CartScreen> {
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        const Expanded(child: Text('Subtotal')),
-                        Text('₹${c.subtotal}', style: const TextStyle(fontWeight: FontWeight.w700)),
-                      ],
+                child: Column(children: [
+                  Row(children: [const Expanded(child: Text('Subtotal')), Text('₹${c.subtotal}', style: const TextStyle(fontWeight: FontWeight.w700))]),
+                  const SizedBox(height: 6),
+                  const Row(children: [Expanded(child: Text('Delivery fee')), Text('Calculated at checkout')]),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: selectedAddressId == null || checkoutBusy || blocked ? null : checkout,
+                      icon: checkoutBusy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.lock_outline),
+                      label: Text(blocked ? 'Resolve cart issues' : checkoutBusy ? 'Placing order…' : 'Place order securely'),
                     ),
-                    const SizedBox(height: 6),
-                    const Row(
-                      children: [
-                        Expanded(child: Text('Delivery fee')),
-                        Text('Calculated at checkout'),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: selectedAddressId == null || checkoutBusy ? null : checkout,
-                        icon: checkoutBusy
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.lock_outline),
-                        label: Text(checkoutBusy ? 'Placing order…' : 'Place order securely'),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ]),
               ),
             ),
           ],
