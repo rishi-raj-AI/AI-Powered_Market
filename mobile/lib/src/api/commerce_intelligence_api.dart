@@ -32,6 +32,20 @@ class CommerceIntelligenceApi {
   static Future<Map<String, dynamic>> preparationEstimate(String storeId) =>
       _get('/stores/$storeId/preparation-estimate');
 
+  static Future<Map<String, dynamic>> fulfillmentRecommendation(
+    String storeId, {
+    required double latitude,
+    required double longitude,
+  }) {
+    final query = Uri(
+      queryParameters: {
+        'latitude': '$latitude',
+        'longitude': '$longitude',
+      },
+    ).query;
+    return _get('/stores/$storeId/fulfillment-recommendation?$query');
+  }
+
   static String preparationCopy(Map<String, dynamic> estimate) {
     final minutes = estimate['estimated_preparation_minutes'] as int? ?? 30;
     final basis = estimate['basis'] as String?;
@@ -48,5 +62,35 @@ class CommerceIntelligenceApi {
       return 'Early estimate while this store builds order history.';
     }
     return 'Based on $samples recent fulfilled orders • $confidence confidence';
+  }
+
+  static String fulfillmentLabel(String mode) {
+    switch (mode) {
+      case 'delivery_now':
+        return 'Delivery now';
+      case 'pickup_now':
+        return 'Pickup now';
+      case 'scheduled_delivery':
+        return 'Schedule delivery';
+      case 'scheduled_pickup':
+        return 'Schedule pickup';
+      default:
+        return 'Unavailable right now';
+    }
+  }
+
+  static String fulfillmentDetail(Map<String, dynamic> result) {
+    switch (result['recommended_mode']) {
+      case 'delivery_now':
+        return 'The store is open and this delivery location is serviceable.';
+      case 'pickup_now':
+        return 'Pickup is available now; delivery is not serviceable to this location.';
+      case 'scheduled_delivery':
+        return 'Delivery is serviceable, but the store is currently closed.';
+      case 'scheduled_pickup':
+        return 'Pickup is supported after the store reopens.';
+      default:
+        return 'This store cannot fulfil this location or mode right now.';
+    }
   }
 }
