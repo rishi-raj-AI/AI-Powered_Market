@@ -1,5 +1,6 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -9,6 +10,7 @@ from app.models.commerce import Merchant, MerchantStatus, Store
 from app.services.spatial import point_is_in_service_area
 
 router = APIRouter(tags=["Commerce Intelligence"])
+INDIA_TZ = ZoneInfo("Asia/Kolkata")
 
 
 def recommend_mode(*, delivery: bool, pickup: bool, serviceable: bool, is_open: bool) -> tuple[str, list[str]]:
@@ -23,6 +25,15 @@ def recommend_mode(*, delivery: bool, pickup: bool, serviceable: bool, is_open: 
     if pickup:
         return "scheduled_pickup", ["pickup_enabled", "store_closed_now"]
     return "unavailable", ["no_supported_fulfillment_mode"]
+
+
+def is_store_open(*, opens_at: time | None, closes_at: time | None, now: datetime | None = None) -> bool:
+    if opens_at is None or closes_at is None:
+        return True
+    local_now = (now or datetime.now(INDIA_TZ)).astimezone(INDIA_TZ).time().replace(tzinfo=None)
+    if opens_at <= closes_at:
+        return opens_at <= local_now <= closes_at
+    return local_now >= opens_at or local_now <= closes_at
 
 
 @router.get("/stores/{store_id}/fulfillment-recommendation")
@@ -42,24 +53,19 @@ def fulfillment_recommendation(
         and store.service_area_id
         and point_is_in_service_area(db, store.service_area_id, latitude, longitude)
     )
-    now = datetime.now(timezone.utc).time().replace(tzinfo=None)
-    if store.opens_at is None or store.closes_at is None:
-        is_open = True
-    elif store.opens_at <= store.closes_at:
-        is_open = store.opens_at <= now <= store.closes_at
-    else:
-        is_open = now >= store.opens_at or now <= store.closes_at
+    open_now = is_store_open(opens_at=store.opens_at, closes_at=store.closes_at)
 
     mode, reasons = recommend_mode(
         delivery=store.delivery_enabled,
         pickup=store.pickup_enabled,
         serviceable=serviceable,
-        is_open=is_open,
+        is_open=open_now,
     )
     return {
         "store_id": str(store.id),
         "recommended_mode": mode,
         "delivery_serviceable": serviceable,
-        "store_open": is_open,
+        "store_open": open_now,
+        "timezone": "Asia/Kolkata",
         "reasons": reasons,
     }
