@@ -1,10 +1,10 @@
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
 
 from app.api.v1.routes.cart_health import assess_cart_item
 from app.api.v1.routes.fulfillment_recommendation import is_store_open, recommend_mode
 from app.api.v1.routes.merchant_reliability import reliability_score
-from app.api.v1.routes.repeat_cadence import _median
+from app.api.v1.routes.repeat_cadence import _median, _utc
 
 
 def test_cart_health_detects_blockers_and_low_stock():
@@ -23,11 +23,8 @@ def test_fulfillment_recommendation_prefers_live_delivery_then_pickup():
 
 
 def test_store_hours_use_india_local_time_and_support_overnight_windows():
-    # 04:30 UTC = 10:00 IST, so an Indian 09:00-18:00 store is open.
     at_ten_ist = datetime(2026, 8, 30, 4, 30, tzinfo=timezone.utc)
     assert is_store_open(opens_at=time(9), closes_at=time(18), now=at_ten_ist)
-
-    # 19:30 UTC = 01:00 IST next day, inside a 20:00-02:00 overnight window.
     at_one_ist = datetime(2026, 8, 30, 19, 30, tzinfo=timezone.utc)
     assert is_store_open(opens_at=time(20), closes_at=time(2), now=at_one_ist)
     assert not is_store_open(opens_at=time(9), closes_at=time(18), now=at_one_ist)
@@ -44,3 +41,10 @@ def test_repeat_cadence_median_handles_even_and_odd_samples():
     assert _median([7, 14, 21]) == 14
     assert _median([7, 14]) == 10.5
     assert _median([]) is None
+
+
+def test_repeat_cadence_normalizes_naive_and_aware_datetimes_to_utc():
+    naive = datetime(2026, 8, 30, 12, 0)
+    aware_ist = datetime(2026, 8, 30, 17, 30, tzinfo=timezone(timedelta(hours=5, minutes=30)))
+    assert _utc(naive) == datetime(2026, 8, 30, 12, 0, tzinfo=timezone.utc)
+    assert _utc(aware_ist) == datetime(2026, 8, 30, 12, 0, tzinfo=timezone.utc)
