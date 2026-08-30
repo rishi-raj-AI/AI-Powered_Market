@@ -17,6 +17,7 @@ from app.api.v1.routes.substitutions import router as substitutions_router
 from app.api.v1.routes.reorder import router as reorder_router
 from app.api.v1.routes.personalized_feed import router as personalized_feed_router
 from app.api.v1.routes.basket_recommendations import router as basket_recommendations_router
+from app.api.v1.routes.store_availability import router as store_availability_router
 from app.api.v1.routes.dispatch import router as dispatch_router
 from app.api.v1.routes.geography import router as geography_router
 from app.api.v1.routes.health import router as health_router
@@ -47,6 +48,7 @@ api_router.include_router(substitutions_router)
 api_router.include_router(reorder_router)
 api_router.include_router(personalized_feed_router)
 api_router.include_router(basket_recommendations_router)
+api_router.include_router(store_availability_router)
 api_router.include_router(commerce_router)
 api_router.include_router(delivery_tasks_router)
 api_router.include_router(checkout_router)
