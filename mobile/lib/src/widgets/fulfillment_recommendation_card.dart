@@ -21,9 +21,7 @@ class _FulfillmentRecommendationCardState extends State<FulfillmentRecommendatio
     if (!await Geolocator.isLocationServiceEnabled()) throw Exception('Location services are switched off.');
     var permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
-    if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
-      throw Exception('Location permission was not granted.');
-    }
+    if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) throw Exception('Location permission was not granted.');
     return Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium));
   }
 
@@ -69,11 +67,7 @@ class _FulfillmentRecommendationCardState extends State<FulfillmentRecommendatio
             const Icon(Icons.local_shipping_outlined),
             const SizedBox(width: 8),
             const Expanded(child: Text('Delivery or pickup?', style: TextStyle(fontWeight: FontWeight.w700))),
-            OutlinedButton.icon(
-              onPressed: busy ? null : check,
-              icon: busy ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.my_location, size: 18),
-              label: Text(current == null ? 'Use location' : 'Recheck'),
-            ),
+            OutlinedButton.icon(onPressed: busy ? null : check, icon: busy ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.my_location, size: 18), label: Text(current == null ? 'Use location' : 'Recheck')),
           ]),
           if (current == null && error == null) const Text('Check your location for the best available fulfilment option.'),
           if (error != null) Text('$error You can still choose at checkout.', style: Theme.of(context).textTheme.bodySmall),

@@ -9,24 +9,48 @@ class CommerceIntelligenceApi {
   static Future<Map<String, String>> _headers() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token');
-    return {'Content-Type': 'application/json', if (token != null) 'Authorization': 'Bearer $token'};
+    return {
+      'Content-Type': 'application/json',
+      if (token != null) 'Authorization': 'Bearer $token',
+    };
   }
 
   static Future<Map<String, dynamic>> _get(String path) async {
-    final response = await http.get(Uri.parse('${GaonApi.baseUrl}$path'), headers: await _headers()).timeout(GaonApi.timeout);
+    final response = await http
+        .get(Uri.parse('${GaonApi.baseUrl}$path'), headers: await _headers())
+        .timeout(GaonApi.timeout);
     final body = response.body.isEmpty ? null : jsonDecode(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final detail = body is Map ? body['detail'] : null;
-      throw Exception(detail is String ? detail : 'Request failed (${response.statusCode})');
+      throw Exception(
+        detail is String ? detail : 'Request failed (${response.statusCode})',
+      );
     }
     return Map<String, dynamic>.from(body as Map);
   }
 
-  static Future<Map<String, dynamic>> preparationEstimate(String storeId) => _get('/stores/$storeId/preparation-estimate');
+  static Future<Map<String, dynamic>> preparationEstimate(String storeId) =>
+      _get('/stores/$storeId/preparation-estimate');
 
-  static Future<Map<String, dynamic>> fulfillmentRecommendation(String storeId, {required double latitude, required double longitude}) {
-    final query = Uri(queryParameters: {'latitude': '$latitude', 'longitude': '$longitude'}).query;
+  static Future<Map<String, dynamic>> fulfillmentRecommendation(
+    String storeId, {
+    required double latitude,
+    required double longitude,
+  }) {
+    final query = Uri(
+      queryParameters: {
+        'latitude': '$latitude',
+        'longitude': '$longitude',
+      },
+    ).query;
     return _get('/stores/$storeId/fulfillment-recommendation?$query');
+  }
+
+  static Future<List<Map<String, dynamic>>> repeatPurchaseCadence() async {
+    final data = await _get('/me/repeat-purchase-cadence');
+    return (data['items'] as List? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
   }
 
   static String preparationCopy(Map<String, dynamic> estimate) {
@@ -41,7 +65,9 @@ class CommerceIntelligenceApi {
   static String preparationDetail(Map<String, dynamic> estimate) {
     final samples = estimate['sample_count'] as int? ?? 0;
     final confidence = estimate['confidence'] as String? ?? 'low';
-    if (samples <= 0) return 'Early estimate while this store builds order history.';
+    if (samples <= 0) {
+      return 'Early estimate while this store builds order history.';
+    }
     return 'Based on $samples recent fulfilled orders • $confidence confidence';
   }
 
@@ -63,5 +89,13 @@ class CommerceIntelligenceApi {
       case 'scheduled_pickup': return 'Pickup is supported after the store reopens.';
       default: return 'This store cannot fulfil this location or mode right now.';
     }
+  }
+
+  static String cadenceCopy(Map<String, dynamic> item) {
+    final cadence = ((item['cadence_days'] as num?) ?? 0).round();
+    final since = ((item['days_since_last_purchase'] as num?) ?? 0).round();
+    if (item['due'] == true) return 'Due again • usually every $cadence days';
+    final remaining = (cadence - since).clamp(0, cadence);
+    return 'Likely due in about $remaining days';
   }
 }
