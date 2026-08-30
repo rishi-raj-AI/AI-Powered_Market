@@ -10,10 +10,10 @@ from app.models.commerce import Merchant, MerchantStatus, Store, StoreProduct
 from app.models.geography import Address, Village
 from app.models.orders import Cart, CartItem
 from app.models.user import User
+from app.services.pricing import checkout_totals
 from app.services.spatial import point_is_in_service_area
 
 router = APIRouter(tags=["Orders & Checkout"])
-DELIVERY_FEE = Decimal("20.00")
 
 
 def _address_point(db: Session, address: Address) -> tuple[float, float] | None:
@@ -64,7 +64,7 @@ def checkout_quote(
         and point is not None
         and point_is_in_service_area(db, store.service_area_id, point[0], point[1])
     )
-    fee = DELIVERY_FEE if serviceable else Decimal("0.00")
+    fee, total = checkout_totals(subtotal=subtotal, serviceable=serviceable)
     blockers = []
     if not inventory_valid:
         blockers.append("Cart inventory changed; review your cart")
@@ -77,8 +77,8 @@ def checkout_quote(
         "store_id": store.id,
         "address_id": address.id,
         "subtotal": str(subtotal.quantize(Decimal("0.01"))),
-        "delivery_fee": str(fee.quantize(Decimal("0.01"))),
-        "total": str((subtotal + fee).quantize(Decimal("0.01"))),
+        "delivery_fee": str(fee),
+        "total": str(total),
         "serviceable": serviceable,
         "inventory_valid": inventory_valid,
         "checkout_ready": serviceable and inventory_valid,
