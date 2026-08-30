@@ -30,7 +30,7 @@ This is the execution queue for automation-mode development. Tasks are taken in 
 - [x] C02 Add checkout idempotency key support.
 - [x] C03 Guarantee stock restoration is idempotent on cancellation.
 - [x] C04 Harden payment/order side-effect boundaries.
-- [ ] C05 Add duplicate-request and concurrent-checkout tests.
+- [x] C05 Add duplicate-request and concurrent-checkout tests.
 
 ## Wave 3 — Geography and dispatch
 
