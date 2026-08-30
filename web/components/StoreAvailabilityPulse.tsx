@@ -1,0 +1,7 @@
+'use client';
+import {useEffect,useState} from 'react';
+import {Clock3} from 'lucide-react';
+import {api} from '@/lib/api';
+
+type Availability={is_open:boolean;status:string;minutes_until_close?:number|null;next_open_at?:string|null;delivery_available:boolean;pickup_available:boolean};
+export function StoreAvailabilityPulse({storeId}:{storeId:string}){const[data,setData]=useState<Availability|null>(null);const[error,setError]=useState('');async function load(){try{setData(await api<Availability>(`/stores/${storeId}/availability`));setError('')}catch(e:any){setError(e.message)}}useEffect(()=>{load();const id=setInterval(load,60000);return()=>clearInterval(id)},[storeId]);if(error)return <div className="notice muted">Live store hours are temporarily unavailable.</div>;if(!data)return <div className="notice muted">Checking live store availability…</div>;const next=data.next_open_at?new Date(data.next_open_at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',weekday:'short',hour:'numeric',minute:'2-digit'}):'';return <div className="notice"><div className="row"><Clock3 size={18}/><strong>{data.is_open?'Open now':'Closed now'}</strong></div><div className="muted small">{data.is_open&&data.minutes_until_close!=null?`About ${data.minutes_until_close} min until closing.`:!data.is_open&&next?`Next opening: ${next} IST.`:'Store hours are not configured.'} {data.delivery_available?'Delivery available now. ':''}{data.pickup_available?'Pickup available now.':''}</div></div>}
