@@ -26,6 +26,7 @@ def _notify_customer(db: Session, order: Order) -> None:
         title="Order placed",
         body=f"Your order {order.order_number} has been placed successfully.",
         data={"order_id": str(order.id), "order_number": order.order_number},
+        idempotency_key=f"order:{order.id}:placed:customer",
     )
 
 
@@ -39,6 +40,7 @@ def _notify_merchant(db: Session, order: Order, store: Store) -> None:
             title="New order received",
             body=f"Order {order.order_number} is waiting for confirmation.",
             data={"order_id": str(order.id), "order_number": order.order_number},
+            idempotency_key=f"order:{order.id}:received:merchant:{merchant.id}",
         )
 
 

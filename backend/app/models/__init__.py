@@ -14,6 +14,7 @@ from app.models.orders import (
     PaymentMethod,
     PaymentStatus,
 )
+from app.models.support import SupportTicket
 
 __all__ = [
     "User",
@@ -40,4 +41,5 @@ __all__ = [
     "DeviceRegistration",
     "NotificationEvent",
     "PaymentAttempt",
+    "SupportTicket",
 ]
