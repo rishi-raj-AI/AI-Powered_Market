@@ -10,6 +10,7 @@ from app.api.v1.routes.delivery_financials import router as delivery_financials_
 from app.api.v1.routes.delivery_operations import router as delivery_operations_router
 from app.api.v1.routes.delivery_tasks import router as delivery_tasks_router
 from app.api.v1.routes.discovery import router as discovery_router
+from app.api.v1.routes.search_suggestions import router as search_suggestions_router
 from app.api.v1.routes.dispatch import router as dispatch_router
 from app.api.v1.routes.geography import router as geography_router
 from app.api.v1.routes.health import router as health_router
@@ -33,6 +34,7 @@ api_router.include_router(users_router)
 api_router.include_router(geography_router)
 api_router.include_router(store_discovery_router)
 api_router.include_router(discovery_router)
+api_router.include_router(search_suggestions_router)
 api_router.include_router(commerce_router)
 api_router.include_router(delivery_tasks_router)
 api_router.include_router(checkout_router)
