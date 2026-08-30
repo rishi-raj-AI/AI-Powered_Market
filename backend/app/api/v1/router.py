@@ -4,6 +4,7 @@ from app.api.v1.routes.admin import router as admin_router
 from app.api.v1.routes.ai_assist import router as ai_assist_router
 from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.checkout import router as checkout_router
+from app.api.v1.routes.checkout_quote import router as checkout_quote_router
 from app.api.v1.routes.commerce import router as commerce_router
 from app.api.v1.routes.delivery_analytics import router as delivery_analytics_router
 from app.api.v1.routes.delivery_financials import router as delivery_financials_router
@@ -51,6 +52,7 @@ api_router.include_router(basket_recommendations_router)
 api_router.include_router(store_availability_router)
 api_router.include_router(commerce_router)
 api_router.include_router(delivery_tasks_router)
+api_router.include_router(checkout_quote_router)
 api_router.include_router(checkout_router)
 api_router.include_router(order_mutations_router)
 api_router.include_router(orders_router)
