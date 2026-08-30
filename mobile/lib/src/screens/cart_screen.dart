@@ -5,17 +5,359 @@ import '../api/customer_checkout_api.dart';
 import '../api/gaon_api.dart';
 import '../models/models.dart';
 
-class CartScreen extends StatefulWidget { const CartScreen({super.key}); @override State<CartScreen> createState()=>_CartScreenState(); }
-class _CartScreenState extends State<CartScreen>{
- CartModel? cart; Map<String,dynamic>? health; List<AddressModel> addresses=[]; List<Village> villages=[]; bool loading=true,locating=false,checkoutBusy=false; String? error,selectedAddressId,checkoutAttemptKey; String paymentMethod='cod';
- @override void initState(){super.initState();load();}
- Future<void> load()async{try{final r=await Future.wait([GaonApi.cart(),GaonApi.cartHealth(),GaonApi.addresses(),GaonApi.villages()]);if(!mounted)return;final a=r[2] as List<AddressModel>;setState((){cart=r[0] as CartModel;health=r[1] as Map<String,dynamic>;addresses=a;villages=r[3] as List<Village>;selectedAddressId??=a.isEmpty?null:a.first.id;if(selectedAddressId!=null&&!a.any((x)=>x.id==selectedAddressId))selectedAddressId=a.isEmpty?null:a.first.id;loading=false;error=null;});}catch(e){if(mounted)setState((){loading=false;error=e.toString().replaceFirst('Exception: ','');});}}
- void _resetCheckoutAttempt(){checkoutAttemptKey=null;}
- Future<void> setQuantity(CartItemModel item,int quantity)async{if(quantity<1||quantity>item.product.stock)return;try{await GaonApi.addToCart(item.product.id,quantity:quantity);_resetCheckoutAttempt();await load();}catch(e){_snack(e.toString());}}
- Future<void> remove(String id)async{try{await GaonApi.removeCartItem(id);_resetCheckoutAttempt();await load();}catch(e){_snack(e.toString());}}
- Future<Position?> _currentPosition()async{if(!await Geolocator.isLocationServiceEnabled()){_snack('Location services are switched off. You can still save the landmark manually.');return null;}var p=await Geolocator.checkPermission();if(p==LocationPermission.denied)p=await Geolocator.requestPermission();if(p==LocationPermission.denied||p==LocationPermission.deniedForever){_snack('Location permission was not granted. Landmark-only address will still work.');return null;}return Geolocator.getCurrentPosition(locationSettings:const LocationSettings(accuracy:LocationAccuracy.high));}
- Future<void> addAddress()async{if(villages.isEmpty)return;String villageId=villages.first.id;final label=TextEditingController(text:'Home'),house=TextEditingController(),landmark=TextEditingController(),directions=TextEditingController();Position? position;final ok=await showDialog<bool>(context:context,builder:(context)=>StatefulBuilder(builder:(context,setLocal)=>AlertDialog(title:const Text('Add delivery address'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[DropdownButtonFormField<String>(initialValue:villageId,items:villages.map((v)=>DropdownMenuItem(value:v.id,child:Text(v.name))).toList(),onChanged:(v)=>setLocal(()=>villageId=v??villageId)),const SizedBox(height:10),TextField(controller:label,decoration:const InputDecoration(labelText:'Label')),const SizedBox(height:10),TextField(controller:house,decoration:const InputDecoration(labelText:'House / locality')),const SizedBox(height:10),TextField(controller:landmark,decoration:const InputDecoration(labelText:'Landmark *')),const SizedBox(height:10),TextField(controller:directions,decoration:const InputDecoration(labelText:'Delivery directions')),const SizedBox(height:12),OutlinedButton.icon(onPressed:locating?null:()async{setLocal(()=>locating=true);position=await _currentPosition();setLocal(()=>locating=false);},icon:const Icon(Icons.my_location),label:Text(position==null?'Attach GPS location':'GPS location attached'))])),actions:[TextButton(onPressed:()=>Navigator.pop(context,false),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(context,true),child:const Text('Save'))])));if(ok==true&&landmark.text.trim().isNotEmpty){try{final created=await GaonApi.createAddress(villageId:villageId,label:label.text.trim(),landmark:landmark.text.trim(),houseDetails:house.text.trim(),directions:directions.text.trim(),latitude:position?.latitude,longitude:position?.longitude,isDefault:addresses.isEmpty);_resetCheckoutAttempt();await load();if(mounted)setState(()=>selectedAddressId=created.id);}catch(e){_snack(e.toString());}}}
- Future<void> checkout()async{final c=cart,a=selectedAddressId;if(c==null||c.items.isEmpty||a==null||checkoutBusy||health?['status']=='blocked')return;checkoutAttemptKey??='mobile-${c.id}-${DateTime.now().microsecondsSinceEpoch}';setState(()=>checkoutBusy=true);try{final o=await CustomerCheckoutApi.checkout(addressId:a,paymentMethod:paymentMethod,idempotencyKey:checkoutAttemptKey!);checkoutAttemptKey=null;if(!mounted)return;if(paymentMethod=='upi'){final paid=await GaonApi.openRazorpayCheckout(o);if(!mounted)return;_snack(paid?'Order ${o.orderNumber} placed and payment confirmed.':'Order ${o.orderNumber} is placed. Payment is still pending and can be retried from Orders.');}else{await showDialog(context:context,builder:(_)=>AlertDialog(title:const Text('Order placed'),content:Text('Order ${o.orderNumber}\nTotal ₹${o.total}\nPayment: Cash on delivery'),actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('OK'))]));}await load();}catch(e){_snack(e.toString());}finally{if(mounted)setState(()=>checkoutBusy=false);}}
- void _snack(String t){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(t.replaceFirst('Exception: ',''))));}
- @override Widget build(BuildContext context){if(loading)return const Center(child:CircularProgressIndicator());final c=cart;final blocked=health?['status']=='blocked',warning=health?['status']=='warning';final selected=selectedAddressId==null?null:addresses.where((a)=>a.id==selectedAddressId).firstOrNull;return RefreshIndicator(onRefresh:load,child:ListView(padding:const EdgeInsets.all(16),children:[Text('Your cart',style:Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight:FontWeight.w800)),if(error!=null)Padding(padding:const EdgeInsets.symmetric(vertical:12),child:Text(error!,style:TextStyle(color:Theme.of(context).colorScheme.error))),if(c!=null&&c.items.isNotEmpty)Card(child:ListTile(leading:Icon(blocked?Icons.error_outline:warning?Icons.warning_amber_rounded:Icons.verified_outlined),title:Text(blocked?'Cart needs attention':warning?'Low stock warning':'Cart ready'),subtitle:Text(blocked?'Adjust unavailable quantities before checkout.':warning?'Some items are running low.':'Live inventory check passed.'))),if(c==null||c.items.isEmpty)const Padding(padding:EdgeInsets.all(40),child:Center(child:Text('Your cart is empty.'))),if(c!=null)...c.items.map((item)=>Card(child:Padding(padding:const EdgeInsets.symmetric(horizontal:12,vertical:8),child:Row(children:[Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(item.product.name,style:const TextStyle(fontWeight:FontWeight.w700)),Text('₹${item.product.price} • ${item.product.unit}'),Text('${item.product.stock} in stock',style:Theme.of(context).textTheme.bodySmall)])),IconButton(onPressed:item.quantity>1?()=>setQuantity(item,item.quantity-1):null,icon:const Icon(Icons.remove_circle_outline)),Text('${item.quantity}',style:const TextStyle(fontWeight:FontWeight.w800)),IconButton(onPressed:item.quantity<item.product.stock?()=>setQuantity(item,item.quantity+1):null,icon:const Icon(Icons.add_circle_outline)),IconButton(onPressed:()=>remove(item.product.id),icon:const Icon(Icons.delete_outline))])))),if(c!=null&&c.items.isNotEmpty)...[const SizedBox(height:12),Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Row(children:[Expanded(child:Text('Delivery address',style:Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight:FontWeight.w700))),TextButton.icon(onPressed:addAddress,icon:const Icon(Icons.add),label:const Text('Add'))]),if(addresses.isEmpty)const Text('Add an address before checkout.')else DropdownButtonFormField<String>(key:ValueKey(selectedAddressId),initialValue:selectedAddressId,decoration:const InputDecoration(labelText:'Deliver to'),items:addresses.map((a)=>DropdownMenuItem(value:a.id,child:Text('${a.label} • ${a.landmark}',overflow:TextOverflow.ellipsis))).toList(),onChanged:(v)=>setState((){selectedAddressId=v;_resetCheckoutAttempt();})),if(selected!=null)...[const SizedBox(height:8),Text('${selected.houseDetails??''} ${selected.landmark}'.trim())],const SizedBox(height:18),Text('Payment',style:Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight:FontWeight.w700)),RadioGroup<String>(groupValue:paymentMethod,onChanged:(v)=>setState((){paymentMethod=v??paymentMethod;_resetCheckoutAttempt();}),child:const Column(children:[RadioListTile<String>(contentPadding:EdgeInsets.zero,value:'cod',title:Text('Cash on delivery'),subtitle:Text('Pay after verified delivery')),RadioListTile<String>(contentPadding:EdgeInsets.zero,value:'upi',title:Text('UPI / online payment'),subtitle:Text('Secure payment through Razorpay'))]))]))),const SizedBox(height:12),Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(children:[Row(children:[const Expanded(child:Text('Subtotal')),Text('₹${c.subtotal}',style:const TextStyle(fontWeight:FontWeight.w700))]),const SizedBox(height:14),SizedBox(width:double.infinity,child:FilledButton.icon(onPressed:selectedAddressId==null||checkoutBusy||blocked?null:checkout,icon:checkoutBusy?const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2)):const Icon(Icons.lock_outline),label:Text(blocked?'Resolve cart issues':checkoutBusy?'Placing order…':'Place order securely')))])))] ]));}
+class CartScreen extends StatefulWidget {
+  const CartScreen({super.key});
+
+  @override
+  State<CartScreen> createState() => _CartScreenState();
+}
+
+class _CartScreenState extends State<CartScreen> {
+  CartModel? cart;
+  Map<String, dynamic>? health;
+  List<AddressModel> addresses = [];
+  List<Village> villages = [];
+  bool loading = true;
+  bool locating = false;
+  bool checkoutBusy = false;
+  String? error;
+  String? selectedAddressId;
+  String paymentMethod = 'cod';
+  String? checkoutAttemptKey;
+
+  @override
+  void initState() {
+    super.initState();
+    load();
+  }
+
+  Future<void> load() async {
+    try {
+      final results = await Future.wait([
+        GaonApi.cart(),
+        GaonApi.cartHealth(),
+        GaonApi.addresses(),
+        GaonApi.villages(),
+      ]);
+      if (!mounted) return;
+      final loadedAddresses = results[2] as List<AddressModel>;
+      setState(() {
+        cart = results[0] as CartModel;
+        health = results[1] as Map<String, dynamic>;
+        addresses = loadedAddresses;
+        villages = results[3] as List<Village>;
+        selectedAddressId ??= loadedAddresses.isEmpty ? null : loadedAddresses.first.id;
+        if (selectedAddressId != null &&
+            !loadedAddresses.any((a) => a.id == selectedAddressId)) {
+          selectedAddressId = loadedAddresses.isEmpty ? null : loadedAddresses.first.id;
+        }
+        loading = false;
+        error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        loading = false;
+        error = e.toString().replaceFirst('Exception: ', '');
+      });
+    }
+  }
+
+  void _resetCheckoutAttempt() {
+    checkoutAttemptKey = null;
+  }
+
+  Future<void> setQuantity(CartItemModel item, int quantity) async {
+    if (quantity < 1 || quantity > item.product.stock) return;
+    try {
+      await GaonApi.addToCart(item.product.id, quantity: quantity);
+      _resetCheckoutAttempt();
+      await load();
+    } catch (e) {
+      _snack(e.toString());
+    }
+  }
+
+  Future<void> remove(String storeProductId) async {
+    try {
+      await GaonApi.removeCartItem(storeProductId);
+      _resetCheckoutAttempt();
+      await load();
+    } catch (e) {
+      _snack(e.toString());
+    }
+  }
+
+  Future<Position?> _currentPosition() async {
+    if (!await Geolocator.isLocationServiceEnabled()) {
+      _snack('Location services are switched off. You can still save the landmark manually.');
+      return null;
+    }
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      _snack('Location permission was not granted. Landmark-only address will still work.');
+      return null;
+    }
+    return Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+    );
+  }
+
+  Future<void> addAddress() async {
+    if (villages.isEmpty) return;
+    String villageId = villages.first.id;
+    final label = TextEditingController(text: 'Home');
+    final house = TextEditingController();
+    final landmark = TextEditingController();
+    final directions = TextEditingController();
+    Position? position;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocal) => AlertDialog(
+          title: const Text('Add delivery address'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: villageId,
+                  decoration: const InputDecoration(
+                    labelText: 'Service-area fallback',
+                    helperText: 'Use your landmark or GPS for the exact delivery point.',
+                  ),
+                  items: villages
+                      .map((v) => DropdownMenuItem(value: v.id, child: Text(v.name)))
+                      .toList(),
+                  onChanged: (v) => setLocal(() => villageId = v ?? villageId),
+                ),
+                const SizedBox(height: 10),
+                TextField(controller: label, decoration: const InputDecoration(labelText: 'Label')),
+                const SizedBox(height: 10),
+                TextField(controller: house, decoration: const InputDecoration(labelText: 'House / area / locality')),
+                const SizedBox(height: 10),
+                TextField(controller: landmark, decoration: const InputDecoration(labelText: 'Landmark *')),
+                const SizedBox(height: 10),
+                TextField(controller: directions, decoration: const InputDecoration(labelText: 'Delivery directions')),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: locating
+                      ? null
+                      : () async {
+                          setLocal(() => locating = true);
+                          position = await _currentPosition();
+                          setLocal(() => locating = false);
+                        },
+                  icon: const Icon(Icons.my_location),
+                  label: Text(position == null ? 'Attach current GPS location' : 'GPS location attached'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
+          ],
+        ),
+      ),
+    );
+
+    if (ok == true && landmark.text.trim().isNotEmpty) {
+      try {
+        final created = await GaonApi.createAddress(
+          villageId: villageId,
+          label: label.text.trim(),
+          landmark: landmark.text.trim(),
+          houseDetails: house.text.trim(),
+          directions: directions.text.trim(),
+          latitude: position?.latitude,
+          longitude: position?.longitude,
+          isDefault: addresses.isEmpty,
+        );
+        _resetCheckoutAttempt();
+        await load();
+        if (mounted) setState(() => selectedAddressId = created.id);
+      } catch (e) {
+        _snack(e.toString());
+      }
+    }
+  }
+
+  Future<void> checkout() async {
+    final currentCart = cart;
+    final addressId = selectedAddressId;
+    final blocked = health?['status'] == 'blocked';
+    if (currentCart == null || currentCart.items.isEmpty || addressId == null || checkoutBusy || blocked) return;
+
+    checkoutAttemptKey ??= 'mobile-${currentCart.id}-${DateTime.now().microsecondsSinceEpoch}';
+    setState(() => checkoutBusy = true);
+    try {
+      final order = await CustomerCheckoutApi.checkout(
+        addressId: addressId,
+        paymentMethod: paymentMethod,
+        idempotencyKey: checkoutAttemptKey!,
+      );
+      checkoutAttemptKey = null;
+      if (!mounted) return;
+
+      if (paymentMethod == 'upi') {
+        final paid = await GaonApi.openRazorpayCheckout(order);
+        if (!mounted) return;
+        _snack(
+          paid
+              ? 'Order ${order.orderNumber} placed and payment confirmed.'
+              : 'Order ${order.orderNumber} is placed. Payment is still pending and can be retried from Orders.',
+        );
+      } else {
+        await showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Order placed'),
+            content: Text('Order ${order.orderNumber}\nTotal ₹${order.total}\nPayment: Cash on delivery'),
+            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+          ),
+        );
+      }
+      await load();
+    } catch (e) {
+      _snack(e.toString());
+    } finally {
+      if (mounted) setState(() => checkoutBusy = false);
+    }
+  }
+
+  void _snack(String text) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(text.replaceFirst('Exception: ', ''))),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) return const Center(child: CircularProgressIndicator());
+    final c = cart;
+    final blocked = health?['status'] == 'blocked';
+    final warning = health?['status'] == 'warning';
+    final selectedAddress = selectedAddressId == null
+        ? null
+        : addresses.where((a) => a.id == selectedAddressId).firstOrNull;
+
+    return RefreshIndicator(
+      onRefresh: load,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text('Your cart', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
+          if (error != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ),
+          if (c != null && c.items.isNotEmpty)
+            Card(
+              child: ListTile(
+                leading: Icon(blocked ? Icons.error_outline : warning ? Icons.warning_amber_rounded : Icons.verified_outlined),
+                title: Text(blocked ? 'Cart needs attention' : warning ? 'Low stock warning' : 'Cart ready'),
+                subtitle: Text(blocked ? 'Adjust unavailable quantities before checkout.' : warning ? 'Some items are running low.' : 'Live inventory check passed.'),
+              ),
+            ),
+          if (c == null || c.items.isEmpty)
+            const Padding(padding: EdgeInsets.all(40), child: Center(child: Text('Your cart is empty.'))),
+          if (c != null)
+            ...c.items.map(
+              (item) => Card(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(item.product.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                            Text('₹${item.product.price} • ${item.product.unit}'),
+                            Text('${item.product.stock} in stock', style: Theme.of(context).textTheme.bodySmall),
+                          ],
+                        ),
+                      ),
+                      IconButton(tooltip: 'Decrease quantity', onPressed: item.quantity > 1 ? () => setQuantity(item, item.quantity - 1) : null, icon: const Icon(Icons.remove_circle_outline)),
+                      Text('${item.quantity}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                      IconButton(tooltip: 'Increase quantity', onPressed: item.quantity < item.product.stock ? () => setQuantity(item, item.quantity + 1) : null, icon: const Icon(Icons.add_circle_outline)),
+                      IconButton(tooltip: 'Remove item', icon: const Icon(Icons.delete_outline), onPressed: () => remove(item.product.id)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          if (c != null && c.items.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [Expanded(child: Text('Delivery address', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700))), TextButton.icon(onPressed: addAddress, icon: const Icon(Icons.add), label: const Text('Add'))]),
+                    if (addresses.isEmpty)
+                      const Text('Add an address before checkout.')
+                    else
+                      DropdownButtonFormField<String>(
+                        key: ValueKey(selectedAddressId),
+                        initialValue: selectedAddressId,
+                        decoration: const InputDecoration(labelText: 'Deliver to'),
+                        items: addresses.map((a) => DropdownMenuItem(value: a.id, child: Text('${a.label} • ${a.landmark}', overflow: TextOverflow.ellipsis))).toList(),
+                        onChanged: (value) => setState(() { selectedAddressId = value; _resetCheckoutAttempt(); }),
+                      ),
+                    if (selectedAddress != null) ...[
+                      const SizedBox(height: 8),
+                      Text('${selectedAddress.houseDetails ?? ''} ${selectedAddress.landmark}'.trim()),
+                      if (selectedAddress.latitude == null)
+                        const Text('Exact GPS point not attached; serviceability will use the available service-area fallback.'),
+                    ],
+                    const SizedBox(height: 18),
+                    Text('Payment', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                    RadioGroup<String>(
+                      groupValue: paymentMethod,
+                      onChanged: (value) => setState(() { paymentMethod = value ?? paymentMethod; _resetCheckoutAttempt(); }),
+                      child: const Column(children: [
+                        RadioListTile<String>(contentPadding: EdgeInsets.zero, value: 'cod', title: Text('Cash on delivery'), subtitle: Text('Pay after verified delivery')),
+                        RadioListTile<String>(contentPadding: EdgeInsets.zero, value: 'upi', title: Text('UPI / online payment'), subtitle: Text('Secure payment through Razorpay')),
+                      ]),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(children: [
+                  Row(children: [const Expanded(child: Text('Subtotal')), Text('₹${c.subtotal}', style: const TextStyle(fontWeight: FontWeight.w700))]),
+                  const SizedBox(height: 6),
+                  const Row(children: [Expanded(child: Text('Delivery fee')), Text('Calculated at checkout')]),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: selectedAddressId == null || checkoutBusy || blocked ? null : checkout,
+                      icon: checkoutBusy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.lock_outline),
+                      label: Text(blocked ? 'Resolve cart issues' : checkoutBusy ? 'Placing order…' : 'Place order securely'),
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }
