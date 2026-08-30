@@ -27,6 +27,10 @@ class CommerceIntelligenceApi {
     final data = await _get('/cart/recommendations');
     return (data['items'] as List? ?? const []).map((item) => Map<String, dynamic>.from(item as Map)).toList();
   }
+  static Future<Map<String, dynamic>> personalizedFeed({required double latitude, required double longitude}) {
+    final query = Uri(queryParameters: {'latitude': '$latitude', 'longitude': '$longitude', 'radius_km': '20', 'limit': '20'}).query;
+    return _get('/discovery/for-you?$query');
+  }
   static Future<Map<String, dynamic>> fulfillmentRecommendation(String storeId, {required double latitude, required double longitude}) {
     final query = Uri(queryParameters: {'latitude': '$latitude', 'longitude': '$longitude'}).query;
     return _get('/stores/$storeId/fulfillment-recommendation?$query');
