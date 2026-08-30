@@ -1,6 +1,6 @@
+import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
-import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -13,6 +13,7 @@ from app.models.geography import Address, Village
 from app.models.orders import Delivery, DeliveryStatus, Order, OrderStatus, PaymentStatus
 from app.models.user import User, UserRole
 from app.services.notifications import enqueue_notification
+from app.services.order_transitions import transition_delivery
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 ACTIVE_DELIVERY_STATUSES = {DeliveryStatus.ASSIGNED, DeliveryStatus.PICKED_UP}
@@ -133,7 +134,7 @@ def admin_assign_delivery(
     if active_delivery is not None:
         raise HTTPException(status_code=409, detail="Rider already has an active delivery")
     delivery.delivery_partner_id = rider.id
-    delivery.status = DeliveryStatus.ASSIGNED
+    transition_delivery(delivery, DeliveryStatus.ASSIGNED)
     delivery.assigned_at = datetime.now(timezone.utc)
     enqueue_notification(db,user_id=order.user_id,event_type="delivery.assigned",title="Delivery partner assigned",body=f"{rider.full_name or 'Your delivery partner'} is assigned to order {order.order_number}.",data={"order_id":str(order.id),"order_number":order.order_number,"delivery_id":str(delivery.id)})
     enqueue_notification(db,user_id=rider.id,event_type="delivery.task_assigned",title="New delivery assigned",body=f"Order {order.order_number} is ready for pickup.",data={"order_id":str(order.id),"order_number":order.order_number,"delivery_id":str(delivery.id)})
@@ -160,7 +161,7 @@ def admin_unassign_delivery(
         raise HTTPException(status_code=409, detail="Only a ready order can be reassigned before pickup")
     rider_id = delivery.delivery_partner_id
     delivery.delivery_partner_id = None
-    delivery.status = DeliveryStatus.UNASSIGNED
+    transition_delivery(delivery, DeliveryStatus.UNASSIGNED)
     delivery.assigned_at = None
     if rider_id:
         enqueue_notification(db,user_id=rider_id,event_type="delivery.task_unassigned",title="Delivery reassigned",body=f"Order {order.order_number} is no longer assigned to you.",data={"order_id":str(order.id),"order_number":order.order_number,"delivery_id":str(delivery.id)})

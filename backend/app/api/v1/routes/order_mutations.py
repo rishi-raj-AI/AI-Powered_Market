@@ -11,7 +11,7 @@ from app.models.orders import Order, OrderItem, OrderStatus, PaymentStatus
 from app.models.user import User, UserRole
 from app.schemas.orders import OrderRead, OrderStatusUpdate
 from app.services.notifications import enqueue_notification
-from app.services.order_transitions import can_transition_order
+from app.services.order_transitions import can_transition_order, transition_order
 
 router = APIRouter(tags=["Order Mutations"])
 
@@ -87,7 +87,7 @@ def cancel_my_order_safely(
         raise HTTPException(status_code=409, detail="Only newly placed orders can be cancelled")
 
     _restore_stock_once(db, order)
-    order.status = OrderStatus.CANCELLED
+    transition_order(order, OrderStatus.CANCELLED)
     if order.payment_status == PaymentStatus.PAID:
         order.payment_status = PaymentStatus.REFUNDED
 
@@ -159,7 +159,7 @@ def update_order_status_safely(
             "Your order is ready for pickup by a delivery partner.",
         )
 
-    order.status = payload.status
+    transition_order(order, payload.status)
     db.commit()
     db.refresh(order)
     return order

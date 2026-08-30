@@ -30,7 +30,12 @@ from app.schemas.orders import (
     StatusTransitionEventRead,
 )
 from app.services.notifications import enqueue_notification
-from app.services.order_transitions import can_transition_delivery, can_transition_order
+from app.services.order_transitions import (
+    can_transition_delivery,
+    can_transition_order,
+    transition_delivery,
+    transition_order,
+)
 
 router = APIRouter(tags=["Delivery Operations"])
 OTP_TTL_MINUTES = 15
@@ -80,7 +85,7 @@ def fail_delivery(
     if delivery.status not in {DeliveryStatus.ASSIGNED, DeliveryStatus.PICKED_UP}:
         raise HTTPException(status_code=409, detail="Only an active delivery can be failed")
 
-    delivery.status = DeliveryStatus.FAILED
+    transition_delivery(delivery, DeliveryStatus.FAILED)
     delivery.failed_at = datetime.now(timezone.utc)
     delivery.failure_reason = payload.reason
     delivery.failure_notes = payload.notes
@@ -115,7 +120,7 @@ def recover_failed_delivery(
         )
 
     delivery.delivery_partner_id = None
-    delivery.status = DeliveryStatus.UNASSIGNED
+    transition_delivery(delivery, DeliveryStatus.UNASSIGNED)
     delivery.assigned_at = None
     enqueue_notification(
         db,
@@ -228,9 +233,9 @@ def complete_delivery(
     if proof is None or proof.verified_at is None:
         raise HTTPException(status_code=409, detail="Verified proof of delivery is required")
 
-    delivery.status = DeliveryStatus.DELIVERED
+    transition_delivery(delivery, DeliveryStatus.DELIVERED)
     delivery.delivered_at = datetime.now(timezone.utc)
-    order.status = OrderStatus.DELIVERED
+    transition_order(order, OrderStatus.DELIVERED)
     if order.payment_method == PaymentMethod.COD:
         order.payment_status = PaymentStatus.PAID
 

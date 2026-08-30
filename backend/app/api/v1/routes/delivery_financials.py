@@ -6,11 +6,24 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_roles
-from app.models.orders import Delivery, DeliveryProof, DeliveryStatus, Order, OrderStatus, PaymentMethod, PaymentStatus
+from app.models.orders import (
+    Delivery,
+    DeliveryProof,
+    DeliveryStatus,
+    Order,
+    OrderStatus,
+    PaymentMethod,
+    PaymentStatus,
+)
 from app.models.user import User, UserRole
 from app.schemas.orders import DeliveryRead
 from app.services.notifications import enqueue_notification
-from app.services.order_transitions import can_transition_delivery, can_transition_order
+from app.services.order_transitions import (
+    can_transition_delivery,
+    can_transition_order,
+    transition_delivery,
+    transition_order,
+)
 from app.services.settlements import ensure_settlement_entry
 
 router = APIRouter(tags=["Delivery Operations"])
@@ -38,9 +51,9 @@ def complete_delivery_with_financials(
     if proof is None or proof.verified_at is None:
         raise HTTPException(status_code=409, detail="Verified proof of delivery is required")
 
-    delivery.status = DeliveryStatus.DELIVERED
+    transition_delivery(delivery, DeliveryStatus.DELIVERED)
     delivery.delivered_at = datetime.now(timezone.utc)
-    order.status = OrderStatus.DELIVERED
+    transition_order(order, OrderStatus.DELIVERED)
     if order.payment_method == PaymentMethod.COD:
         order.payment_status = PaymentStatus.PAID
     if order.payment_status == PaymentStatus.PAID:

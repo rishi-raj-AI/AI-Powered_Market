@@ -34,7 +34,12 @@ from app.schemas.orders import (
     OrderStatusUpdate,
 )
 from app.services.notifications import enqueue_notification
-from app.services.order_transitions import can_transition_delivery, can_transition_order
+from app.services.order_transitions import (
+    can_transition_delivery,
+    can_transition_order,
+    transition_delivery,
+    transition_order,
+)
 
 router = APIRouter(tags=["Orders & Delivery"])
 
@@ -328,7 +333,7 @@ def cancel_my_order(
     if not can_transition_order(order.status, OrderStatus.CANCELLED):
         raise HTTPException(status_code=409, detail="Only newly placed orders can be cancelled")
     _restore_cancelled_stock(db, order)
-    order.status = OrderStatus.CANCELLED
+    transition_order(order, OrderStatus.CANCELLED)
     if order.payment_status == PaymentStatus.PAID:
         order.payment_status = PaymentStatus.REFUNDED
     _notify_customer(
@@ -408,7 +413,7 @@ def update_order_status(
     elif payload.status == OrderStatus.READY:
         _notify_customer(db, order, "order.ready", "Order ready", "Your order is ready for pickup by a delivery partner.")
 
-    order.status = payload.status
+    transition_order(order, payload.status)
     db.commit()
     db.refresh(order)
     return order
@@ -459,7 +464,7 @@ def claim_delivery(
         raise HTTPException(status_code=409, detail="Delivery is not available")
 
     delivery.delivery_partner_id = user.id
-    delivery.status = DeliveryStatus.ASSIGNED
+    transition_delivery(delivery, DeliveryStatus.ASSIGNED)
     delivery.assigned_at = datetime.now(timezone.utc)
     _notify_customer(
         db,
@@ -502,7 +507,7 @@ def update_delivery_status(
                 detail=f"Order cannot be picked up from {order.status.value}",
             )
         delivery.picked_up_at = datetime.now(timezone.utc)
-        order.status = OrderStatus.OUT_FOR_DELIVERY
+        transition_order(order, OrderStatus.OUT_FOR_DELIVERY)
         _notify_customer(
             db,
             order,
@@ -517,7 +522,7 @@ def update_delivery_status(
                 detail=f"Order cannot be delivered from {order.status.value}",
             )
         delivery.delivered_at = datetime.now(timezone.utc)
-        order.status = OrderStatus.DELIVERED
+        transition_order(order, OrderStatus.DELIVERED)
         if order.payment_method == PaymentMethod.COD:
             order.payment_status = PaymentStatus.PAID
         _notify_customer(
@@ -528,7 +533,7 @@ def update_delivery_status(
             f"Order {order.order_number} has been delivered. Thank you for using GaonOne.",
         )
 
-    delivery.status = payload.status
+    transition_delivery(delivery, payload.status)
     db.commit()
     db.refresh(delivery)
     return delivery
