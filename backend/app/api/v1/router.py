@@ -16,6 +16,7 @@ from app.api.v1.routes.delivery_windows import router as delivery_windows_router
 from app.api.v1.routes.discovery import router as discovery_router
 from app.api.v1.routes.dispatch import router as dispatch_router
 from app.api.v1.routes.fulfillment import router as fulfillment_router
+from app.api.v1.routes.fulfillment_recommendation import router as fulfillment_recommendation_router
 from app.api.v1.routes.geography import router as geography_router
 from app.api.v1.routes.health import router as health_router
 from app.api.v1.routes.media import router as media_router
@@ -47,6 +48,7 @@ api_router.include_router(store_discovery_router)
 api_router.include_router(discovery_router)
 api_router.include_router(search_suggestions_router)
 api_router.include_router(fulfillment_router)
+api_router.include_router(fulfillment_recommendation_router)
 api_router.include_router(delivery_windows_router)
 api_router.include_router(substitutions_router)
 api_router.include_router(reorder_router)
