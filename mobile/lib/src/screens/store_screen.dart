@@ -4,6 +4,7 @@ import '../api/commerce_intelligence_api.dart';
 import '../api/gaon_api.dart';
 import '../api/resilient_api.dart';
 import '../models/models.dart';
+import '../widgets/basket_recommendations_card.dart';
 import '../widgets/fulfillment_recommendation_card.dart';
 import '../widgets/store_trust_card.dart';
 
@@ -55,10 +56,7 @@ class _StoreScreenState extends State<StoreScreen> {
   }
 
   Future<void> addToCart(StoreProduct product) async {
-    if (cached) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reconnect before changing the cart so stock can be verified.')));
-      return;
-    }
+    if (cached) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reconnect before changing the cart so stock can be verified.'))); return; }
     if (adding.contains(product.id)) return;
     setState(() => adding.add(product.id));
     try {
@@ -67,9 +65,7 @@ class _StoreScreenState extends State<StoreScreen> {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${product.name} added to cart')));
     } catch (exception) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$exception'.replaceFirst('Exception: ', ''))));
-    } finally {
-      if (mounted) setState(() => adding.remove(product.id));
-    }
+    } finally { if (mounted) setState(() => adding.remove(product.id)); }
   }
 
   @override
@@ -88,6 +84,7 @@ class _StoreScreenState extends State<StoreScreen> {
           if (preparation != null) Card(child: ListTile(leading: const Icon(Icons.schedule_outlined), title: Text(CommerceIntelligenceApi.preparationCopy(preparation!)), subtitle: Text('${CommerceIntelligenceApi.preparationDetail(preparation!)} Preparation time is an estimate, not a delivery ETA.'))),
           if (preparationError != null) const Card(child: ListTile(leading: Icon(Icons.schedule_outlined), title: Text('Preparation estimate unavailable'), subtitle: Text('You can still browse and order. Pull to refresh when the network improves.'))),
           FulfillmentRecommendationCard(storeId: widget.store.id),
+          const BasketRecommendationsCard(),
           if (cached) Card(child: ListTile(leading: const Icon(Icons.cloud_off_outlined), title: const Text('Saved catalogue'), subtitle: Text(cachedAt == null ? 'Prices and stock may have changed.' : 'Last synced ${cachedAt!.toLocal()}. Cart changes are paused until reconnect.'))),
           const SizedBox(height: 16),
           TextField(decoration: const InputDecoration(prefixIcon: Icon(Icons.search), labelText: 'Search this store', hintText: 'Rice, milk, vegetables…'), onChanged: (value) => setState(() => query = value)),

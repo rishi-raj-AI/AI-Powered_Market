@@ -23,17 +23,18 @@ class CommerceIntelligenceApi {
   }
 
   static Future<Map<String, dynamic>> preparationEstimate(String storeId) => _get('/stores/$storeId/preparation-estimate');
-
+  static Future<List<Map<String, dynamic>>> basketRecommendations() async {
+    final data = await _get('/cart/recommendations');
+    return (data['items'] as List? ?? const []).map((item) => Map<String, dynamic>.from(item as Map)).toList();
+  }
   static Future<Map<String, dynamic>> fulfillmentRecommendation(String storeId, {required double latitude, required double longitude}) {
     final query = Uri(queryParameters: {'latitude': '$latitude', 'longitude': '$longitude'}).query;
     return _get('/stores/$storeId/fulfillment-recommendation?$query');
   }
-
   static Future<List<Map<String, dynamic>>> repeatPurchaseCadence() async {
     final data = await _get('/me/repeat-purchase-cadence');
     return (data['items'] as List? ?? const []).map((item) => Map<String, dynamic>.from(item as Map)).toList();
   }
-
   static Future<Map<String, dynamic>> merchantReliability(String storeId) => _get('/stores/$storeId/reliability');
 
   static String preparationCopy(Map<String, dynamic> estimate) {
@@ -44,56 +45,25 @@ class CommerceIntelligenceApi {
     if (confidence == 'low') return 'Estimated around $minutes min';
     return 'Typically ready in about $minutes min';
   }
-
   static String preparationDetail(Map<String, dynamic> estimate) {
     final samples = estimate['sample_count'] as int? ?? 0;
     final confidence = estimate['confidence'] as String? ?? 'low';
     if (samples <= 0) return 'Early estimate while this store builds order history.';
     return 'Based on $samples recent fulfilled orders • $confidence confidence';
   }
-
   static String fulfillmentLabel(String mode) {
-    switch (mode) {
-      case 'delivery_now': return 'Delivery now';
-      case 'pickup_now': return 'Pickup now';
-      case 'scheduled_delivery': return 'Schedule delivery';
-      case 'scheduled_pickup': return 'Schedule pickup';
-      default: return 'Unavailable right now';
-    }
+    switch (mode) {case 'delivery_now': return 'Delivery now';case 'pickup_now': return 'Pickup now';case 'scheduled_delivery': return 'Schedule delivery';case 'scheduled_pickup': return 'Schedule pickup';default: return 'Unavailable right now';}
   }
-
   static String fulfillmentDetail(Map<String, dynamic> result) {
-    switch (result['recommended_mode']) {
-      case 'delivery_now': return 'The store is open and this delivery location is serviceable.';
-      case 'pickup_now': return 'Pickup is available now; delivery is not serviceable to this location.';
-      case 'scheduled_delivery': return 'Delivery is serviceable, but the store is currently closed.';
-      case 'scheduled_pickup': return 'Pickup is supported after the store reopens.';
-      default: return 'This store cannot fulfil this location or mode right now.';
-    }
+    switch (result['recommended_mode']) {case 'delivery_now': return 'The store is open and this delivery location is serviceable.';case 'pickup_now': return 'Pickup is available now; delivery is not serviceable to this location.';case 'scheduled_delivery': return 'Delivery is serviceable, but the store is currently closed.';case 'scheduled_pickup': return 'Pickup is supported after the store reopens.';default: return 'This store cannot fulfil this location or mode right now.';}
   }
-
   static String cadenceCopy(Map<String, dynamic> item) {
-    final cadence = ((item['cadence_days'] as num?) ?? 0).round();
-    final since = ((item['days_since_last_purchase'] as num?) ?? 0).round();
-    if (item['due'] == true) return 'Due again • usually every $cadence days';
-    final remaining = (cadence - since).clamp(0, cadence);
-    return 'Likely due in about $remaining days';
+    final cadence = ((item['cadence_days'] as num?) ?? 0).round();final since = ((item['days_since_last_purchase'] as num?) ?? 0).round();if (item['due'] == true) return 'Due again • usually every $cadence days';final remaining = (cadence - since).clamp(0, cadence);return 'Likely due in about $remaining days';
   }
-
   static String trustLabel(Map<String, dynamic> result) {
-    final confidence = result['confidence'] as String? ?? 'low';
-    final score = ((result['score'] as num?) ?? 0.5).toDouble();
-    if (confidence == 'low') return 'Limited fulfilment history';
-    if (score >= 0.9) return 'Very consistent fulfilment';
-    if (score >= 0.75) return 'Consistent fulfilment';
-    if (score >= 0.6) return 'Mixed fulfilment history';
-    return 'Fulfilment needs attention';
+    final confidence = result['confidence'] as String? ?? 'low';final score = ((result['score'] as num?) ?? 0.5).toDouble();if (confidence == 'low') return 'Limited fulfilment history';if (score >= 0.9) return 'Very consistent fulfilment';if (score >= 0.75) return 'Consistent fulfilment';if (score >= 0.6) return 'Mixed fulfilment history';return 'Fulfilment needs attention';
   }
-
   static String trustDetail(Map<String, dynamic> result) {
-    final samples = (result['terminal_orders'] ?? result['total_orders'] ?? 0) as int;
-    final confidence = result['confidence'] as String? ?? 'low';
-    if (samples < 5) return 'Only $samples completed/cancelled orders are available, so this is not a strong trust signal.';
-    return 'Operational signal from $samples completed/cancelled orders • $confidence confidence. This is not a customer star rating.';
+    final samples = (result['terminal_orders'] ?? result['total_orders'] ?? 0) as int;final confidence = result['confidence'] as String? ?? 'low';if (samples < 5) return 'Only $samples completed/cancelled orders are available, so this is not a strong trust signal.';return 'Operational signal from $samples completed/cancelled orders • $confidence confidence. This is not a customer star rating.';
   }
 }
