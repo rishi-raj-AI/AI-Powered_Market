@@ -25,28 +25,41 @@ def _address_point(db: Session, address: Address) -> tuple[float, float] | None:
 
 
 def _reliability(db: Session, store_id: uuid.UUID) -> tuple[float, int]:
+    terminal_states = [OrderStatus.DELIVERED, OrderStatus.CANCELLED]
     counts = dict(
         db.execute(
             select(Order.status, func.count(Order.id))
-            .where(Order.store_id == store_id)
+            .where(Order.store_id == store_id, Order.status.in_(terminal_states))
             .group_by(Order.status)
         ).all()
     )
-    total = sum(int(value) for value in counts.values())
-    if total <= 0:
-        return 0.5, 0
     delivered = int(counts.get(OrderStatus.DELIVERED, 0))
     cancelled = int(counts.get(OrderStatus.CANCELLED, 0))
+    terminal_total = delivered + cancelled
+    if terminal_total <= 0:
+        return 0.5, 0
     failed = int(
         db.scalar(
             select(func.count(Delivery.id))
             .join(Order, Order.id == Delivery.order_id)
-            .where(Order.store_id == store_id, Delivery.status == DeliveryStatus.FAILED)
+            .where(
+                Order.store_id == store_id,
+                Delivery.status == DeliveryStatus.FAILED,
+                Order.status.in_(terminal_states),
+            )
         )
         or 0
     )
-    score = max(0.0, min(1.0, delivered / total - 0.45 * cancelled / total - 0.35 * failed / total))
-    return round(score, 3), total
+    score = max(
+        0.0,
+        min(
+            1.0,
+            delivered / terminal_total
+            - 0.45 * cancelled / terminal_total
+            - 0.35 * failed / terminal_total,
+        ),
+    )
+    return round(score, 3), terminal_total
 
 
 @router.get("/checkout/decision-summary")
@@ -119,6 +132,7 @@ def checkout_decision_summary(
         "delivery_serviceable": serviceable,
         "merchant_reliability": reliability,
         "merchant_reliability_samples": sample_count,
+        "merchant_reliability_basis": "terminal_operational_history",
         "blockers": sorted(set(blockers)),
         "warnings": sorted(set(warnings)),
         "recommendation": recommendation,
