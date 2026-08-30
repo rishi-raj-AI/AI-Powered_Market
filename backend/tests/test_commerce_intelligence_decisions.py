@@ -5,6 +5,7 @@ from app.api.v1.routes.cart_health import assess_cart_item
 from app.api.v1.routes.fulfillment_recommendation import is_store_open, recommend_mode
 from app.api.v1.routes.merchant_reliability import reliability_score
 from app.api.v1.routes.repeat_cadence import _median, _utc
+from app.services.pricing import checkout_totals, delivery_fee
 
 
 def test_cart_health_detects_blockers_and_low_stock():
@@ -13,6 +14,14 @@ def test_cart_health_detects_blockers_and_low_stock():
     assert state == "warning"
     assert "low_stock" in reasons
     assert assess_cart_item(requested=1, stock=20, available=True, price=Decimal("10"))[0] == "healthy"
+
+
+def test_authoritative_checkout_pricing_is_consistent():
+    assert delivery_fee(serviceable=True) == Decimal("20.00")
+    assert delivery_fee(serviceable=False) == Decimal("0.00")
+    fee, total = checkout_totals(subtotal=Decimal("149.50"), serviceable=True)
+    assert fee == Decimal("20.00")
+    assert total == Decimal("169.50")
 
 
 def test_fulfillment_recommendation_prefers_live_delivery_then_pickup():
