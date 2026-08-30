@@ -78,7 +78,7 @@ def nearby_store_distances(db: Session, latitude: float, longitude: float, radiu
               AND m.status = 'approved'
               AND s.latitude IS NOT NULL
               AND s.longitude IS NOT NULL
-              AND (:delivery IS NULL OR s.delivery_enabled = :delivery)
+              AND (CAST(:delivery AS boolean) IS NULL OR s.delivery_enabled = CAST(:delivery AS boolean))
               AND ST_DWithin(
                   ST_SetSRID(ST_MakePoint(s.longitude::double precision, s.latitude::double precision), 4326)::geography,
                   ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
