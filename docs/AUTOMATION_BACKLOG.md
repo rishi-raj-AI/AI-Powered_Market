@@ -47,7 +47,7 @@ This is the execution queue for automation-mode development. Tasks are taken in 
 - [x] T02 Add stale-location and impossible-coordinate safeguards.
 - [x] P01 Audit payment webhook signature/idempotency behavior.
 - [x] P02 Model COD collection separately from commercial payment status where required.
-- [ ] P03 Introduce settlement ledger foundation for merchant/delivery payouts.
+- [x] P03 Introduce settlement ledger foundation for merchant/delivery payouts.
 
 ## Wave 5 — Product applications
 
