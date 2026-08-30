@@ -12,6 +12,8 @@ export type FulfillmentMode='delivery_now'|'pickup_now'|'scheduled_delivery'|'sc
 export type FulfillmentRecommendation={
   store_id:string;
   recommended_mode:FulfillmentMode;
+  delivery_enabled:boolean;
+  pickup_enabled:boolean;
   delivery_serviceable:boolean;
   store_open:boolean;
   timezone?:string;
@@ -40,13 +42,7 @@ export function preparationDetail(estimate:PreparationEstimate){
 }
 
 export function fulfillmentLabel(mode:FulfillmentMode){
-  return ({
-    delivery_now:'Delivery now',
-    pickup_now:'Pickup now',
-    scheduled_delivery:'Schedule delivery',
-    scheduled_pickup:'Schedule pickup',
-    unavailable:'Unavailable right now',
-  } as const)[mode];
+  return ({delivery_now:'Delivery now',pickup_now:'Pickup now',scheduled_delivery:'Schedule delivery',scheduled_pickup:'Schedule pickup',unavailable:'Unavailable right now'} as const)[mode];
 }
 
 export function fulfillmentDetail(result:FulfillmentRecommendation){
