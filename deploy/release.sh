@@ -60,9 +60,9 @@ compose() {
   fi
 }
 
-compose build api web migrate
+compose build api web worker migrate
 compose --profile ops run --rm migrate
-compose up -d --no-build --force-recreate api web
+compose up -d --no-build --force-recreate api web worker
 sleep "${GAONONE_DEPLOY_SETTLE_SECONDS:-15}"
 compose ps
 

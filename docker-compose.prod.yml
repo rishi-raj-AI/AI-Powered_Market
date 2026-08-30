@@ -35,6 +35,22 @@ services:
     expose:
       - "8000"
 
+  # Drains the notification outbox and owed refunds. Without this the outbox
+  # only moved when an admin pressed a button, and refunds would never execute.
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    command: ["python", "-m", "app.scripts.worker"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   migrate:
     build:
       context: ./backend

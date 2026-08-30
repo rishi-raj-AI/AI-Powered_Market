@@ -34,7 +34,7 @@ check_url(){
 }
 
 RUNNING_SERVICES="$(compose ps --status running --services 2>/dev/null || true)"
-for service in db redis api web proxy; do
+for service in db redis api web worker proxy; do
   if grep -qx "$service" <<<"$RUNNING_SERVICES"; then
     echo "OK  container:$service"
   else
