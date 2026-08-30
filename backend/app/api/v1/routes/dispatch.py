@@ -12,7 +12,7 @@ from app.models.orders import Delivery, DeliveryStatus, Order, OrderStatus
 from app.models.user import User, UserRole
 from app.schemas.dispatch import AutoDispatchRead, AutoDispatchRequest, RiderPresenceRead, RiderPresenceUpdate
 from app.services.notifications import enqueue_notification
-from app.services.spatial import nearest_eligible_rider
+from app.services.spatial import best_eligible_rider
 
 router = APIRouter(tags=["Dispatch"])
 
@@ -65,16 +65,18 @@ def auto_assign_delivery(
     if store is None or store.latitude is None or store.longitude is None:
         raise HTTPException(status_code=409, detail="Store location is required for automatic dispatch")
 
-    candidate = nearest_eligible_rider(
+    candidate = best_eligible_rider(
         db,
+        store_id=store.id,
         store_latitude=float(store.latitude),
         store_longitude=float(store.longitude),
         max_radius_km=payload.max_radius_km,
+        allow_batch=payload.allow_batch,
     )
     if candidate is None:
         raise HTTPException(status_code=409, detail="No eligible delivery partner is currently available")
 
-    rider_id, distance_km = candidate
+    rider_id, distance_km, active_tasks, score = candidate
     rider = db.get(User, rider_id)
     if rider is None:
         raise HTTPException(status_code=409, detail="Selected delivery partner is no longer available")
@@ -90,7 +92,13 @@ def auto_assign_delivery(
         event_type="delivery.assigned",
         title="Delivery partner assigned",
         body=f"{rider.full_name or 'Your delivery partner'} is assigned to order {order.order_number}.",
-        data={"order_id": str(order.id), "order_number": order.order_number, "delivery_id": str(delivery.id)},
+        data={
+            "order_id": str(order.id),
+            "order_number": order.order_number,
+            "delivery_id": str(delivery.id),
+            "batched": active_tasks > 0,
+        },
+        idempotency_key=f"delivery:{delivery.id}:assigned:customer:rider:{rider.id}",
     )
     enqueue_notification(
         db,
@@ -98,7 +106,13 @@ def auto_assign_delivery(
         event_type="delivery.task_assigned",
         title="New delivery assigned",
         body=f"Order {order.order_number} is ready for pickup.",
-        data={"order_id": str(order.id), "order_number": order.order_number, "delivery_id": str(delivery.id)},
+        data={
+            "order_id": str(order.id),
+            "order_number": order.order_number,
+            "delivery_id": str(delivery.id),
+            "batched": active_tasks > 0,
+        },
+        idempotency_key=f"delivery:{delivery.id}:assigned:rider:{rider.id}",
     )
 
     db.commit()
@@ -109,4 +123,7 @@ def auto_assign_delivery(
         rider_name=rider.full_name,
         distance_km=round(distance_km, 2),
         assigned_at=now,
+        score=round(score, 3),
+        active_tasks=active_tasks,
+        batched=active_tasks > 0,
     )

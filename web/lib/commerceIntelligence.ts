@@ -1,0 +1,20 @@
+import {api} from './api';
+
+export type PreparationEstimate={store_id:string;estimated_preparation_minutes:number;confidence:'low'|'medium'|'high';sample_count:number;basis:string};
+export type FulfillmentMode='delivery_now'|'pickup_now'|'scheduled_delivery'|'scheduled_pickup'|'unavailable';
+export type FulfillmentRecommendation={store_id:string;recommended_mode:FulfillmentMode;delivery_enabled:boolean;pickup_enabled:boolean;delivery_serviceable:boolean;store_open:boolean;timezone?:string;reasons:string[]};
+export type RepeatCadenceItem={product_id:string;product_name:string;purchase_count:number;cadence_days:number;days_since_last_purchase:number;due:boolean;urgency_score:number;last_order_id:string;last_store_id:string;listing_id?:string|null;available_now:boolean};
+export type MerchantReliability={store_id:string;score:number;confidence:'low'|'medium'|'high';total_orders:number;terminal_orders?:number;delivered_orders:number;cancelled_orders:number;failed_deliveries:number;basis:string};
+
+export async function preparationEstimate(storeId:string){return api<PreparationEstimate>(`/stores/${storeId}/preparation-estimate`)}
+export async function fulfillmentRecommendation(storeId:string,latitude:number,longitude:number){const query=new URLSearchParams({latitude:String(latitude),longitude:String(longitude)});return api<FulfillmentRecommendation>(`/stores/${storeId}/fulfillment-recommendation?${query}`)}
+export async function repeatPurchaseCadence(){return api<{items:RepeatCadenceItem[]}>('/me/repeat-purchase-cadence')}
+export async function merchantReliability(storeId:string){return api<MerchantReliability>(`/stores/${storeId}/reliability`)}
+
+export function preparationCopy(estimate:PreparationEstimate){const minutes=estimate.estimated_preparation_minutes;if(estimate.basis==='platform_fallback')return `Usually ready in about ${minutes} min`;if(estimate.confidence==='low')return `Estimated around ${minutes} min`;return `Typically ready in about ${minutes} min`}
+export function preparationDetail(estimate:PreparationEstimate){if(estimate.sample_count<=0)return 'Early estimate while this store builds order history.';return `Based on ${estimate.sample_count} recent fulfilled orders • ${estimate.confidence} confidence`}
+export function fulfillmentLabel(mode:FulfillmentMode){return ({delivery_now:'Delivery now',pickup_now:'Pickup now',scheduled_delivery:'Schedule delivery',scheduled_pickup:'Schedule pickup',unavailable:'Unavailable right now'} as const)[mode]}
+export function fulfillmentDetail(result:FulfillmentRecommendation){if(result.recommended_mode==='delivery_now')return 'Recommended: the store is open and this delivery location is serviceable.';if(result.recommended_mode==='pickup_now')return 'Recommended: pickup is available now; delivery is not serviceable to this location.';if(result.recommended_mode==='scheduled_delivery')return 'Delivery is serviceable, but the store is currently closed. Schedule for an open window.';if(result.recommended_mode==='scheduled_pickup')return 'Pickup is supported after the store reopens.';return 'This store cannot fulfil this location/mode right now.'}
+export function cadenceCopy(item:RepeatCadenceItem){if(item.due)return `Due again • usually every ${Math.round(item.cadence_days)} days`;const remaining=Math.max(0,Math.round(item.cadence_days-item.days_since_last_purchase));return `Likely due in about ${remaining} days`}
+export function trustLabel(result:MerchantReliability){if(result.confidence==='low')return 'Limited fulfilment history';if(result.score>=0.9)return 'Very consistent fulfilment';if(result.score>=0.75)return 'Consistent fulfilment';if(result.score>=0.6)return 'Mixed fulfilment history';return 'Fulfilment needs attention'}
+export function trustDetail(result:MerchantReliability){const samples=result.terminal_orders??result.total_orders;if(samples<5)return `Only ${samples} completed/cancelled orders are available, so GaonOne does not treat this as a strong trust signal.`;return `Operational signal from ${samples} completed/cancelled orders • ${result.confidence} confidence. This is not a customer star rating.`}
