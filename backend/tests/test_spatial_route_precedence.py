@@ -1,21 +1,31 @@
-from app.api.v1.router import api_router
+from fastapi.testclient import TestClient
+
+from app.api.v1.routes import commerce, geography, store_discovery
+from app.main import app
+
+client = TestClient(app)
 
 
-def _first_endpoint_name(path: str, method: str) -> str | None:
-    for route in api_router.routes:
-        if getattr(route, "path", None) != path:
-            continue
-        methods = getattr(route, "methods", set()) or set()
-        if method not in methods:
-            continue
-        endpoint = getattr(route, "endpoint", None)
-        return getattr(endpoint, "__name__", None)
-    return None
+def test_nearby_store_route_prefers_indexed_postgis_handler(monkeypatch) -> None:
+    monkeypatch.setattr(store_discovery, "nearby_store_distances", lambda *args, **kwargs: [])
+
+    def legacy_distance_must_not_run(*args, **kwargs):
+        raise AssertionError("legacy Haversine nearby-store handler was selected")
+
+    monkeypatch.setattr(commerce, "_distance_km", legacy_distance_must_not_run)
+    response = client.get(
+        "/api/v1/stores/nearby",
+        params={"lat": 18.5204, "lng": 73.8567, "radius_km": 15, "delivery": True},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == []
 
 
-def test_nearby_store_route_prefers_indexed_postgis_handler() -> None:
-    assert _first_endpoint_name("/stores/nearby", "GET") == "nearby_stores_postgis"
-
-
-def test_serviceability_route_uses_geography_handler() -> None:
-    assert _first_endpoint_name("/location/serviceability", "GET") == "location_serviceability"
+def test_serviceability_route_uses_postgis_service(monkeypatch) -> None:
+    monkeypatch.setattr(geography, "serviceability_for_point", lambda *args, **kwargs: None)
+    response = client.get(
+        "/api/v1/location/serviceability",
+        params={"latitude": 18.5204, "longitude": 73.8567},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["serviceable"] is False
