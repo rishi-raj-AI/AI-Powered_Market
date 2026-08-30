@@ -9,40 +9,23 @@ class CommerceIntelligenceApi {
   static Future<Map<String, String>> _headers() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token');
-    return {
-      'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
-    };
+    return {'Content-Type': 'application/json', if (token != null) 'Authorization': 'Bearer $token'};
   }
 
   static Future<Map<String, dynamic>> _get(String path) async {
-    final response = await http
-        .get(Uri.parse('${GaonApi.baseUrl}$path'), headers: await _headers())
-        .timeout(GaonApi.timeout);
+    final response = await http.get(Uri.parse('${GaonApi.baseUrl}$path'), headers: await _headers()).timeout(GaonApi.timeout);
     final body = response.body.isEmpty ? null : jsonDecode(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final detail = body is Map ? body['detail'] : null;
-      throw Exception(
-        detail is String ? detail : 'Request failed (${response.statusCode})',
-      );
+      throw Exception(detail is String ? detail : 'Request failed (${response.statusCode})');
     }
     return Map<String, dynamic>.from(body as Map);
   }
 
-  static Future<Map<String, dynamic>> preparationEstimate(String storeId) =>
-      _get('/stores/$storeId/preparation-estimate');
+  static Future<Map<String, dynamic>> preparationEstimate(String storeId) => _get('/stores/$storeId/preparation-estimate');
 
-  static Future<Map<String, dynamic>> fulfillmentRecommendation(
-    String storeId, {
-    required double latitude,
-    required double longitude,
-  }) {
-    final query = Uri(
-      queryParameters: {
-        'latitude': '$latitude',
-        'longitude': '$longitude',
-      },
-    ).query;
+  static Future<Map<String, dynamic>> fulfillmentRecommendation(String storeId, {required double latitude, required double longitude}) {
+    final query = Uri(queryParameters: {'latitude': '$latitude', 'longitude': '$longitude'}).query;
     return _get('/stores/$storeId/fulfillment-recommendation?$query');
   }
 
@@ -58,39 +41,27 @@ class CommerceIntelligenceApi {
   static String preparationDetail(Map<String, dynamic> estimate) {
     final samples = estimate['sample_count'] as int? ?? 0;
     final confidence = estimate['confidence'] as String? ?? 'low';
-    if (samples <= 0) {
-      return 'Early estimate while this store builds order history.';
-    }
+    if (samples <= 0) return 'Early estimate while this store builds order history.';
     return 'Based on $samples recent fulfilled orders • $confidence confidence';
   }
 
   static String fulfillmentLabel(String mode) {
     switch (mode) {
-      case 'delivery_now':
-        return 'Delivery now';
-      case 'pickup_now':
-        return 'Pickup now';
-      case 'scheduled_delivery':
-        return 'Schedule delivery';
-      case 'scheduled_pickup':
-        return 'Schedule pickup';
-      default:
-        return 'Unavailable right now';
+      case 'delivery_now': return 'Delivery now';
+      case 'pickup_now': return 'Pickup now';
+      case 'scheduled_delivery': return 'Schedule delivery';
+      case 'scheduled_pickup': return 'Schedule pickup';
+      default: return 'Unavailable right now';
     }
   }
 
   static String fulfillmentDetail(Map<String, dynamic> result) {
     switch (result['recommended_mode']) {
-      case 'delivery_now':
-        return 'The store is open and this delivery location is serviceable.';
-      case 'pickup_now':
-        return 'Pickup is available now; delivery is not serviceable to this location.';
-      case 'scheduled_delivery':
-        return 'Delivery is serviceable, but the store is currently closed.';
-      case 'scheduled_pickup':
-        return 'Pickup is supported after the store reopens.';
-      default:
-        return 'This store cannot fulfil this location or mode right now.';
+      case 'delivery_now': return 'The store is open and this delivery location is serviceable.';
+      case 'pickup_now': return 'Pickup is available now; delivery is not serviceable to this location.';
+      case 'scheduled_delivery': return 'Delivery is serviceable, but the store is currently closed.';
+      case 'scheduled_pickup': return 'Pickup is supported after the store reopens.';
+      default: return 'This store cannot fulfil this location or mode right now.';
     }
   }
 }
