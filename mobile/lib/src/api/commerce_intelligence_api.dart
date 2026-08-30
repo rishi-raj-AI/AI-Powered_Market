@@ -46,6 +46,13 @@ class CommerceIntelligenceApi {
     return _get('/stores/$storeId/fulfillment-recommendation?$query');
   }
 
+  static Future<List<Map<String, dynamic>>> repeatPurchaseCadence() async {
+    final data = await _get('/me/repeat-purchase-cadence');
+    return (data['items'] as List? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+  }
+
   static String preparationCopy(Map<String, dynamic> estimate) {
     final minutes = estimate['estimated_preparation_minutes'] as int? ?? 30;
     final basis = estimate['basis'] as String?;
@@ -66,31 +73,29 @@ class CommerceIntelligenceApi {
 
   static String fulfillmentLabel(String mode) {
     switch (mode) {
-      case 'delivery_now':
-        return 'Delivery now';
-      case 'pickup_now':
-        return 'Pickup now';
-      case 'scheduled_delivery':
-        return 'Schedule delivery';
-      case 'scheduled_pickup':
-        return 'Schedule pickup';
-      default:
-        return 'Unavailable right now';
+      case 'delivery_now': return 'Delivery now';
+      case 'pickup_now': return 'Pickup now';
+      case 'scheduled_delivery': return 'Schedule delivery';
+      case 'scheduled_pickup': return 'Schedule pickup';
+      default: return 'Unavailable right now';
     }
   }
 
   static String fulfillmentDetail(Map<String, dynamic> result) {
     switch (result['recommended_mode']) {
-      case 'delivery_now':
-        return 'The store is open and this delivery location is serviceable.';
-      case 'pickup_now':
-        return 'Pickup is available now; delivery is not serviceable to this location.';
-      case 'scheduled_delivery':
-        return 'Delivery is serviceable, but the store is currently closed.';
-      case 'scheduled_pickup':
-        return 'Pickup is supported after the store reopens.';
-      default:
-        return 'This store cannot fulfil this location or mode right now.';
+      case 'delivery_now': return 'The store is open and this delivery location is serviceable.';
+      case 'pickup_now': return 'Pickup is available now; delivery is not serviceable to this location.';
+      case 'scheduled_delivery': return 'Delivery is serviceable, but the store is currently closed.';
+      case 'scheduled_pickup': return 'Pickup is supported after the store reopens.';
+      default: return 'This store cannot fulfil this location or mode right now.';
     }
+  }
+
+  static String cadenceCopy(Map<String, dynamic> item) {
+    final cadence = ((item['cadence_days'] as num?) ?? 0).round();
+    final since = ((item['days_since_last_purchase'] as num?) ?? 0).round();
+    if (item['due'] == true) return 'Due again • usually every $cadence days';
+    final remaining = (cadence - since).clamp(0, cadence);
+    return 'Likely due in about $remaining days';
   }
 }
