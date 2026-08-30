@@ -128,6 +128,33 @@ class DeliveryTaskRead(BaseModel):
     customer_longitude: float | None = None
 
 
+class DeliveryTaskOfferRead(BaseModel):
+    """What a rider may see about a task they have not been assigned yet.
+
+    Enough to judge and claim the job — where to collect, roughly how far, what
+    it is worth, whether cash is involved — and nothing that identifies the
+    customer. Recipient name, phone, house details, directions and exact
+    coordinates only appear once the delivery is actually assigned.
+    """
+
+    id: uuid.UUID
+    order_id: uuid.UUID
+    order_number: str
+    status: DeliveryStatus
+    payment_method: PaymentMethod
+    payment_status: PaymentStatus
+    total: Decimal
+    item_count: int
+    store_name: str
+    store_landmark: str | None = None
+    store_latitude: float | None = None
+    store_longitude: float | None = None
+    #: Coarse drop-off signal only: the area/locality label and a rounded
+    #: store-to-customer distance. Never an exact address or coordinate.
+    dropoff_area: str | None = None
+    dropoff_distance_km: float | None = None
+
+
 class DeliveryStatusUpdate(BaseModel):
     status: DeliveryStatus
 
