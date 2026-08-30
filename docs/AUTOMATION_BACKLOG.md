@@ -59,7 +59,7 @@ This is the execution queue for automation-mode development. Tasks are taken in 
 
 ## Wave 6 — Scale and intelligence
 
-- [ ] S01 Observability/correlation IDs across order-delivery-payment lifecycle.
+- [x] S01 Observability/correlation IDs across order-delivery-payment lifecycle.
 - [ ] S02 Outbox/event reliability for notifications and asynchronous side effects.
 - [ ] S03 Dispatch scoring and batching.
 - [ ] S04 ETA and delivery performance analytics.
