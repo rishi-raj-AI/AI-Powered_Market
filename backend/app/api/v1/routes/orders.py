@@ -41,6 +41,7 @@ from app.services.order_transitions import (
     transition_order,
 )
 from app.services.refunds import REFUND_REASON_CANCELLED, ensure_refund_request
+from app.services.store_hours import store_is_open
 
 router = APIRouter(tags=["Orders & Delivery"])
 
@@ -236,6 +237,8 @@ def checkout(
         raise HTTPException(status_code=409, detail="Store is currently unavailable")
     if not store.delivery_enabled:
         raise HTTPException(status_code=409, detail="This store does not currently support delivery")
+    if not store_is_open(store):
+        raise HTTPException(status_code=409, detail=f"{store.name} is closed right now.")
 
     subtotal = Decimal("0.00")
     for item in items:

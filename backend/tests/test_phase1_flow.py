@@ -119,8 +119,10 @@ def test_complete_marketplace_flow() -> None:
             "landmark": "Village square",
             "latitude": 18.5204,
             "longitude": 73.8567,
-            "opens_at": "08:00:00",
-            "closes_at": "21:00:00",
+            # Round-the-clock: this test is about the order flow, not opening
+            # hours, and a fixed window would make it depend on the wall clock.
+            "opens_at": "00:00:00",
+            "closes_at": "00:00:00",
             "delivery_enabled": True,
             "pickup_enabled": True,
         },

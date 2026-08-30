@@ -5,6 +5,7 @@ from app.api.deps import get_db
 from app.models.commerce import Store
 from app.schemas.commerce import NearbyStoreRead, StoreRead
 from app.services.spatial import nearby_store_distances
+from app.services.store_hours import store_is_open
 
 router = APIRouter(tags=["Commerce"])
 
@@ -24,5 +25,6 @@ def nearby_stores_postgis(
         if store is None:
             continue
         payload = StoreRead.model_validate(store).model_dump()
+        payload["is_open_now"] = store_is_open(store)
         results.append(NearbyStoreRead(**payload, distance_km=round(distance_km, 2)))
     return results
