@@ -217,6 +217,36 @@ def test_complete_marketplace_flow() -> None:
     assert proof.status_code == 200, proof.text
     assert proof.json()["verified_at"] is not None
 
+    blocked_without_cod = client.post(
+        f"/api/v1/delivery/{delivery_id}/complete",
+        headers=auth(delivery_token),
+    )
+    assert blocked_without_cod.status_code == 409
+
+    wrong_cod = client.post(
+        f"/api/v1/delivery/{delivery_id}/cod-collection",
+        headers=auth(delivery_token),
+        json={"amount": "129.00"},
+    )
+    assert wrong_cod.status_code == 422
+
+    cod = client.post(
+        f"/api/v1/delivery/{delivery_id}/cod-collection",
+        headers=auth(delivery_token),
+        json={"amount": "130.00"},
+    )
+    assert cod.status_code == 200, cod.text
+    assert cod.json()["amount"] == "130.00"
+    assert cod.json()["order_id"] == order_id
+
+    cod_retry = client.post(
+        f"/api/v1/delivery/{delivery_id}/cod-collection",
+        headers=auth(delivery_token),
+        json={"amount": "130.00"},
+    )
+    assert cod_retry.status_code == 200, cod_retry.text
+    assert cod_retry.json()["id"] == cod.json()["id"]
+
     delivered = client.post(
         f"/api/v1/delivery/{delivery_id}/complete",
         headers=auth(delivery_token),
