@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, require_roles
 from app.models.commerce import Merchant, Store
+from app.models.integrations import CodCollection
 from app.models.orders import (
     Delivery,
     DeliveryProof,
@@ -21,6 +22,7 @@ from app.models.orders import (
     StatusTransitionEvent,
 )
 from app.models.user import User, UserRole
+from app.schemas.cod import CodCollectionRead, CodCollectionRequest
 from app.schemas.orders import (
     DeliveryFailureRequest,
     DeliveryProofChallengeRead,
@@ -217,6 +219,43 @@ def get_delivery_proof(
     return proof
 
 
+@router.post("/delivery/{delivery_id}/cod-collection", response_model=CodCollectionRead)
+def record_cod_collection(
+    delivery_id: uuid.UUID,
+    payload: CodCollectionRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles(UserRole.DELIVERY, UserRole.ADMIN)),
+):
+    delivery, order = _locked_delivery_order(db, delivery_id)
+    _require_assigned_rider(delivery, user)
+    if order.payment_method != PaymentMethod.COD:
+        raise HTTPException(status_code=409, detail="Cash collection is only valid for COD orders")
+    if delivery.status != DeliveryStatus.PICKED_UP or order.status != OrderStatus.OUT_FOR_DELIVERY:
+        raise HTTPException(status_code=409, detail="COD collection can only be recorded after pickup")
+    if payload.amount != order.total:
+        raise HTTPException(status_code=422, detail="Collected COD amount must match the order total")
+
+    existing = db.scalar(
+        select(CodCollection).where(CodCollection.delivery_id == delivery.id).with_for_update()
+    )
+    if existing is not None:
+        if existing.amount != order.total or existing.order_id != order.id:
+            raise HTTPException(status_code=409, detail="A different COD collection is already recorded")
+        return existing
+
+    collection = CodCollection(
+        delivery_id=delivery.id,
+        order_id=order.id,
+        amount=order.total,
+        collected_by_user_id=user.id,
+        collected_at=datetime.now(timezone.utc),
+    )
+    db.add(collection)
+    db.commit()
+    db.refresh(collection)
+    return collection
+
+
 @router.post("/delivery/{delivery_id}/complete", response_model=DeliveryRead)
 def complete_delivery(
     delivery_id: uuid.UUID,
@@ -232,6 +271,15 @@ def complete_delivery(
     proof = db.scalar(select(DeliveryProof).where(DeliveryProof.delivery_id == delivery.id).with_for_update())
     if proof is None or proof.verified_at is None:
         raise HTTPException(status_code=409, detail="Verified proof of delivery is required")
+
+    if order.payment_method == PaymentMethod.COD:
+        collection = db.scalar(
+            select(CodCollection).where(CodCollection.delivery_id == delivery.id).with_for_update()
+        )
+        if collection is None:
+            raise HTTPException(status_code=409, detail="Recorded COD collection is required before completion")
+        if collection.order_id != order.id or collection.amount != order.total:
+            raise HTTPException(status_code=409, detail="Recorded COD collection does not match this order")
 
     transition_delivery(delivery, DeliveryStatus.DELIVERED)
     delivery.delivered_at = datetime.now(timezone.utc)
