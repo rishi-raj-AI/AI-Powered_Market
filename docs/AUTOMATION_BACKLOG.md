@@ -45,7 +45,7 @@ This is the execution queue for automation-mode development. Tasks are taken in 
 
 - [x] T01 Harden live tracking authorization and event validation.
 - [x] T02 Add stale-location and impossible-coordinate safeguards.
-- [ ] P01 Audit payment webhook signature/idempotency behavior.
+- [x] P01 Audit payment webhook signature/idempotency behavior.
 - [ ] P02 Model COD collection separately from commercial payment status where required.
 - [ ] P03 Introduce settlement ledger foundation for merchant/delivery payouts.
 
