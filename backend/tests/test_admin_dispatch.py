@@ -54,6 +54,16 @@ def test_admin_can_assign_recover_and_reassign_ready_delivery() -> None:
     assert assigned.json()["delivery_partner_id"]==rider["id"]
     assert assigned.json()["status"]=="assigned"
 
+    unassigned=client.post(f"/api/v1/admin/deliveries/{first_task['id']}/unassign",headers=auth(admin_token))
+    assert unassigned.status_code==200,unassigned.text
+    assert unassigned.json()["status"]=="unassigned"
+    assert unassigned.json()["delivery_partner_id"] is None
+
+    reassigned_before_pickup=client.post(f"/api/v1/admin/deliveries/{first_task['id']}/assign",headers=auth(admin_token),json={"rider_id":rider["id"]})
+    assert reassigned_before_pickup.status_code==200,reassigned_before_pickup.text
+    assert reassigned_before_pickup.json()["status"]=="assigned"
+    assert reassigned_before_pickup.json()["delivery_partner_id"]==rider["id"]
+
     active=client.get("/api/v1/admin/deliveries/active",headers=auth(admin_token))
     assert active.status_code==200,active.text
     assert any(item["id"]==first_task["id"] and item["rider_phone"]==rider["phone"] for item in active.json())
@@ -80,6 +90,10 @@ def test_admin_can_assign_recover_and_reassign_ready_delivery() -> None:
 
     picked_up=client.patch(f"/api/v1/delivery/{second_task['id']}/status",headers=auth(rider_token),json={"status":"picked_up"})
     assert picked_up.status_code==200,picked_up.text
+
+    blocked_unassign=client.post(f"/api/v1/admin/deliveries/{second_task['id']}/unassign",headers=auth(admin_token))
+    assert blocked_unassign.status_code==409,blocked_unassign.text
+    assert "awaiting pickup" in blocked_unassign.json()["detail"]
 
     failed_after_pickup=client.post(
         f"/api/v1/delivery/{second_task['id']}/fail",
