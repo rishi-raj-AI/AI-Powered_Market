@@ -18,7 +18,7 @@ This is the execution queue for automation-mode development. Tasks are taken in 
 - [x] D01 Centralize order transition rules and tests.
 - [x] D02 Correct assignment semantics: claiming a delivery must not mark the order `OUT_FOR_DELIVERY`.
 - [x] D03 Move order to `OUT_FOR_DELIVERY` only on confirmed pickup.
-- [ ] D04 Add delivery failure workflow with explicit failure reason/evidence.
+- [x] D04 Add delivery failure workflow with explicit failure reason/evidence.
 - [ ] D05 Add proof-of-delivery model/API with OTP/evidence-ready design.
 - [ ] D06 Add reassignment/cancellation rules for delivery partners.
 - [ ] D07 Add transition/audit events for material order and delivery changes.
