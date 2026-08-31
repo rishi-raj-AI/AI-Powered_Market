@@ -22,7 +22,7 @@ This is the execution queue for automation-mode development. Tasks are taken in 
 - [x] D05 Add proof-of-delivery model/API with OTP/evidence-ready design.
 - [x] D06 Add reassignment/cancellation rules for delivery partners.
 - [x] D07 Add transition/audit events for material order and delivery changes.
-- [ ] D08 Add end-to-end tests for customer → merchant → rider → delivered flow.
+- [x] D08 Add end-to-end tests for customer → merchant → rider → delivered flow.
 
 ## Wave 2 — Checkout, inventory and idempotency
 
