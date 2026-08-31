@@ -40,3 +40,11 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint]
+# Deliberately narrow: rules that catch real defects (undefined names, unused
+# imports, broken f-strings, syntax errors), not style. The codebase uses a
+# dense one-line style on purpose, and B008 is FastAPI's own Depends() idiom,
+# so enabling those would mean reformatting mature working code to satisfy a
+# linter rather than fixing anything.
+select = ["E4", "E9", "F"]

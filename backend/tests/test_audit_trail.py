@@ -15,7 +15,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.models.orders import Order, OrderStatus, PaymentStatus, StatusTransitionEvent
+from app.models.orders import OrderStatus, PaymentStatus, StatusTransitionEvent
 from app.models.user import User
 from tests.factories import make_order, session
 

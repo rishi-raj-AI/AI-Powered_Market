@@ -17,8 +17,6 @@ from app.models.orders import (
     Order,
     OrderItem,
     OrderStatus,
-    PaymentMethod,
-    PaymentStatus,
 )
 from app.models.user import User, UserRole
 from app.schemas.orders import (
