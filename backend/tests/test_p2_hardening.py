@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.models.commerce import Merchant, MerchantStatus, Store
+from app.models.commerce import Merchant, Store
 from app.models.orders import Delivery, DeliveryStatus, Order, OrderStatus, PaymentStatus
 from app.models.user import User, UserRole
 from tests.factories import make_order, make_store, make_user, session

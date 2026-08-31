@@ -1,6 +1,5 @@
 import hashlib
 import json
-import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status

@@ -57,6 +57,9 @@ jobs:
       - name: Verify the dependency lock covers every declared dependency
         run: python ../scripts/check_dependency_lock.py
 
+      - name: Lint
+        run: ruff check app tests
+
       - name: Compile Python
         run: python -m compileall -q app tests
 
@@ -68,6 +71,23 @@ jobs:
 
       - name: Verify migration head
         run: alembic current
+
+      - name: Verify a single migration head
+        run: |
+          heads="$(alembic heads | grep -c '(head)')"
+          if [ "$heads" != "1" ]; then
+            echo "Expected exactly one migration head, found $heads" >&2
+            alembic heads >&2
+            exit 1
+          fi
+
+      # Note: `alembic check` is deliberately not run here. Against this schema
+      # it reports PostGIS's own spatial_ref_sys table, the GIST indexes created
+      # in raw SQL (invisible to model metadata) and unique-constraint
+      # reflection artifacts as drift. Tuning it until it passes would mean
+      # filtering exactly the kind of difference it exists to catch, so a check
+      # that must be silenced is worse than none. Tracked as deferred work in
+      # docs/production-readiness.md.
 
       - name: Seed development data
         run: python -m app.scripts.seed_dev

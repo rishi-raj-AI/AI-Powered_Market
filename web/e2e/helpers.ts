@@ -13,8 +13,11 @@ const pendingMerchant={id:'merchant-pending',owner_user_id:'user-customer',busin
 const approvedMerchant={id:'merchant-approved',owner_user_id:'merchant-owner',business_name:'Nimbu Kirana',gstin:null,status:'approved',created_at:'2026-08-28T00:00:00Z'};
 const village={id:'village-niphad',name:'Niphad',taluka:'Niphad',district:'Nashik',state:'Maharashtra',pincode:'422303',latitude:20.0778,longitude:74.1118,is_active:true};
 const serviceArea={id:'area-niphad',name:'Niphad Local',hub_village_id:village.id,radius_km:10,is_active:true};
-const deliveryTask={id:'delivery-ready',order_id:'order-ready',order_number:'GO260829000001',status:'unassigned',payment_method:'cod',payment_status:'pending',total:'240',store_name:'Nimbu Kirana',store_landmark:'Niphad Bus Stand',store_latitude:20.0778,store_longitude:74.1118,recipient_name:'Kiran',recipient_phone:'+919284800336',house_details:'House 10',customer_landmark:'Main Chowk',customer_directions:'Blue gate',customer_latitude:20.081,customer_longitude:74.115};
-const assignedTask={...deliveryTask,id:'delivery-assigned',order_id:'order-assigned',order_number:'GO260829000002',status:'assigned'};
+// An unassigned task is an offer: the backend deliberately withholds customer
+// identity until a rider is actually assigned, so the mock must too.
+const deliveryOffer={id:'delivery-ready',order_id:'order-ready',order_number:'GO260829000001',status:'unassigned',payment_method:'cod',payment_status:'pending',total:'240',item_count:3,store_name:'Nimbu Kirana',store_landmark:'Niphad Bus Stand',store_latitude:20.0778,store_longitude:74.1118,dropoff_area:'Niphad',dropoff_distance_km:0.5};
+// An assigned delivery carries the detail the rider needs to actually deliver.
+const assignedTask={id:'delivery-assigned',order_id:'order-assigned',order_number:'GO260829000002',status:'assigned',payment_method:'cod',payment_status:'pending',total:'240',store_name:'Nimbu Kirana',store_phone:'+912550000000',store_landmark:'Niphad Bus Stand',store_latitude:20.0778,store_longitude:74.1118,recipient_name:'Kiran',recipient_phone:'+919284800336',house_details:'House 10',customer_landmark:'Main Chowk',customer_directions:'Blue gate',customer_latitude:20.081,customer_longitude:74.115};
 const activeDelivery={id:'delivery-active-admin',order_id:'order-active-admin',order_number:'GO260829000003',delivery_partner_id:busyRider.id,rider_name:'Suresh',rider_phone:busyRider.phone,status:'assigned',assigned_at:'2026-08-29T00:10:00Z',store_name:'Nimbu Kirana',store_landmark:'Niphad Bus Stand',customer_landmark:'Main Chowk'};
 export async function installApiMocks(page:Page,currentUser:MockUser=customer){
   await page.addInitScript(()=>localStorage.setItem('gaonone_token','e2e-token'));
@@ -25,7 +28,7 @@ export async function installApiMocks(page:Page,currentUser:MockUser=customer){
     if(path==='/admin/users')return route.fulfill({json:[superAdmin,normalAdmin,activeRider,busyRider,riderCandidate,customer,merchantUser]});
     if(path==='/admin/deliveries/active')return route.fulfill({json:[activeDelivery]});
     if(path==='/admin/deliveries/delivery-active-admin/unassign'&&method==='POST')return route.fulfill({json:{...activeDelivery,delivery_partner_id:null,rider_name:null,rider_phone:null,status:'unassigned',assigned_at:null}});
-    if(path==='/delivery/tasks/available')return route.fulfill({json:[deliveryTask]});
+    if(path==='/delivery/tasks/available')return route.fulfill({json:[deliveryOffer]});
     if(path==='/delivery/tasks/me')return route.fulfill({json:[assignedTask]});
     if(path==='/delivery/delivery-assigned/location'&&method==='POST')return route.fulfill({status:201,json:{id:'location-1',delivery_id:'delivery-assigned',...request.postDataJSON()}});
     if(path==='/delivery/delivery-assigned/status'&&method==='PATCH')return route.fulfill({json:{id:'delivery-assigned',order_id:'order-assigned',delivery_partner_id:activeRider.id,status:(request.postDataJSON() as any).status,updated_at:'2026-08-29T00:00:00Z'}});
@@ -34,7 +37,7 @@ export async function installApiMocks(page:Page,currentUser:MockUser=customer){
     if(path==='/merchants/apply'&&method==='POST')return route.fulfill({json:pendingMerchant});
     if(path==='/notifications/flush'&&method==='POST')return route.fulfill({json:{events:0,pushes:0}});
     if(path.startsWith('/admin/users/')&&path.endsWith('/role')&&method==='PATCH'){const id=path.split('/')[3];const payload=request.postDataJSON() as {role:MockUser['role'];is_active:boolean};const source=[superAdmin,normalAdmin,activeRider,busyRider,riderCandidate,customer,merchantUser].find(user=>user.id===id)??customer;return route.fulfill({json:{...source,role:payload.role,is_active:payload.is_active}})}
-    if(path==='/admin/deliveries/delivery-ready/assign'&&method==='POST'){const payload=request.postDataJSON() as {rider_id:string};return route.fulfill({json:{id:deliveryTask.id,order_id:deliveryTask.order_id,delivery_partner_id:payload.rider_id,status:'assigned',assigned_at:'2026-08-29T00:00:00Z'}})}
+    if(path==='/admin/deliveries/delivery-ready/assign'&&method==='POST'){const payload=request.postDataJSON() as {rider_id:string};return route.fulfill({json:{id:deliveryOffer.id,order_id:deliveryOffer.order_id,delivery_partner_id:payload.rider_id,status:'assigned',assigned_at:'2026-08-29T00:00:00Z'}})}
     if(path.startsWith('/merchants/')&&path.endsWith('/status')&&method==='PATCH')return route.fulfill({json:{...pendingMerchant,status:'approved'}});
     if(path==='/villages')return route.fulfill({json:[village]});if(path==='/service-areas')return route.fulfill({json:[serviceArea]});
     if(path==='/location/autocomplete')return route.fulfill({json:[{place_id:'place-niphad',text:'Niphad, Maharashtra, India',main_text:'Niphad',secondary_text:'Maharashtra, India'}]});

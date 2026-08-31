@@ -23,6 +23,13 @@ def register_device(payload: DeviceRegistrationCreate, db: Session = Depends(get
     if registration is None:
         registration = DeviceRegistration(user_id=user.id, **payload.model_dump()); db.add(registration)
     else:
+        # Rebinding is deliberate: a device token identifies a handset, and when
+        # a different person signs in on that handset the registration must
+        # follow them or they get no notifications. token is uniquely
+        # constrained, so there can only ever be one owner. This does mean a
+        # stolen token could be re-registered to divert that handset's pushes;
+        # the token is only ever known to the device and the server, and the
+        # alternative (refusing the rebind) breaks the normal handover case.
         registration.user_id=user.id; registration.platform=payload.platform; registration.app_version=payload.app_version; registration.is_active=True
     db.commit(); db.refresh(registration); return registration
 
