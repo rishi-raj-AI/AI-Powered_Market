@@ -40,6 +40,7 @@ from app.services.order_transitions import (
     transition_delivery,
     transition_order,
 )
+from app.services.refunds import REFUND_REASON_CANCELLED, ensure_refund_request
 
 router = APIRouter(tags=["Orders & Delivery"])
 
@@ -334,8 +335,9 @@ def cancel_my_order(
         raise HTTPException(status_code=409, detail="Only newly placed orders can be cancelled")
     _restore_cancelled_stock(db, order)
     transition_order(order, OrderStatus.CANCELLED)
-    if order.payment_status == PaymentStatus.PAID:
-        order.payment_status = PaymentStatus.REFUNDED
+    # Refund obligations are recorded, never asserted. Setting REFUNDED here
+    # would claim money moved that no provider call has returned.
+    ensure_refund_request(db, order, reason=REFUND_REASON_CANCELLED)
     _notify_customer(
         db,
         order,
@@ -397,8 +399,7 @@ def update_order_status(
 
     if payload.status == OrderStatus.CANCELLED:
         _restore_cancelled_stock(db, order)
-        if order.payment_status == PaymentStatus.PAID:
-            order.payment_status = PaymentStatus.REFUNDED
+        ensure_refund_request(db, order, reason=REFUND_REASON_CANCELLED)
         _notify_customer(
             db,
             order,
