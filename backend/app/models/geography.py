@@ -52,6 +52,10 @@ class Address(Base):
     latitude: Mapped[float | None] = mapped_column(Float)
     longitude: Mapped[float | None] = mapped_column(Float)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    #: Addresses are archived, never deleted: orders reference them, and a hard
+    #: delete both broke with a foreign-key error and would have erased where a
+    #: past order was actually delivered.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

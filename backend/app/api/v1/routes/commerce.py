@@ -9,6 +9,7 @@ from app.api.deps import get_current_user, get_db, require_roles
 from app.models.commerce import Category, Merchant, MerchantStatus, Product, Store, StoreProduct
 from app.models.geography import ServiceArea, Village
 from app.models.user import User, UserRole
+from app.services.spatial import point_is_in_service_area
 from app.services.store_hours import store_is_open
 from app.schemas.commerce import (
     CategoryCreate,
@@ -160,8 +161,27 @@ def create_store(
         raise HTTPException(status_code=403, detail="Merchant approval required")
     if db.get(Village, payload.village_id) is None:
         raise HTTPException(status_code=404, detail="Village not found")
-    if payload.service_area_id and db.get(ServiceArea, payload.service_area_id) is None:
-        raise HTTPException(status_code=404, detail="Service area not found")
+    if payload.service_area_id:
+        area = db.get(ServiceArea, payload.service_area_id)
+        if area is None:
+            raise HTTPException(status_code=404, detail="Service area not found")
+        if not area.is_active:
+            raise HTTPException(status_code=409, detail="Service area is not active")
+        # Serviceability is checked at checkout as address-in-area. Without this
+        # a merchant could attach a store to any area on the platform and become
+        # the delivery option for every address in it.
+        if payload.latitude is None or payload.longitude is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Pin the storefront location before assigning a service area",
+            )
+        if not point_is_in_service_area(
+            db, payload.service_area_id, payload.latitude, payload.longitude
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="The storefront location is outside the selected service area",
+            )
     if db.scalar(select(Store).where(Store.slug == payload.slug)):
         raise HTTPException(status_code=409, detail="Store slug already exists")
     store = Store(merchant_id=merchant.id, **payload.model_dump())
@@ -249,8 +269,24 @@ def update_store(
     merchant = _require_store_owner(db, store, user)
     if user.role != UserRole.ADMIN and merchant and merchant.status != MerchantStatus.APPROVED:
         raise HTTPException(status_code=403, detail="Merchant is not active")
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    updates = payload.model_dump(exclude_unset=True)
+    for key, value in updates.items():
         setattr(store, key, value)
+    # Relocating a store must not silently move it out of the area it serves.
+    if ("latitude" in updates or "longitude" in updates) and store.service_area_id is not None:
+        if store.latitude is None or store.longitude is None:
+            raise HTTPException(
+                status_code=422,
+                detail="A store with a service area must keep a pinned location",
+            )
+        if not point_is_in_service_area(
+            db, store.service_area_id, float(store.latitude), float(store.longitude)
+        ):
+            db.rollback()
+            raise HTTPException(
+                status_code=422,
+                detail="The new storefront location is outside this store's service area",
+            )
     db.commit()
     db.refresh(store)
     return _store_read(store)

@@ -113,8 +113,19 @@ def _can_view_order(db: Session, order: Order, user: User) -> bool:
 def _order_detail(db: Session, order: Order) -> OrderDetailRead:
     store = db.get(Store, order.store_id)
     address = db.get(Address, order.address_id)
-    if store is None or address is None:
+    if store is None:
         raise HTTPException(status_code=409, detail="Order references are incomplete")
+    # The snapshot taken at checkout is the truth about where this order went.
+    # The live address row is only a fallback for orders placed before
+    # snapshots existed.
+    snapshot = order.delivery_address or {}
+    if not snapshot and address is None:
+        raise HTTPException(status_code=409, detail="Order references are incomplete")
+
+    def field(name: str):
+        if name in snapshot:
+            return snapshot[name]
+        return getattr(address, name, None) if address is not None else None
     items = db.scalars(
         select(OrderItem).where(OrderItem.order_id == order.id).order_by(OrderItem.id)
     ).all()
@@ -125,11 +136,11 @@ def _order_detail(db: Session, order: Order) -> OrderDetailRead:
         store_name=store.name,
         store_phone=store.phone,
         store_landmark=store.landmark,
-        recipient_name=address.recipient_name,
-        recipient_phone=address.phone,
-        house_details=address.house_details,
-        customer_landmark=address.landmark,
-        customer_directions=address.directions,
+        recipient_name=field("recipient_name"),
+        recipient_phone=field("phone"),
+        house_details=field("house_details"),
+        customer_landmark=field("landmark") or "",
+        customer_directions=field("directions"),
         items=[OrderItemRead.model_validate(item) for item in items],
         delivery=(
             DeliverySummaryRead(
@@ -222,7 +233,7 @@ def checkout(
     user: User = Depends(get_current_user),
 ):
     address = db.get(Address, payload.address_id)
-    if address is None or address.user_id != user.id:
+    if address is None or address.user_id != user.id or address.archived_at is not None:
         raise HTTPException(status_code=404, detail="Address not found")
     cart = db.scalar(select(Cart).where(Cart.user_id == user.id))
     if cart is None or cart.store_id is None:
