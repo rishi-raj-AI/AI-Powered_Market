@@ -33,7 +33,7 @@ from app.schemas.orders import (
     DeliveryRead,
     StatusTransitionEventRead,
 )
-from app.services.audit import record_delivery_transition, record_order_transition
+from app.services.audit import annotate_delivery_transition, annotate_order_transition
 from app.services.notifications import enqueue_notification
 from app.services.order_transitions import (
     can_transition_delivery,
@@ -97,16 +97,14 @@ def fail_delivery(
     if delivery.status not in {DeliveryStatus.ASSIGNED, DeliveryStatus.PICKED_UP}:
         raise HTTPException(status_code=409, detail="Only an active delivery can be failed")
 
-    previous = delivery.status.value
     transition_delivery(delivery, DeliveryStatus.FAILED)
     delivery.failed_at = datetime.now(timezone.utc)
     delivery.failure_reason = payload.reason
     delivery.failure_notes = payload.notes
     delivery.failure_evidence_url = payload.evidence_url
-    record_delivery_transition(
+    annotate_delivery_transition(
         db,
         delivery,
-        from_status=previous,
         to_status=DeliveryStatus.FAILED.value,
         actor_user_id=user.id,
         reason=payload.reason,
@@ -145,10 +143,9 @@ def recover_failed_delivery(
     delivery.delivery_partner_id = None
     transition_delivery(delivery, DeliveryStatus.UNASSIGNED)
     delivery.assigned_at = None
-    record_delivery_transition(
+    annotate_delivery_transition(
         db,
         delivery,
-        from_status=DeliveryStatus.FAILED.value,
         to_status=DeliveryStatus.UNASSIGNED.value,
         actor_user_id=_.id,
         reason="admin_recovered_before_pickup",
@@ -203,10 +200,9 @@ def resolve_failed_delivery(
         delivery.delivery_partner_id = None
         transition_delivery(delivery, DeliveryStatus.UNASSIGNED)
         delivery.assigned_at = None
-        record_delivery_transition(
+        annotate_delivery_transition(
             db,
             delivery,
-            from_status=DeliveryStatus.FAILED.value,
             to_status=DeliveryStatus.UNASSIGNED.value,
             actor_user_id=admin.id,
             reason="admin_reassign",
@@ -253,13 +249,11 @@ def resolve_failed_delivery(
                 ),
             )
 
-    previous_order_status = order.status.value
     restore_order_stock_once(db, order)
     transition_order(order, OrderStatus.RETURNED)
-    record_order_transition(
+    annotate_order_transition(
         db,
         order,
-        from_status=previous_order_status,
         to_status=OrderStatus.RETURNED.value,
         actor_user_id=admin.id,
         reason="delivery_failed_after_pickup",
