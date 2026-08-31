@@ -34,6 +34,7 @@ from app.schemas.orders import (
     OrderStatusUpdate,
 )
 from app.services.notifications import enqueue_notification
+from app.services.pricing import order_total, resolve_delivery_fee
 from app.services.order_transitions import (
     can_transition_delivery,
     can_transition_order,
@@ -258,7 +259,7 @@ def checkout(
             raise HTTPException(status_code=409, detail="Cart inventory changed; review your cart")
         subtotal += listing.price * item.quantity
 
-    delivery_fee = Decimal("20.00")
+    delivery_fee = resolve_delivery_fee(db, store)
     order = Order(
         order_number=f"GO{datetime.now(timezone.utc).strftime('%y%m%d%H%M%S%f')[-14:]}",
         user_id=user.id,
@@ -267,7 +268,7 @@ def checkout(
         payment_method=payload.payment_method,
         subtotal=subtotal,
         delivery_fee=delivery_fee,
-        total=subtotal + delivery_fee,
+        total=order_total(subtotal, delivery_fee),
     )
     db.add(order)
     db.flush()
@@ -480,6 +481,15 @@ def claim_delivery(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.DELIVERY)),
 ):
+    # Lock the rider before the delivery. Automatic dispatch locks the rider's
+    # user row (spatial.nearest_eligible_rider, FOR UPDATE OF u), so taking the
+    # same lock here puts self-claim and auto-assign in one ordering instead of
+    # contending on different rows — which is how a rider ended up with two
+    # active deliveries at once.
+    rider = db.scalar(select(User).where(User.id == user.id).with_for_update())
+    if rider is None:
+        raise HTTPException(status_code=404, detail="Delivery partner not found")
+
     delivery = db.scalar(select(Delivery).where(Delivery.id == delivery_id).with_for_update())
     if delivery is None:
         raise HTTPException(status_code=404, detail="Delivery not found")
@@ -490,6 +500,23 @@ def claim_delivery(
         or not can_transition_delivery(delivery.status, DeliveryStatus.ASSIGNED)
     ):
         raise HTTPException(status_code=409, detail="Delivery is not available")
+
+    # One active delivery per rider. Every other path enforced this; the claim
+    # endpoint never checked, so the rule was only as strong as the UI hiding
+    # the button.
+    active_delivery = db.scalar(
+        select(Delivery.id)
+        .where(
+            Delivery.delivery_partner_id == rider.id,
+            Delivery.status.in_((DeliveryStatus.ASSIGNED, DeliveryStatus.PICKED_UP)),
+            Delivery.id != delivery.id,
+        )
+        .limit(1)
+    )
+    if active_delivery is not None:
+        raise HTTPException(
+            status_code=409, detail="Finish your current delivery before claiming another"
+        )
 
     delivery.delivery_partner_id = user.id
     transition_delivery(delivery, DeliveryStatus.ASSIGNED)

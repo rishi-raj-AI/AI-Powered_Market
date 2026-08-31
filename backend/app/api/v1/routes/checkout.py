@@ -14,6 +14,7 @@ from app.models.orders import Cart, CartItem, Delivery, Order, OrderItem
 from app.models.user import User
 from app.schemas.orders import CheckoutRequest, OrderRead
 from app.services.notifications import enqueue_notification
+from app.services.pricing import order_total, resolve_delivery_fee
 from app.services.spatial import point_is_in_service_area
 from app.services.store_hours import describe_hours, store_is_open
 
@@ -178,7 +179,7 @@ def safe_checkout(
         subtotal += listing.price * item.quantity
         validated.append((item, listing))
 
-    delivery_fee = Decimal("20.00")
+    delivery_fee = resolve_delivery_fee(db, store)
     order = Order(
         order_number=_new_order_number(),
         user_id=user.id,
@@ -189,7 +190,7 @@ def safe_checkout(
         payment_method=payload.payment_method,
         subtotal=subtotal,
         delivery_fee=delivery_fee,
-        total=subtotal + delivery_fee,
+        total=order_total(subtotal, delivery_fee),
     )
     db.add(order)
     db.flush()

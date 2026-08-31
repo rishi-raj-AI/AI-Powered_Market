@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -25,6 +26,8 @@ class ServiceAreaCreate(BaseModel):
     name: str
     hub_village_id: uuid.UUID
     radius_km: float = Field(default=10.0, gt=0, le=100)
+    #: Null keeps the configured platform default for this area.
+    delivery_fee: Decimal | None = Field(default=None, ge=0, le=10000, decimal_places=2)
 
 
 class ServiceAreaRead(ServiceAreaCreate):
