@@ -58,7 +58,12 @@ def cleanup_tracked() -> None:
         return
     tracked = list(reversed(_TRACKED))
     _TRACKED.clear()
-    from app.models.integrations import CodCollection, PaymentRefund, SettlementEntry
+    from app.models.integrations import (
+        CodCollection,
+        PaymentRefund,
+        SettlementAdjustment,
+        SettlementEntry,
+    )
     from app.models.orders import DeliveryLocation, DeliveryProof, StatusTransitionEvent
 
     with SessionLocal() as db:
@@ -75,7 +80,14 @@ def cleanup_tracked() -> None:
                     synchronize_session=False
                 )
         if order_ids:
-            for model in (StatusTransitionEvent, PaymentRefund, PaymentAttempt, SettlementEntry, OrderItem):
+            for model in (
+                StatusTransitionEvent,
+                PaymentRefund,
+                SettlementAdjustment,
+                PaymentAttempt,
+                SettlementEntry,
+                OrderItem,
+            ):
                 db.query(model).filter(model.order_id.in_(order_ids)).delete(
                     synchronize_session=False
                 )

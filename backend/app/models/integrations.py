@@ -88,6 +88,8 @@ class SettlementEntry(Base):
     delivery_fee_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="pending", server_default="pending", index=True)
     settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    void_reason: Mapped[str | None] = mapped_column(String(80))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
 
 
@@ -132,6 +134,39 @@ class PaymentRefund(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+
+class SettlementAdjustment(Base):
+    """An auditable correction to a settlement that was already paid out.
+
+    Voiding is only honest while money has not moved. Once an entry is settled
+    the correction has to be recorded as its own fact rather than by rewriting
+    history, so the ledger still explains what happened and what is owed back.
+    """
+
+    __tablename__ = "settlement_adjustments"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_settlement_adjustment_idempotency_key"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    settlement_entry_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("settlement_entries.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    merchant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("merchants.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    #: Negative: money the merchant was paid that must come back.
+    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    reason: Mapped[str] = mapped_column(String(80), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="owed", server_default="owed", index=True
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class CodCollection(Base):

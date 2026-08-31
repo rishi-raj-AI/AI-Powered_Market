@@ -5,6 +5,26 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 client = TestClient(app)
+
+def seeded_village() -> dict:
+    """The seeded pilot village, by identity rather than listing position."""
+    villages = client.get("/api/v1/villages").json()
+    for village in villages:
+        if village["name"] == "Pilot Village":
+            return village
+    assert villages, "no villages are seeded"
+    return villages[0]
+
+
+def seeded_store() -> dict:
+    """The seeded pilot store, by slug rather than listing position."""
+    stores = client.get("/api/v1/stores").json()
+    for store in stores:
+        if store["slug"] == "patil-kirana-pilot":
+            return store
+    assert stores, "no stores are seeded"
+    return stores[0]
+
 OTP = "123456"
 
 
@@ -35,7 +55,7 @@ def test_operational_controls_and_customer_cancellation() -> None:
 
     villages = client.get("/api/v1/villages").json()
     assert villages
-    village = villages[0]
+    village = seeded_village()
     village_id = village["id"]
     village_latitude = village.get("latitude")
     village_longitude = village.get("longitude")

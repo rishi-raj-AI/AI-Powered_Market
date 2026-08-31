@@ -135,12 +135,15 @@ def _mark_succeeded(db: Session, refund: PaymentRefund, *, provider_status: str 
 
 
 def settle_refunded_order(db: Session, order: Order) -> None:
-    """Hook for downstream financial consequences of a confirmed refund.
+    """Downstream financial consequences of a provider-confirmed refund.
 
-    Settlement reversal is layered on top of this in its own change so the
-    refund pipeline and the ledger stay independently testable.
+    Money that went back to the customer is not the merchant's, so the
+    settlement entry loses its entitlement in the same transaction that marks
+    the order refunded.
     """
-    return None
+    from app.services.settlements import VOID_REASON_REFUNDED, void_settlement_for_refund
+
+    void_settlement_for_refund(db, order, reason=VOID_REASON_REFUNDED)
 
 
 def _mark_failed(db: Session, refund: PaymentRefund, *, message: str) -> None:
