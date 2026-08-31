@@ -16,6 +16,16 @@ test('rider sees assigned job, navigation and live GPS controls',async({page,con
   await expect(page.getByRole('button',{name:'Mark picked up'})).toBeVisible();
 });
 
+test('an open job offer withholds the customer until it is claimed',async({page})=>{
+  await installApiMocks(page,activeRider);
+  await page.goto('/delivery');
+  // The offer for the unclaimed job renders the offer card, which carries the
+  // store, a coarse drop-off and the value — never the customer's identity.
+  await expect(page.getByText('GO260829000001')).toBeVisible();
+  await expect(page.getByText('Full delivery address is shared once you claim this job.')).toBeVisible();
+  await expect(page.getByRole('button',{name:'Claim job'})).toBeVisible();
+});
+
 test('rider gets actionable message when geolocation permission is denied',async({page})=>{
   await installApiMocks(page,activeRider);
   await page.addInitScript(()=>{
