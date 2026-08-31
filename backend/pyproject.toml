@@ -19,6 +19,9 @@ dependencies = [
   "python-multipart>=0.0.20,<1.0",
   "httpx>=0.28,<1.0",
   "firebase-admin>=7.0,<8.0",
+  # Business hours are decided in Asia/Kolkata. python:3.x-slim images do not
+  # ship the system tz database, so zoneinfo needs this to resolve the zone.
+  "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]

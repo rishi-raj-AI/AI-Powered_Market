@@ -14,6 +14,7 @@ from app.models.user import User
 from app.schemas.orders import CheckoutRequest, OrderRead
 from app.services.notifications import enqueue_notification
 from app.services.spatial import point_is_in_service_area
+from app.services.store_hours import describe_hours, store_is_open
 
 router = APIRouter(tags=["Orders & Checkout"])
 
@@ -104,6 +105,16 @@ def safe_checkout(
         raise HTTPException(status_code=409, detail="Store is currently unavailable")
     if not store.delivery_enabled:
         raise HTTPException(status_code=409, detail="This store does not currently support delivery")
+    if not store_is_open(store):
+        hours = describe_hours(store.opens_at, store.closes_at)
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{store.name} is closed right now. Opening hours: {hours}."
+                if hours
+                else f"{store.name} is closed right now."
+            ),
+        )
 
     address_point = _address_point(db, address)
     if store.service_area_id is None or address_point is None:

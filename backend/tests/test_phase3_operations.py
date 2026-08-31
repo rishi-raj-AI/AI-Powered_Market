@@ -88,8 +88,9 @@ def test_operational_controls_and_customer_cancellation() -> None:
         "landmark": "Near test chowk",
         "latitude": village_latitude,
         "longitude": village_longitude,
-        "opens_at": "08:00:00",
-        "closes_at": "21:00:00",
+        # Round-the-clock: this test is about operations, not opening hours.
+        "opens_at": "00:00:00",
+        "closes_at": "00:00:00",
         "delivery_enabled": True,
         "pickup_enabled": True,
     }
@@ -100,7 +101,13 @@ def test_operational_controls_and_customer_cancellation() -> None:
     edited = client.patch(
         f"/api/v1/stores/{store_id}",
         headers=auth(merchant_token),
-        json={"description": "Updated operations storefront", "closes_at": "22:00:00"},
+        # An identical open/close pair stays round-the-clock, so editing hours
+        # is still exercised without making the later checkout clock-dependent.
+        json={
+            "description": "Updated operations storefront",
+            "opens_at": "22:00:00",
+            "closes_at": "22:00:00",
+        },
     )
     assert edited.status_code == 200, edited.text
     assert edited.json()["description"] == "Updated operations storefront"

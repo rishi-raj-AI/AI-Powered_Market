@@ -61,6 +61,9 @@ class StoreRead(StoreCreate):
     merchant_id: uuid.UUID
     is_active: bool
     created_at: datetime
+    #: Backend-computed, India-local. Clients render this; they never derive
+    #: their own answer from opens_at/closes_at.
+    is_open_now: bool = True
 
 
 class NearbyStoreRead(StoreRead):

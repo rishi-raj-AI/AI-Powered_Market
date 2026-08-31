@@ -9,6 +9,7 @@ from app.api.deps import get_current_user, get_db, require_roles
 from app.models.commerce import Category, Merchant, MerchantStatus, Product, Store, StoreProduct
 from app.models.geography import ServiceArea, Village
 from app.models.user import User, UserRole
+from app.services.store_hours import store_is_open
 from app.schemas.commerce import (
     CategoryCreate,
     CategoryRead,
@@ -50,6 +51,13 @@ def _require_store_owner(db: Session, store: Store, user: User) -> Merchant | No
     if user.role != UserRole.ADMIN and (merchant is None or merchant.owner_user_id != user.id):
         raise HTTPException(status_code=403, detail="You do not own this store")
     return merchant
+
+
+def _store_read(store: Store) -> StoreRead:
+    """Serialise a store with its backend-decided current availability."""
+    payload = StoreRead.model_validate(store).model_dump()
+    payload["is_open_now"] = store_is_open(store)
+    return StoreRead(**payload)
 
 
 def _public_store_stmt():
@@ -160,7 +168,7 @@ def create_store(
     db.add(store)
     db.commit()
     db.refresh(store)
-    return store
+    return _store_read(store)
 
 
 @router.get("/stores", response_model=list[StoreRead])
@@ -177,7 +185,7 @@ def list_stores(
         stmt = stmt.where(Store.name.ilike(f"%{q}%"))
     if delivery is not None:
         stmt = stmt.where(Store.delivery_enabled.is_(delivery))
-    return db.scalars(stmt).all()
+    return [_store_read(store) for store in db.scalars(stmt).all()]
 
 
 @router.get("/stores/nearby", response_model=list[NearbyStoreRead])
@@ -199,7 +207,7 @@ def nearby_stores(
     for store in db.scalars(stmt).all():
         distance = _distance_km(lat, lng, float(store.latitude), float(store.longitude))
         if distance <= radius_km:
-            payload = StoreRead.model_validate(store).model_dump()
+            payload = _store_read(store).model_dump()
             results.append(NearbyStoreRead(**payload, distance_km=round(distance, 2)))
     return sorted(results, key=lambda item: item.distance_km)
 
@@ -212,9 +220,12 @@ def my_stores(
     merchant = db.scalar(select(Merchant).where(Merchant.owner_user_id == user.id))
     if merchant is None:
         return []
-    return db.scalars(
-        select(Store).where(Store.merchant_id == merchant.id).order_by(Store.created_at.desc())
-    ).all()
+    return [
+        _store_read(store)
+        for store in db.scalars(
+            select(Store).where(Store.merchant_id == merchant.id).order_by(Store.created_at.desc())
+        ).all()
+    ]
 
 
 @router.get("/stores/{store_id}", response_model=StoreRead)
@@ -222,7 +233,7 @@ def get_store(store_id: uuid.UUID, db: Session = Depends(get_db)):
     store = db.scalar(_public_store_stmt().where(Store.id == store_id))
     if store is None:
         raise HTTPException(status_code=404, detail="Store not found")
-    return store
+    return _store_read(store)
 
 
 @router.patch("/stores/{store_id}", response_model=StoreRead)
@@ -242,7 +253,7 @@ def update_store(
         setattr(store, key, value)
     db.commit()
     db.refresh(store)
-    return store
+    return _store_read(store)
 
 
 @router.post("/categories", response_model=CategoryRead, status_code=status.HTTP_201_CREATED)
