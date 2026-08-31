@@ -70,10 +70,18 @@ def _public_store_stmt():
 
 
 def _set_merchant_status(db: Session, merchant: Merchant, target: MerchantStatus) -> None:
+    """Apply a platform decision without overwriting the merchant's own.
+
+    Suspension is a platform decision that must take every storefront offline.
+    Approval only removes that block: it does not reactivate a store the
+    merchant deliberately paused, which the previous blanket update did.
+    """
+    previous = merchant.status
     merchant.status = target
     if target == MerchantStatus.SUSPENDED:
         db.execute(update(Store).where(Store.merchant_id == merchant.id).values(is_active=False))
-    elif target == MerchantStatus.APPROVED:
+    elif target == MerchantStatus.APPROVED and previous == MerchantStatus.SUSPENDED:
+        # Reverse only what suspension switched off.
         db.execute(update(Store).where(Store.merchant_id == merchant.id).values(is_active=True))
 
 
@@ -196,6 +204,8 @@ def list_stores(
     village_id: uuid.UUID | None = None,
     q: str | None = None,
     delivery: bool | None = None,
+    limit: int = Query(default=100, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ):
     stmt = _public_store_stmt().order_by(Store.name)
@@ -205,7 +215,7 @@ def list_stores(
         stmt = stmt.where(Store.name.ilike(f"%{q}%"))
     if delivery is not None:
         stmt = stmt.where(Store.delivery_enabled.is_(delivery))
-    return [_store_read(store) for store in db.scalars(stmt).all()]
+    return [_store_read(store) for store in db.scalars(stmt.offset(offset).limit(limit)).all()]
 
 
 @router.get("/stores/nearby", response_model=list[NearbyStoreRead])
@@ -335,6 +345,8 @@ def create_product(
 def list_products(
     category_id: uuid.UUID | None = None,
     q: str | None = Query(default=None, min_length=1),
+    limit: int = Query(default=100, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ):
     stmt = select(Product).where(Product.is_active.is_(True)).order_by(Product.name)
@@ -342,7 +354,7 @@ def list_products(
         stmt = stmt.where(Product.category_id == category_id)
     if q:
         stmt = stmt.where(Product.name.ilike(f"%{q}%"))
-    return db.scalars(stmt).all()
+    return db.scalars(stmt.offset(offset).limit(limit)).all()
 
 
 @router.post(
@@ -416,6 +428,8 @@ def update_store_product(
 @router.get("/stores/{store_id}/inventory", response_model=list[StoreProductRead])
 def store_inventory(
     store_id: uuid.UUID,
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.MERCHANT, UserRole.ADMIN)),
 ):
@@ -427,11 +441,18 @@ def store_inventory(
         select(StoreProduct)
         .where(StoreProduct.store_id == store_id)
         .order_by(StoreProduct.updated_at.desc())
+        .offset(offset)
+        .limit(limit)
     ).all()
 
 
 @router.get("/stores/{store_id}/products", response_model=list[StoreProductRead])
-def list_store_products(store_id: uuid.UUID, db: Session = Depends(get_db)):
+def list_store_products(
+    store_id: uuid.UUID,
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
     store = db.scalar(_public_store_stmt().where(Store.id == store_id))
     if store is None:
         raise HTTPException(status_code=404, detail="Store not found")
@@ -443,4 +464,6 @@ def list_store_products(store_id: uuid.UUID, db: Session = Depends(get_db)):
             StoreProduct.stock_quantity > 0,
         )
         .order_by(StoreProduct.updated_at.desc())
+        .offset(offset)
+        .limit(limit)
     ).all()

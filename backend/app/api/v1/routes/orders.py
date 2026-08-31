@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -34,6 +34,7 @@ from app.schemas.orders import (
     OrderStatusUpdate,
 )
 from app.services.notifications import enqueue_notification
+from app.services.pricing import order_total, resolve_delivery_fee
 from app.services.order_transitions import (
     can_transition_delivery,
     can_transition_order,
@@ -258,7 +259,7 @@ def checkout(
             raise HTTPException(status_code=409, detail="Cart inventory changed; review your cart")
         subtotal += listing.price * item.quantity
 
-    delivery_fee = Decimal("20.00")
+    delivery_fee = resolve_delivery_fee(db, store)
     order = Order(
         order_number=f"GO{datetime.now(timezone.utc).strftime('%y%m%d%H%M%S%f')[-14:]}",
         user_id=user.id,
@@ -267,7 +268,7 @@ def checkout(
         payment_method=payload.payment_method,
         subtotal=subtotal,
         delivery_fee=delivery_fee,
-        total=subtotal + delivery_fee,
+        total=order_total(subtotal, delivery_fee),
     )
     db.add(order)
     db.flush()
@@ -316,9 +317,18 @@ def checkout(
 
 
 @router.get("/orders/me", response_model=list[OrderRead])
-def my_orders(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def my_orders(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     return db.scalars(
-        select(Order).where(Order.user_id == user.id).order_by(Order.created_at.desc())
+        select(Order)
+        .where(Order.user_id == user.id)
+        .order_by(Order.created_at.desc())
+        .offset(offset)
+        .limit(limit)
     ).all()
 
 
@@ -373,18 +383,19 @@ def cancel_my_order(
 
 @router.get("/merchant/orders", response_model=list[OrderRead])
 def merchant_orders(
+    limit: int = Query(default=100, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.MERCHANT, UserRole.ADMIN)),
 ):
-    if user.role == UserRole.ADMIN:
-        return db.scalars(select(Order).order_by(Order.created_at.desc())).all()
-    merchant = db.scalar(select(Merchant).where(Merchant.owner_user_id == user.id))
-    if merchant is None:
-        raise HTTPException(status_code=404, detail="Merchant profile not found")
-    store_ids = select(Store.id).where(Store.merchant_id == merchant.id)
-    return db.scalars(
-        select(Order).where(Order.store_id.in_(store_ids)).order_by(Order.created_at.desc())
-    ).all()
+    stmt = select(Order).order_by(Order.created_at.desc())
+    if user.role != UserRole.ADMIN:
+        merchant = db.scalar(select(Merchant).where(Merchant.owner_user_id == user.id))
+        if merchant is None:
+            raise HTTPException(status_code=404, detail="Merchant profile not found")
+        store_ids = select(Store.id).where(Store.merchant_id == merchant.id)
+        stmt = stmt.where(Order.store_id.in_(store_ids))
+    return db.scalars(stmt.offset(offset).limit(limit)).all()
 
 
 @router.patch("/merchant/orders/{order_id}/status", response_model=OrderRead)
@@ -436,6 +447,7 @@ def update_order_status(
 
 @router.get("/delivery/available", response_model=list[DeliveryRead])
 def available_deliveries(
+    limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
     _: User = Depends(require_roles(UserRole.DELIVERY, UserRole.ADMIN)),
 ):
@@ -446,16 +458,18 @@ def available_deliveries(
             Delivery.status == DeliveryStatus.UNASSIGNED,
             Order.status == OrderStatus.READY,
         )
+        .limit(limit)
     )
     return db.scalars(stmt).all()
 
 
 @router.get("/delivery/me", response_model=list[DeliveryRead])
 def my_deliveries(
+    limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.DELIVERY, UserRole.ADMIN)),
 ):
-    stmt = select(Delivery).order_by(Delivery.updated_at.desc())
+    stmt = select(Delivery).order_by(Delivery.updated_at.desc()).limit(limit)
     if user.role != UserRole.ADMIN:
         stmt = stmt.where(Delivery.delivery_partner_id == user.id)
     return db.scalars(stmt).all()
@@ -467,6 +481,15 @@ def claim_delivery(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.DELIVERY)),
 ):
+    # Lock the rider before the delivery. Automatic dispatch locks the rider's
+    # user row (spatial.nearest_eligible_rider, FOR UPDATE OF u), so taking the
+    # same lock here puts self-claim and auto-assign in one ordering instead of
+    # contending on different rows — which is how a rider ended up with two
+    # active deliveries at once.
+    rider = db.scalar(select(User).where(User.id == user.id).with_for_update())
+    if rider is None:
+        raise HTTPException(status_code=404, detail="Delivery partner not found")
+
     delivery = db.scalar(select(Delivery).where(Delivery.id == delivery_id).with_for_update())
     if delivery is None:
         raise HTTPException(status_code=404, detail="Delivery not found")
@@ -477,6 +500,23 @@ def claim_delivery(
         or not can_transition_delivery(delivery.status, DeliveryStatus.ASSIGNED)
     ):
         raise HTTPException(status_code=409, detail="Delivery is not available")
+
+    # One active delivery per rider. Every other path enforced this; the claim
+    # endpoint never checked, so the rule was only as strong as the UI hiding
+    # the button.
+    active_delivery = db.scalar(
+        select(Delivery.id)
+        .where(
+            Delivery.delivery_partner_id == rider.id,
+            Delivery.status.in_((DeliveryStatus.ASSIGNED, DeliveryStatus.PICKED_UP)),
+            Delivery.id != delivery.id,
+        )
+        .limit(1)
+    )
+    if active_delivery is not None:
+        raise HTTPException(
+            status_code=409, detail="Finish your current delivery before claiming another"
+        )
 
     delivery.delivery_partner_id = user.id
     transition_delivery(delivery, DeliveryStatus.ASSIGNED)
@@ -495,6 +535,12 @@ def claim_delivery(
 
 @router.patch("/delivery/{delivery_id}/status", response_model=DeliveryRead)
 def update_delivery_status(
+    # Pickup and release only. Completion and failure are deliberately absent:
+    # completing a delivery requires verified proof (and a recorded cash
+    # collection for COD), which lives in POST /delivery/{id}/complete, and
+    # failure requires a reason, which lives in POST /delivery/{id}/fail.
+    # DeliveryStatusUpdate rejects those two statuses at the schema layer; this
+    # handler now has no branch that could act on them even if that changed.
     delivery_id: uuid.UUID,
     payload: DeliveryStatusUpdate,
     db: Session = Depends(get_db),
@@ -530,22 +576,24 @@ def update_delivery_status(
             "Order picked up",
             "Your order has been collected from the store and is on its way.",
         )
-    elif payload.status == DeliveryStatus.DELIVERED:
-        if not can_transition_order(order.status, OrderStatus.DELIVERED):
+    elif payload.status == DeliveryStatus.UNASSIGNED:
+        # A rider stepping off a job is an operations event: it has to release
+        # ownership and tell the customer, exactly as the admin path does.
+        # Leaving delivery_partner_id set produced a delivery that was in the
+        # open pool while still carrying a rider.
+        if order.status != OrderStatus.READY:
             raise HTTPException(
                 status_code=409,
-                detail=f"Order cannot be delivered from {order.status.value}",
+                detail="A delivery can only be released while the order is still ready for pickup",
             )
-        delivery.delivered_at = datetime.now(timezone.utc)
-        transition_order(order, OrderStatus.DELIVERED)
-        if order.payment_method == PaymentMethod.COD:
-            order.payment_status = PaymentStatus.PAID
+        delivery.delivery_partner_id = None
+        delivery.assigned_at = None
         _notify_customer(
             db,
             order,
-            "order.delivered",
-            "Order delivered",
-            f"Order {order.order_number} has been delivered. Thank you for using GaonOne.",
+            "delivery.reassignment",
+            "Delivery partner is being reassigned",
+            f"We are assigning another delivery partner to order {order.order_number}.",
         )
 
     transition_delivery(delivery, payload.status)

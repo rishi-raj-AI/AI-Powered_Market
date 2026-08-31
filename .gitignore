@@ -48,3 +48,6 @@ htmlcov/
 # Production runtime state
 backups/
 .deployed-sha
+.previous-deployed-sha
+# Uploaded media is runtime state on a volume, never source.
+backend/data/uploads/

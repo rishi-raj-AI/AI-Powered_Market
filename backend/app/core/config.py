@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
@@ -10,6 +12,7 @@ class Settings(BaseSettings):
     RAZORPAY_KEY_ID:str|None=None; RAZORPAY_KEY_SECRET:str|None=None; RAZORPAY_WEBHOOK_SECRET:str|None=None
     FCM_PROJECT_ID:str|None=None; FCM_SERVICE_ACCOUNT_JSON_B64:str|None=None
     MAPS_PROVIDER:str="none"; MAPS_API_KEY:str|None=None
+    DEFAULT_DELIVERY_FEE:Decimal=Decimal("20.00")
     model_config=SettingsConfigDict(env_file=".env",extra="ignore")
     @field_validator("APP_ENV")
     @classmethod
@@ -38,6 +41,11 @@ class Settings(BaseSettings):
             if self.AUTH_PROVIDER=="msg91_widget" and not self.MSG91_AUTH_KEY: raise ValueError("MSG91_AUTH_KEY is required when AUTH_PROVIDER=msg91_widget")
             if bool(self.FCM_PROJECT_ID)!=bool(self.FCM_SERVICE_ACCOUNT_JSON_B64): raise ValueError("FCM_PROJECT_ID and FCM_SERVICE_ACCOUNT_JSON_B64 must be configured together")
         return self
+    @field_validator("DEFAULT_DELIVERY_FEE")
+    @classmethod
+    def validate_delivery_fee(cls,value:Decimal)->Decimal:
+        if value < 0: raise ValueError("DEFAULT_DELIVERY_FEE cannot be negative")
+        return value
     @property
     def cors_origins(self)->list[str]: return [x.strip() for x in self.CORS_ORIGINS.split(",") if x.strip()]
     @property

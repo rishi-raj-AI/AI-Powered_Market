@@ -3,7 +3,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -212,6 +212,8 @@ async def hardened_razorpay_webhook(request: Request, db: Session = Depends(get_
 
 @router.get("/settlements")
 def list_settlements(
+    limit: int = Query(default=500, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.MERCHANT, UserRole.ADMIN)),
 ):
@@ -221,7 +223,7 @@ def list_settlements(
         if merchant is None:
             return []
         stmt = stmt.where(SettlementEntry.merchant_id == merchant.id)
-    entries = db.scalars(stmt.limit(500)).all()
+    entries = db.scalars(stmt.offset(offset).limit(limit)).all()
     return [
         {
             "id": str(entry.id),
@@ -234,6 +236,8 @@ def list_settlements(
             "delivery_fee_amount": str(entry.delivery_fee_amount),
             "status": entry.status,
             "settled_at": entry.settled_at,
+            "voided_at": entry.voided_at,
+            "void_reason": entry.void_reason,
             "created_at": entry.created_at,
         }
         for entry in entries
