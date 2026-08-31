@@ -5,6 +5,26 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 client = TestClient(app)
+
+def seeded_village() -> dict:
+    """The seeded pilot village, by identity rather than listing position."""
+    villages = client.get("/api/v1/villages").json()
+    for village in villages:
+        if village["name"] == "Pilot Village":
+            return village
+    assert villages, "no villages are seeded"
+    return villages[0]
+
+
+def seeded_store() -> dict:
+    """The seeded pilot store, by slug rather than listing position."""
+    stores = client.get("/api/v1/stores").json()
+    for store in stores:
+        if store["slug"] == "patil-kirana-pilot":
+            return store
+    assert stores, "no stores are seeded"
+    return stores[0]
+
 OTP = "123456"
 
 
@@ -35,7 +55,7 @@ def test_operational_controls_and_customer_cancellation() -> None:
 
     villages = client.get("/api/v1/villages").json()
     assert villages
-    village = villages[0]
+    village = seeded_village()
     village_id = village["id"]
     village_latitude = village.get("latitude")
     village_longitude = village.get("longitude")
@@ -68,8 +88,9 @@ def test_operational_controls_and_customer_cancellation() -> None:
         "landmark": "Near test chowk",
         "latitude": village_latitude,
         "longitude": village_longitude,
-        "opens_at": "08:00:00",
-        "closes_at": "21:00:00",
+        # Round-the-clock: this test is about operations, not opening hours.
+        "opens_at": "00:00:00",
+        "closes_at": "00:00:00",
         "delivery_enabled": True,
         "pickup_enabled": True,
     }
@@ -80,7 +101,13 @@ def test_operational_controls_and_customer_cancellation() -> None:
     edited = client.patch(
         f"/api/v1/stores/{store_id}",
         headers=auth(merchant_token),
-        json={"description": "Updated operations storefront", "closes_at": "22:00:00"},
+        # An identical open/close pair stays round-the-clock, so editing hours
+        # is still exercised without making the later checkout clock-dependent.
+        json={
+            "description": "Updated operations storefront",
+            "opens_at": "22:00:00",
+            "closes_at": "22:00:00",
+        },
     )
     assert edited.status_code == 200, edited.text
     assert edited.json()["description"] == "Updated operations storefront"

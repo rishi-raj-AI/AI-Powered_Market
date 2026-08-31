@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 import redis
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import text
@@ -7,6 +9,12 @@ from app.api.deps import get_db
 from app.core.config import settings
 
 router = APIRouter(prefix="/health", tags=["health"])
+
+
+@lru_cache(maxsize=1)
+def _readiness_redis() -> "redis.Redis":
+    """One client for the probe, which runs on a schedule for the process's life."""
+    return redis.Redis.from_url(settings.REDIS_URL, socket_connect_timeout=1, socket_timeout=1)
 
 
 @router.get("")
@@ -25,8 +33,7 @@ def readiness_check(db: Session = Depends(get_db)) -> dict[str, str]:
         pass
 
     try:
-        client = redis.Redis.from_url(settings.REDIS_URL, socket_connect_timeout=1, socket_timeout=1)
-        if client.ping():
+        if _readiness_redis().ping():
             checks["redis"] = "ok"
     except Exception:
         pass

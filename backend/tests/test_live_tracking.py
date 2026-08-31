@@ -7,6 +7,26 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 client = TestClient(app)
+
+def seeded_village() -> dict:
+    """The seeded pilot village, by identity rather than listing position."""
+    villages = client.get("/api/v1/villages").json()
+    for village in villages:
+        if village["name"] == "Pilot Village":
+            return village
+    assert villages, "no villages are seeded"
+    return villages[0]
+
+
+def seeded_store() -> dict:
+    """The seeded pilot store, by slug rather than listing position."""
+    stores = client.get("/api/v1/stores").json()
+    for store in stores:
+        if store["slug"] == "patil-kirana-pilot":
+            return store
+    assert stores, "no stores are seeded"
+    return stores[0]
+
 OTP = "123456"
 
 
@@ -43,10 +63,10 @@ def test_customer_sees_only_active_assigned_rider_location() -> None:
     assert promote.status_code == 200, promote.text
 
     stores = client.get("/api/v1/stores").json(); assert stores
-    store = stores[0]
+    store = seeded_store()
     listings = client.get(f"/api/v1/stores/{store['id']}/products").json(); assert listings
     villages = client.get("/api/v1/villages").json(); assert villages
-    village = villages[0]
+    village = seeded_village()
     customer_latitude = village.get("latitude"); customer_longitude = village.get("longitude")
     assert customer_latitude is not None and customer_longitude is not None
     rider_latitude = customer_latitude + 0.0005; rider_longitude = customer_longitude + 0.0005
@@ -58,6 +78,7 @@ def test_customer_sees_only_active_assigned_rider_location() -> None:
     checkout = client.post("/api/v1/orders/checkout", headers=auth(customer_token), json={"address_id": address.json()["id"], "payment_method": "cod"})
     assert checkout.status_code == 201, checkout.text
     order_id = checkout.json()["id"]
+    order_total = checkout.json()["total"]
 
     for status in ["accepted", "preparing", "ready"]:
         transition = client.patch(f"/api/v1/merchant/orders/{order_id}/status", headers=auth(merchant_token), json={"status": status})
@@ -92,6 +113,7 @@ def test_customer_sees_only_active_assigned_rider_location() -> None:
     otp_event = next(item for item in notifications.json() if item["event_type"] == "delivery.otp")
     otp_match = re.search(r"\b(\d{6})\b", otp_event["body"]); assert otp_match is not None
     proof = client.post(f"/api/v1/delivery/{delivery_id}/proof", headers=auth(rider_token), json={"otp": otp_match.group(1), "recipient_name": "Tracking Customer"}); assert proof.status_code == 200, proof.text
+    collection = client.post(f"/api/v1/delivery/{delivery_id}/cod-collection", headers=auth(rider_token), json={"amount": order_total}); assert collection.status_code == 200, collection.text
     delivered = client.post(f"/api/v1/delivery/{delivery_id}/complete", headers=auth(rider_token)); assert delivered.status_code == 200, delivered.text
     tracking_after = client.get(f"/api/v1/orders/{order_id}/tracking", headers=auth(customer_token)); assert tracking_after.status_code == 200, tracking_after.text
     assert tracking_after.json()["tracking_active"] is False; assert tracking_after.json()["rider"] is None

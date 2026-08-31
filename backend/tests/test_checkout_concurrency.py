@@ -6,6 +6,26 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 client = TestClient(app)
+
+def seeded_village() -> dict:
+    """The seeded pilot village, by identity rather than listing position."""
+    villages = client.get("/api/v1/villages").json()
+    for village in villages:
+        if village["name"] == "Pilot Village":
+            return village
+    assert villages, "no villages are seeded"
+    return villages[0]
+
+
+def seeded_store() -> dict:
+    """The seeded pilot store, by slug rather than listing position."""
+    stores = client.get("/api/v1/stores").json()
+    for store in stores:
+        if store["slug"] == "patil-kirana-pilot":
+            return store
+    assert stores, "no stores are seeded"
+    return stores[0]
+
 OTP = "123456"
 
 
@@ -27,7 +47,7 @@ def customer_phone(prefix: int = 7) -> str:
 
 
 def create_address(customer_token: str, phone: str) -> str:
-    village = client.get("/api/v1/villages").json()[0]
+    village = seeded_village()
     response = client.post(
         "/api/v1/addresses/me",
         headers=auth(customer_token),
@@ -49,9 +69,7 @@ def create_address(customer_token: str, phone: str) -> str:
 
 def seeded_listing() -> tuple[str, str, str]:
     merchant_token = token("+919000000003")
-    stores = client.get("/api/v1/stores").json()
-    assert stores
-    store_id = stores[0]["id"]
+    store_id = seeded_store()["id"]
     inventory = client.get(f"/api/v1/stores/{store_id}/inventory", headers=auth(merchant_token))
     assert inventory.status_code == 200, inventory.text
     assert inventory.json()
@@ -109,6 +127,47 @@ def test_checkout_idempotency_returns_original_order_and_decrements_once() -> No
     orders = client.get("/api/v1/orders/me", headers=auth(customer_token))
     assert orders.status_code == 200, orders.text
     matching = [item for item in orders.json() if item["id"] == first.json()["id"]]
+    assert len(matching) == 1
+
+    set_stock(merchant_token, store_id, listing_id, 20)
+
+
+def test_concurrent_duplicate_checkout_returns_one_order_and_decrements_once() -> None:
+    merchant_token, store_id, listing_id = seeded_listing()
+    set_stock(merchant_token, store_id, listing_id, 5)
+
+    phone = customer_phone(5)
+    customer_token = token(phone, "Concurrent Idempotent Customer")
+    address_id = create_address(customer_token, phone)
+    added = client.post(
+        "/api/v1/cart/items",
+        headers=auth(customer_token),
+        json={"store_product_id": listing_id, "quantity": 1},
+    )
+    assert added.status_code == 200, added.text
+
+    key = f"duplicate-race-{uuid4()}"
+
+    def do_checkout(_: int):
+        return client.post(
+            "/api/v1/orders/checkout",
+            headers={**auth(customer_token), "Idempotency-Key": key},
+            json={"address_id": address_id, "payment_method": "cod"},
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(do_checkout, range(2)))
+
+    assert [response.status_code for response in responses] == [201, 201], [response.text for response in responses]
+    order_ids = {response.json()["id"] for response in responses}
+    order_numbers = {response.json()["order_number"] for response in responses}
+    assert len(order_ids) == 1
+    assert len(order_numbers) == 1
+    assert stock_quantity(merchant_token, store_id, listing_id) == 4
+
+    orders = client.get("/api/v1/orders/me", headers=auth(customer_token))
+    assert orders.status_code == 200, orders.text
+    matching = [item for item in orders.json() if item["id"] in order_ids]
     assert len(matching) == 1
 
     set_stock(merchant_token, store_id, listing_id, 20)

@@ -26,44 +26,44 @@ This is the execution queue for automation-mode development. Tasks are taken in 
 
 ## Wave 2 — Checkout, inventory and idempotency
 
-- [ ] C01 Lock inventory rows during checkout to prevent overselling.
-- [ ] C02 Add checkout idempotency key support.
-- [ ] C03 Guarantee stock restoration is idempotent on cancellation.
-- [ ] C04 Harden payment/order side-effect boundaries.
-- [ ] C05 Add duplicate-request and concurrent-checkout tests.
+- [x] C01 Lock inventory rows during checkout to prevent overselling.
+- [x] C02 Add checkout idempotency key support.
+- [x] C03 Guarantee stock restoration is idempotent on cancellation.
+- [x] C04 Harden payment/order side-effect boundaries.
+- [x] C05 Add duplicate-request and concurrent-checkout tests.
 
 ## Wave 3 — Geography and dispatch
 
-- [ ] G01 Audit current geography schema and PostGIS usage.
-- [ ] G02 Move production store-nearby/serviceability queries to indexed PostGIS operations.
-- [ ] G03 Add explicit delivery/service area rules.
-- [ ] G04 Add delivery-partner availability/location eligibility.
-- [ ] G05 Implement dispatch V1: nearest eligible available partner.
-- [ ] G06 Add dispatch tests including no-partner and race conditions.
+- [x] G01 Audit current geography schema and PostGIS usage.
+- [x] G02 Move production store-nearby/serviceability queries to indexed PostGIS operations.
+- [x] G03 Add explicit delivery/service area rules.
+- [x] G04 Add delivery-partner availability/location eligibility.
+- [x] G05 Implement dispatch V1: nearest eligible available partner.
+- [x] G06 Add dispatch tests including no-partner and race conditions.
 
 ## Wave 4 — Tracking, payments and settlement
 
-- [ ] T01 Harden live tracking authorization and event validation.
-- [ ] T02 Add stale-location and impossible-coordinate safeguards.
-- [ ] P01 Audit payment webhook signature/idempotency behavior.
-- [ ] P02 Model COD collection separately from commercial payment status where required.
-- [ ] P03 Introduce settlement ledger foundation for merchant/delivery payouts.
+- [x] T01 Harden live tracking authorization and event validation.
+- [x] T02 Add stale-location and impossible-coordinate safeguards.
+- [x] P01 Audit payment webhook signature/idempotency behavior.
+- [x] P02 Model COD collection separately from commercial payment status where required.
+- [x] P03 Introduce settlement ledger foundation for merchant/delivery payouts.
 
 ## Wave 5 — Product applications
 
-- [ ] U01 Customer order lifecycle UI against hardened APIs.
-- [ ] U02 Merchant acceptance/preparation/readiness workflow.
-- [ ] U03 Delivery-partner assignment/pickup/tracking/POD workflow.
-- [ ] U04 Admin operations view for orders, deliveries, exceptions and refunds.
-- [ ] U05 Low-bandwidth/offline-tolerant behavior for rural delivery operations.
+- [x] U01 Customer order lifecycle UI against hardened APIs.
+- [x] U02 Merchant acceptance/preparation/readiness workflow.
+- [x] U03 Delivery-partner assignment/pickup/tracking/POD workflow.
+- [x] U04 Admin operations view for orders, deliveries, exceptions and refunds.
+- [x] U05 Low-bandwidth/offline-tolerant behavior for rural delivery operations.
 
 ## Wave 6 — Scale and intelligence
 
-- [ ] S01 Observability/correlation IDs across order-delivery-payment lifecycle.
-- [ ] S02 Outbox/event reliability for notifications and asynchronous side effects.
-- [ ] S03 Dispatch scoring and batching.
-- [ ] S04 ETA and delivery performance analytics.
-- [ ] S05 Multilingual/voice ordering and merchant catalog assistance.
+- [x] S01 Observability/correlation IDs across order-delivery-payment lifecycle.
+- [x] S02 Outbox/event reliability for notifications and asynchronous side effects.
+- [x] S03 Dispatch scoring and batching.
+- [x] S04 ETA and delivery performance analytics.
+- [x] S05 Multilingual/voice ordering and merchant catalog assistance.
 
 ## Execution rule
 

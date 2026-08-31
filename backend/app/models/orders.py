@@ -17,6 +17,9 @@ class OrderStatus(str, enum.Enum):
     READY = "ready"
     OUT_FOR_DELIVERY = "out_for_delivery"
     DELIVERED = "delivered"
+    # Goods left the merchant but came back: the physical outcome of a delivery
+    # that failed after pickup. Terminal, and never implies payment.
+    RETURNED = "returned"
     CANCELLED = "cancelled"
 
 
@@ -29,6 +32,9 @@ class PaymentStatus(str, enum.Enum):
     PENDING = "pending"
     PAID = "paid"
     FAILED = "failed"
+    # Money was captured and a refund is owed but not yet confirmed by the
+    # provider. REFUNDED is only ever written after provider-confirmed success.
+    REFUND_PENDING = "refund_pending"
     REFUNDED = "refunded"
 
 
@@ -71,6 +77,10 @@ class Order(Base):
     address_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("addresses.id"), nullable=False)
     idempotency_key: Mapped[str | None] = mapped_column(String(128), index=True)
     stock_restored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: Where this order was actually sent, captured at checkout. Order history
+    #: must not change when the customer later edits or replaces an address —
+    #: the same reason product name and price are snapshotted onto order items.
+    delivery_address: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     status: Mapped[OrderStatus] = mapped_column(Enum(OrderStatus, name="order_status", values_callable=lambda e: [x.value for x in e]), default=OrderStatus.PLACED, server_default="placed", nullable=False)
     payment_method: Mapped[PaymentMethod] = mapped_column(Enum(PaymentMethod, name="payment_method", values_callable=lambda e: [x.value for x in e]), nullable=False)
     payment_status: Mapped[PaymentStatus] = mapped_column(Enum(PaymentStatus, name="payment_status", values_callable=lambda e: [x.value for x in e]), default=PaymentStatus.PENDING, server_default="pending", nullable=False)

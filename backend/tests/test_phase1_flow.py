@@ -6,6 +6,26 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 client = TestClient(app)
+
+def seeded_village() -> dict:
+    """The seeded pilot village, by identity rather than listing position."""
+    villages = client.get("/api/v1/villages").json()
+    for village in villages:
+        if village["name"] == "Pilot Village":
+            return village
+    assert villages, "no villages are seeded"
+    return villages[0]
+
+
+def seeded_store() -> dict:
+    """The seeded pilot store, by slug rather than listing position."""
+    stores = client.get("/api/v1/stores").json()
+    for store in stores:
+        if store["slug"] == "patil-kirana-pilot":
+            return store
+    assert stores, "no stores are seeded"
+    return stores[0]
+
 OTP = "123456"
 
 
@@ -45,7 +65,7 @@ def test_complete_marketplace_flow() -> None:
     villages = client.get("/api/v1/villages")
     assert villages.status_code == 200
     assert villages.json()
-    village_id = villages.json()[0]["id"]
+    village_id = seeded_village()["id"]
 
     address = client.post(
         "/api/v1/addresses/me",
@@ -99,8 +119,10 @@ def test_complete_marketplace_flow() -> None:
             "landmark": "Village square",
             "latitude": 18.5204,
             "longitude": 73.8567,
-            "opens_at": "08:00:00",
-            "closes_at": "21:00:00",
+            # Round-the-clock: this test is about the order flow, not opening
+            # hours, and a fixed window would make it depend on the wall clock.
+            "opens_at": "00:00:00",
+            "closes_at": "00:00:00",
             "delivery_enabled": True,
             "pickup_enabled": True,
         },
@@ -216,6 +238,36 @@ def test_complete_marketplace_flow() -> None:
     )
     assert proof.status_code == 200, proof.text
     assert proof.json()["verified_at"] is not None
+
+    blocked_without_cod = client.post(
+        f"/api/v1/delivery/{delivery_id}/complete",
+        headers=auth(delivery_token),
+    )
+    assert blocked_without_cod.status_code == 409
+
+    wrong_cod = client.post(
+        f"/api/v1/delivery/{delivery_id}/cod-collection",
+        headers=auth(delivery_token),
+        json={"amount": "129.00"},
+    )
+    assert wrong_cod.status_code == 422
+
+    cod = client.post(
+        f"/api/v1/delivery/{delivery_id}/cod-collection",
+        headers=auth(delivery_token),
+        json={"amount": "130.00"},
+    )
+    assert cod.status_code == 200, cod.text
+    assert cod.json()["amount"] == "130.00"
+    assert cod.json()["order_id"] == order_id
+
+    cod_retry = client.post(
+        f"/api/v1/delivery/{delivery_id}/cod-collection",
+        headers=auth(delivery_token),
+        json={"amount": "130.00"},
+    )
+    assert cod_retry.status_code == 200, cod_retry.text
+    assert cod_retry.json()["id"] == cod.json()["id"]
 
     delivered = client.post(
         f"/api/v1/delivery/{delivery_id}/complete",

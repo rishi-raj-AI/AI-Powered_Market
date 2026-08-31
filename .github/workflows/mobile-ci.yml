@@ -16,8 +16,31 @@ jobs:
         with:
           channel: stable
           cache: true
-      - working-directory: mobile
-        run: flutter pub get
+
+      # Reproducibility: once pubspec.lock is committed, --enforce-lockfile
+      # makes the build fail rather than silently resolving a different tree.
+      # Until then the run still resolves normally and publishes the lock it
+      # produced, so it can be committed in one step.
+      - name: Resolve dependencies
+        working-directory: mobile
+        run: |
+          if [ -f pubspec.lock ]; then
+            echo "pubspec.lock present: enforcing the locked dependency tree."
+            flutter pub get --enforce-lockfile
+          else
+            echo "::warning title=Unlocked dependencies::mobile/pubspec.lock is not committed, so this build resolved its own dependency tree. Download the pubspec-lock artifact from this run and commit it to make mobile builds reproducible."
+            flutter pub get
+          fi
+
+      - name: Publish the resolved lockfile for committing
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pubspec-lock
+          path: mobile/pubspec.lock
+          if-no-files-found: warn
+          retention-days: 14
+
       - working-directory: mobile
         run: flutter analyze lib
       - working-directory: mobile

@@ -8,12 +8,17 @@ WORKDIR /app
 
 RUN addgroup --system gaonone && adduser --system --ingroup gaonone gaonone
 
+# Dependencies come from the hash-pinned lock, so the same SHA always builds
+# the same tree. The application itself is installed without re-resolving.
+COPY requirements.lock.txt ./
+RUN pip install --require-hashes --no-cache-dir -r requirements.lock.txt
+
 COPY pyproject.toml ./
-RUN pip install .
 
 COPY alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app
+RUN pip install --no-deps --no-cache-dir .
 
 RUN mkdir -p /app/data/uploads && chown -R gaonone:gaonone /app
 
@@ -21,7 +26,10 @@ USER gaonone
 
 EXPOSE 8000
 
+# Host header must satisfy TrustedHostMiddleware. DOMAIN is expected, but a
+# missing one must not make the container permanently unhealthy and block the
+# proxy from ever starting — fall back to a host the middleware also trusts.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD python -c "import os,urllib.request; r=urllib.request.Request('http://127.0.0.1:8000/api/v1/health', headers={'Host': os.environ['DOMAIN']}); urllib.request.urlopen(r, timeout=3)" || exit 1
+  CMD python -c "import os,urllib.request; host=os.environ.get('DOMAIN') or '127.0.0.1'; r=urllib.request.Request('http://127.0.0.1:8000/api/v1/health', headers={'Host': host}); urllib.request.urlopen(r, timeout=3)" || exit 1
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--proxy-headers", "--forwarded-allow-ips", "*"]
