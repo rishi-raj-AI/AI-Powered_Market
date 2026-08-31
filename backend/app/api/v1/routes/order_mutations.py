@@ -9,7 +9,7 @@ from app.models.commerce import Merchant, MerchantStatus, Store
 from app.models.orders import Order, OrderStatus
 from app.models.user import User, UserRole
 from app.schemas.orders import OrderRead, OrderStatusUpdate
-from app.services.audit import record_order_transition
+from app.services.audit import annotate_order_transition
 from app.services.notifications import enqueue_notification
 from app.services.order_transitions import (
     MERCHANT_ASSIGNABLE_STATUSES,
@@ -64,12 +64,11 @@ def cancel_my_order_safely(
         raise HTTPException(status_code=409, detail="Only newly placed orders can be cancelled")
 
     restore_order_stock_once(db, order)
-    previous_status = order.status.value
     transition_order(order, OrderStatus.CANCELLED)
-    record_order_transition(
+    # The database trigger records the transition itself; this adds who and why.
+    annotate_order_transition(
         db,
         order,
-        from_status=previous_status,
         to_status=OrderStatus.CANCELLED.value,
         actor_user_id=user.id,
         reason="customer_cancelled",
@@ -163,12 +162,10 @@ def update_order_status_safely(
             "Your order is ready for pickup by a delivery partner.",
         )
 
-    previous_status = order.status.value
     transition_order(order, payload.status)
-    record_order_transition(
+    annotate_order_transition(
         db,
         order,
-        from_status=previous_status,
         to_status=payload.status.value,
         actor_user_id=user.id,
         reason="merchant_status_update",

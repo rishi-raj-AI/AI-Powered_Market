@@ -17,13 +17,13 @@ test-backend:
 	docker compose exec api pytest -q
 
 test-web:
-	cd web && npm install && npm run build
+	cd web && npm ci && npm run build
 
 test-e2e:
-	cd web && npm install && npx playwright install chromium && npm run test:e2e
+	cd web && npm ci && npx playwright install chromium && npm run test:e2e
 
 test-a11y:
-	cd web && npm install && npx playwright install chromium && npm run test:a11y
+	cd web && npm ci && npx playwright install chromium && npm run test:a11y
 
 test-full: test-backend test-web test-e2e
 

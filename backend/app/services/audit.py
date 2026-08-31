@@ -1,69 +1,83 @@
 """Status transition audit trail.
 
-``StatusTransitionEvent`` existed as a table and a read endpoint but nothing
-ever wrote to it, so ``GET /orders/{id}/events`` always returned an empty list.
-Every backend-owned state change should be explainable after the fact,
-especially the ones with financial consequences.
+Rows in ``status_transition_events`` are written by database triggers
+(``trg_audit_order_status`` and ``trg_audit_delivery_status``, migration 0007).
+That is the right place for them: the trigger fires on *any* status update,
+including one that application code forgot to log, so the trail cannot be
+bypassed.
+
+What a trigger cannot know is who made the change and why. This module fills
+that in, by annotating the row the trigger just wrote rather than inserting a
+second one — two rows per transition would make the ledger lie about how many
+things happened.
 """
 
 from __future__ import annotations
 
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.orders import Delivery, Order, StatusTransitionEvent
 
 ENTITY_ORDER = "order"
 ENTITY_DELIVERY = "delivery"
-ENTITY_PAYMENT = "payment"
 
 
-def record_transition(
+def annotate_transition(
     db: Session,
     *,
     entity_type: str,
     entity_id: uuid.UUID,
-    from_status: str,
     to_status: str,
-    order_id: uuid.UUID | None = None,
-    delivery_id: uuid.UUID | None = None,
     actor_user_id: uuid.UUID | None = None,
     reason: str | None = None,
     metadata: dict | None = None,
-) -> StatusTransitionEvent:
-    """Append one transition to the audit trail within the caller's transaction."""
-    event = StatusTransitionEvent(
-        entity_type=entity_type,
-        entity_id=entity_id,
-        order_id=order_id,
-        delivery_id=delivery_id,
-        actor_user_id=actor_user_id,
-        from_status=from_status,
-        to_status=to_status,
-        reason=reason[:160] if reason else None,
-        event_metadata=metadata or {},
+) -> StatusTransitionEvent | None:
+    """Attach actor and reason to the transition the trigger just recorded.
+
+    Must be called after the status change is flushed, so the trigger has run.
+    Returns ``None`` when no matching row exists — an annotation is never worth
+    failing a business transaction over.
+    """
+    db.flush()
+    event = db.scalar(
+        select(StatusTransitionEvent)
+        .where(
+            StatusTransitionEvent.entity_type == entity_type,
+            StatusTransitionEvent.entity_id == entity_id,
+            StatusTransitionEvent.to_status == to_status,
+        )
+        .order_by(StatusTransitionEvent.created_at.desc(), StatusTransitionEvent.id.desc())
+        .limit(1)
     )
-    db.add(event)
+    if event is None:
+        return None
+    if actor_user_id is not None:
+        event.actor_user_id = actor_user_id
+    if reason:
+        event.reason = reason[:160]
+    if metadata:
+        merged = dict(event.event_metadata or {})
+        merged.update(metadata)
+        event.event_metadata = merged
     return event
 
 
-def record_order_transition(
+def annotate_order_transition(
     db: Session,
     order: Order,
     *,
-    from_status: str,
     to_status: str,
     actor_user_id: uuid.UUID | None = None,
     reason: str | None = None,
     metadata: dict | None = None,
-) -> StatusTransitionEvent:
-    return record_transition(
+) -> StatusTransitionEvent | None:
+    return annotate_transition(
         db,
         entity_type=ENTITY_ORDER,
         entity_id=order.id,
-        order_id=order.id,
-        from_status=from_status,
         to_status=to_status,
         actor_user_id=actor_user_id,
         reason=reason,
@@ -71,23 +85,19 @@ def record_order_transition(
     )
 
 
-def record_delivery_transition(
+def annotate_delivery_transition(
     db: Session,
     delivery: Delivery,
     *,
-    from_status: str,
     to_status: str,
     actor_user_id: uuid.UUID | None = None,
     reason: str | None = None,
     metadata: dict | None = None,
-) -> StatusTransitionEvent:
-    return record_transition(
+) -> StatusTransitionEvent | None:
+    return annotate_transition(
         db,
         entity_type=ENTITY_DELIVERY,
         entity_id=delivery.id,
-        order_id=delivery.order_id,
-        delivery_id=delivery.id,
-        from_status=from_status,
         to_status=to_status,
         actor_user_id=actor_user_id,
         reason=reason,

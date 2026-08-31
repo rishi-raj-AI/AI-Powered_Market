@@ -48,8 +48,14 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Install backend
-        run: pip install ".[dev]"
+      - name: Install locked dependencies
+        run: pip install --require-hashes -r requirements-dev.lock.txt
+
+      - name: Install backend without re-resolving
+        run: pip install --no-deps -e .
+
+      - name: Verify the dependency lock covers every declared dependency
+        run: python ../scripts/check_dependency_lock.py
 
       - name: Compile Python
         run: python -m compileall -q app tests
