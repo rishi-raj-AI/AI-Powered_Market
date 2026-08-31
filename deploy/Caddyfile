@@ -40,6 +40,9 @@ www.{$DOMAIN} {
     header {
         -Server
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        # User-uploaded media is served from this origin, so the page is
+        # explicit about what may execute and where it may talk to.
+        Content-Security-Policy "default-src 'self'; img-src 'self' data: https:; script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://maps.googleapis.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https://api.razorpay.com https://lumberjack.razorpay.com https://maps.googleapis.com; frame-src https://api.razorpay.com https://checkout.razorpay.com; object-src 'none'; base-uri 'self'; form-action 'self'"
         X-Frame-Options "DENY"
         X-Content-Type-Options "nosniff"
         Referrer-Policy "strict-origin-when-cross-origin"

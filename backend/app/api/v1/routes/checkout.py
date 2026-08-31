@@ -1,3 +1,4 @@
+import secrets
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -52,6 +53,20 @@ def _existing_idempotent_order(db: Session, user_id: uuid.UUID, key: str | None)
             Order.idempotency_key == key,
         )
     )
+
+
+def _new_order_number() -> str:
+    """Time-ordered and collision-resistant.
+
+    The previous scheme was day/time plus microseconds against a unique column,
+    so two orders in the same microsecond became an unhandled 500 during
+    checkout. The random suffix removes that failure mode.
+    """
+    stamp = datetime.now(timezone.utc).strftime("%y%m%d%H%M%S")
+    # 5 random bytes gives ~1.1e12 values per second, so even a burst of
+    # thousands of orders in the same second collides with vanishing
+    # probability. Total length 24, well inside the column's 32.
+    return f"GO{stamp}{secrets.token_hex(5).upper()}"
 
 
 def _address_snapshot(address: Address) -> dict:
@@ -165,7 +180,7 @@ def safe_checkout(
 
     delivery_fee = Decimal("20.00")
     order = Order(
-        order_number=f"GO{datetime.now(timezone.utc).strftime('%y%m%d%H%M%S%f')[-14:]}",
+        order_number=_new_order_number(),
         user_id=user.id,
         store_id=cart.store_id,
         address_id=address.id,

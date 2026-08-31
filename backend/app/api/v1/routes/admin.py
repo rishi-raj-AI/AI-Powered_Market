@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -62,8 +62,15 @@ def _delivery_payload(db: Session, delivery: Delivery) -> dict:
 
 
 @router.get("/users")
-def admin_users(db: Session = Depends(get_db), _: User = Depends(require_roles(UserRole.ADMIN))):
-    users = db.scalars(select(User).order_by(User.created_at.desc()).limit(500)).all()
+def admin_users(
+    limit: int = Query(default=500, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(UserRole.ADMIN)),
+):
+    users = db.scalars(
+        select(User).order_by(User.created_at.desc()).offset(offset).limit(limit)
+    ).all()
     return [_user_payload(user) for user in users]
 
 
@@ -95,6 +102,7 @@ def admin_update_user(
 
 @router.get("/deliveries/active")
 def admin_active_deliveries(
+    limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
     _: User = Depends(require_roles(UserRole.ADMIN)),
 ):
@@ -102,6 +110,7 @@ def admin_active_deliveries(
         select(Delivery)
         .where(Delivery.status.in_(ACTIVE_DELIVERY_STATUSES))
         .order_by(Delivery.updated_at.desc())
+        .limit(limit)
     ).all()
     return [_delivery_payload(db, delivery) for delivery in deliveries]
 
