@@ -26,7 +26,7 @@ This is the execution queue for automation-mode development. Tasks are taken in 
 
 ## Wave 2 — Checkout, inventory and idempotency
 
-- [ ] C01 Lock inventory rows during checkout to prevent overselling.
+- [x] C01 Lock inventory rows during checkout to prevent overselling.
 - [ ] C02 Add checkout idempotency key support.
 - [ ] C03 Guarantee stock restoration is idempotent on cancellation.
 - [ ] C04 Harden payment/order side-effect boundaries.
