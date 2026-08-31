@@ -1,22 +1,27 @@
 import uuid
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, require_roles
-from app.models.commerce import Merchant, MerchantStatus, Store, StoreProduct
-from app.models.orders import Order, OrderItem, OrderStatus
+from app.models.commerce import Merchant, MerchantStatus, Store
+from app.models.orders import Order, OrderStatus
 from app.models.user import User, UserRole
 from app.schemas.orders import OrderRead, OrderStatusUpdate
+from app.services.audit import record_order_transition
 from app.services.notifications import enqueue_notification
-from app.services.order_transitions import can_transition_order, transition_order
+from app.services.order_transitions import (
+    MERCHANT_ASSIGNABLE_STATUSES,
+    can_transition_order,
+    transition_order,
+)
 from app.services.refunds import (
     REFUND_REASON_CANCELLED,
     ensure_refund_request,
     try_dispatch_order_refund,
 )
+from app.services.stock import restore_order_stock_once
 
 router = APIRouter(tags=["Order Mutations"])
 
@@ -46,39 +51,6 @@ def _notify_merchant(db: Session, order: Order, event_type: str, title: str, bod
         )
 
 
-def _restore_stock_once(db: Session, order: Order) -> None:
-    if order.stock_restored_at is not None:
-        return
-
-    items = db.scalars(
-        select(OrderItem).where(OrderItem.order_id == order.id).order_by(OrderItem.product_id)
-    ).all()
-    if not items:
-        order.stock_restored_at = datetime.now(timezone.utc)
-        return
-
-    product_ids = sorted((item.product_id for item in items), key=str)
-    listings = db.scalars(
-        select(StoreProduct)
-        .where(
-            StoreProduct.store_id == order.store_id,
-            StoreProduct.product_id.in_(product_ids),
-        )
-        .order_by(StoreProduct.product_id)
-        .with_for_update()
-    ).all()
-    by_product = {listing.product_id: listing for listing in listings}
-
-    for item in items:
-        listing = by_product.get(item.product_id)
-        if listing is None:
-            raise HTTPException(status_code=409, detail="Order inventory reference is missing")
-        listing.stock_quantity += item.quantity
-        listing.is_available = True
-
-    order.stock_restored_at = datetime.now(timezone.utc)
-
-
 @router.post("/orders/{order_id}/cancel", response_model=OrderRead)
 def cancel_my_order_safely(
     order_id: uuid.UUID,
@@ -91,8 +63,17 @@ def cancel_my_order_safely(
     if not can_transition_order(order.status, OrderStatus.CANCELLED):
         raise HTTPException(status_code=409, detail="Only newly placed orders can be cancelled")
 
-    _restore_stock_once(db, order)
+    restore_order_stock_once(db, order)
+    previous_status = order.status.value
     transition_order(order, OrderStatus.CANCELLED)
+    record_order_transition(
+        db,
+        order,
+        from_status=previous_status,
+        to_status=OrderStatus.CANCELLED.value,
+        actor_user_id=user.id,
+        reason="customer_cancelled",
+    )
     refund = ensure_refund_request(db, order, reason=REFUND_REASON_CANCELLED)
 
     _notify_customer(
@@ -140,6 +121,13 @@ def update_order_status_safely(
         if merchant.status != MerchantStatus.APPROVED:
             raise HTTPException(status_code=403, detail="Merchant is not active")
 
+    if payload.status not in MERCHANT_ASSIGNABLE_STATUSES:
+        # RETURNED and DELIVERED carry financial consequences and are owned by
+        # the delivery/operations flows, not the merchant order screen.
+        raise HTTPException(
+            status_code=403,
+            detail=f"{payload.status.value} is not a merchant-assignable order status",
+        )
     if not can_transition_order(order.status, payload.status):
         raise HTTPException(
             status_code=409,
@@ -148,7 +136,7 @@ def update_order_status_safely(
 
     store_refund = None
     if payload.status == OrderStatus.CANCELLED:
-        _restore_stock_once(db, order)
+        restore_order_stock_once(db, order)
         store_refund = ensure_refund_request(db, order, reason=REFUND_REASON_CANCELLED)
         _notify_customer(
             db,
@@ -175,7 +163,16 @@ def update_order_status_safely(
             "Your order is ready for pickup by a delivery partner.",
         )
 
+    previous_status = order.status.value
     transition_order(order, payload.status)
+    record_order_transition(
+        db,
+        order,
+        from_status=previous_status,
+        to_status=payload.status.value,
+        actor_user_id=user.id,
+        reason="merchant_status_update",
+    )
     db.commit()
     if store_refund is not None:
         try_dispatch_order_refund(db, order.id)

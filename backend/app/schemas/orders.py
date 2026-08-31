@@ -155,6 +155,28 @@ class DeliveryFailureRequest(BaseModel):
     evidence_url: str | None = Field(default=None, max_length=500)
 
 
+class DeliveryFailureResolution(BaseModel):
+    """How operations closes out a delivery that failed.
+
+    ``reassign`` is only valid while custody never left the merchant.
+    ``return_to_store`` is the exit for a failure after pickup: goods come back,
+    the order ends as returned, and any captured money becomes a refund.
+    """
+
+    resolution: Literal["reassign", "return_to_store"]
+    notes: str | None = Field(default=None, max_length=500)
+
+
+class DeliveryFailureResolutionRead(BaseModel):
+    delivery_id: uuid.UUID
+    order_id: uuid.UUID
+    resolution: str
+    order_status: OrderStatus
+    delivery_status: DeliveryStatus
+    refund_requested: bool
+    settlement_voided: bool
+
+
 class DeliveryProofChallengeRead(BaseModel):
     delivery_id: uuid.UUID
     expires_at: datetime

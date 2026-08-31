@@ -25,12 +25,15 @@ from app.models.user import User, UserRole
 from app.schemas.cod import CodCollectionRead, CodCollectionRequest
 from app.schemas.orders import (
     DeliveryFailureRequest,
+    DeliveryFailureResolution,
+    DeliveryFailureResolutionRead,
     DeliveryProofChallengeRead,
     DeliveryProofRead,
     DeliveryProofSubmit,
     DeliveryRead,
     StatusTransitionEventRead,
 )
+from app.services.audit import record_delivery_transition, record_order_transition
 from app.services.notifications import enqueue_notification
 from app.services.order_transitions import (
     can_transition_delivery,
@@ -38,7 +41,13 @@ from app.services.order_transitions import (
     transition_delivery,
     transition_order,
 )
-from app.services.settlements import ensure_settlement_entry
+from app.services.refunds import REFUND_REASON_RETURNED, ensure_refund_request, try_dispatch_order_refund
+from app.services.settlements import (
+    VOID_REASON_RETURNED,
+    ensure_settlement_entry,
+    void_settlement_for_refund,
+)
+from app.services.stock import restore_order_stock_once
 
 router = APIRouter(tags=["Delivery Operations"])
 OTP_TTL_MINUTES = 15
@@ -88,11 +97,21 @@ def fail_delivery(
     if delivery.status not in {DeliveryStatus.ASSIGNED, DeliveryStatus.PICKED_UP}:
         raise HTTPException(status_code=409, detail="Only an active delivery can be failed")
 
+    previous = delivery.status.value
     transition_delivery(delivery, DeliveryStatus.FAILED)
     delivery.failed_at = datetime.now(timezone.utc)
     delivery.failure_reason = payload.reason
     delivery.failure_notes = payload.notes
     delivery.failure_evidence_url = payload.evidence_url
+    record_delivery_transition(
+        db,
+        delivery,
+        from_status=previous,
+        to_status=DeliveryStatus.FAILED.value,
+        actor_user_id=user.id,
+        reason=payload.reason,
+        metadata={"after_pickup": delivery.picked_up_at is not None},
+    )
 
     enqueue_notification(
         db,
@@ -113,6 +132,7 @@ def recover_failed_delivery(
     db: Session = Depends(get_db),
     _: User = Depends(require_roles(UserRole.ADMIN)),
 ):
+    """Reassign a delivery that failed before the goods ever left the store."""
     delivery, order = _locked_delivery_order(db, delivery_id)
     if delivery.status != DeliveryStatus.FAILED:
         raise HTTPException(status_code=409, detail="Only a failed delivery can be recovered")
@@ -125,6 +145,14 @@ def recover_failed_delivery(
     delivery.delivery_partner_id = None
     transition_delivery(delivery, DeliveryStatus.UNASSIGNED)
     delivery.assigned_at = None
+    record_delivery_transition(
+        db,
+        delivery,
+        from_status=DeliveryStatus.FAILED.value,
+        to_status=DeliveryStatus.UNASSIGNED.value,
+        actor_user_id=_.id,
+        reason="admin_recovered_before_pickup",
+    )
     enqueue_notification(
         db,
         user_id=order.user_id,
@@ -136,6 +164,152 @@ def recover_failed_delivery(
     db.commit()
     db.refresh(delivery)
     return delivery
+
+
+@router.post(
+    "/admin/deliveries/{delivery_id}/resolve-failure",
+    response_model=DeliveryFailureResolutionRead,
+)
+def resolve_failed_delivery(
+    delivery_id: uuid.UUID,
+    payload: DeliveryFailureResolution,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_roles(UserRole.ADMIN)),
+):
+    """Close out a failed delivery so no order can be stranded.
+
+    A delivery that failed after pickup previously had no exit at all: the
+    order sat at out_for_delivery, which only transitions to delivered, and
+    recovery refused anything already picked up. This is the controlled,
+    operations-owned path out, with the financial consequences made explicit.
+    """
+    delivery, order = _locked_delivery_order(db, delivery_id)
+    if delivery.status != DeliveryStatus.FAILED:
+        raise HTTPException(status_code=409, detail="Only a failed delivery can be resolved")
+
+    picked_up = delivery.picked_up_at is not None
+
+    if payload.resolution == "reassign":
+        if picked_up:
+            raise HTTPException(
+                status_code=409,
+                detail="A delivery can only be reassigned if custody never left the merchant",
+            )
+        if order.status != OrderStatus.READY:
+            raise HTTPException(
+                status_code=409,
+                detail="Only a ready order can be reassigned",
+            )
+        delivery.delivery_partner_id = None
+        transition_delivery(delivery, DeliveryStatus.UNASSIGNED)
+        delivery.assigned_at = None
+        record_delivery_transition(
+            db,
+            delivery,
+            from_status=DeliveryStatus.FAILED.value,
+            to_status=DeliveryStatus.UNASSIGNED.value,
+            actor_user_id=admin.id,
+            reason="admin_reassign",
+            metadata={"notes": payload.notes} if payload.notes else None,
+        )
+        enqueue_notification(
+            db,
+            user_id=order.user_id,
+            event_type="delivery.reassignment",
+            title="Delivery partner is being reassigned",
+            body=f"We are assigning another delivery partner to order {order.order_number}.",
+            data={"order_id": str(order.id), "delivery_id": str(delivery.id)},
+        )
+        db.commit()
+        db.refresh(delivery)
+        db.refresh(order)
+        return DeliveryFailureResolutionRead(
+            delivery_id=delivery.id,
+            order_id=order.id,
+            resolution=payload.resolution,
+            order_status=order.status,
+            delivery_status=delivery.status,
+            refund_requested=False,
+            settlement_voided=False,
+        )
+
+    # return_to_store
+    if not can_transition_order(order.status, OrderStatus.RETURNED):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Order cannot be returned from {order.status.value}",
+        )
+    if order.payment_method == PaymentMethod.COD:
+        collection = db.scalar(select(CodCollection).where(CodCollection.delivery_id == delivery.id))
+        if collection is not None:
+            # Cash was recorded as collected but the delivery failed. That is a
+            # physical discrepancy a human has to reconcile; guessing here would
+            # invent money movement.
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "A cash collection is recorded for this delivery. Reconcile the cash "
+                    "before resolving the failure."
+                ),
+            )
+
+    previous_order_status = order.status.value
+    restore_order_stock_once(db, order)
+    transition_order(order, OrderStatus.RETURNED)
+    record_order_transition(
+        db,
+        order,
+        from_status=previous_order_status,
+        to_status=OrderStatus.RETURNED.value,
+        actor_user_id=admin.id,
+        reason="delivery_failed_after_pickup",
+        metadata={"delivery_id": str(delivery.id), "notes": payload.notes} if payload.notes else {"delivery_id": str(delivery.id)},
+    )
+
+    # Goods came back, so the merchant is not entitled to this money whatever
+    # the refund provider does next.
+    void_settlement_for_refund(db, order, reason=VOID_REASON_RETURNED)
+    refund = ensure_refund_request(db, order, reason=REFUND_REASON_RETURNED)
+
+    enqueue_notification(
+        db,
+        user_id=order.user_id,
+        event_type="order.returned",
+        title="Order returned to the store",
+        body=(
+            f"Order {order.order_number} could not be delivered and has gone back to the store. "
+            f"Your refund of ₹{order.total} has been requested."
+            if refund is not None
+            else f"Order {order.order_number} could not be delivered and has gone back to the store."
+        ),
+        data={"order_id": str(order.id), "delivery_id": str(delivery.id)},
+    )
+    store = db.get(Store, order.store_id)
+    merchant = db.get(Merchant, store.merchant_id) if store else None
+    if merchant is not None:
+        enqueue_notification(
+            db,
+            user_id=merchant.owner_user_id,
+            event_type="merchant.order_returned",
+            title="Order returned",
+            body=f"Order {order.order_number} was returned to your store after a failed delivery.",
+            data={"order_id": str(order.id), "delivery_id": str(delivery.id)},
+        )
+
+    db.commit()
+    if refund is not None:
+        try_dispatch_order_refund(db, order.id)
+    db.refresh(delivery)
+    db.refresh(order)
+    return DeliveryFailureResolutionRead(
+        delivery_id=delivery.id,
+        order_id=order.id,
+        resolution=payload.resolution,
+        order_status=order.status,
+        delivery_status=delivery.status,
+        refund_requested=refund is not None,
+        settlement_voided=True,
+    )
 
 
 @router.post("/delivery/{delivery_id}/proof/challenge", response_model=DeliveryProofChallengeRead)
