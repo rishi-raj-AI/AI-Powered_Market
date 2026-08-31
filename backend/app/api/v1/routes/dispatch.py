@@ -81,8 +81,22 @@ def auto_assign_delivery(
         raise HTTPException(status_code=409, detail="No eligible delivery partner is currently available")
 
     rider_id, distance_km = candidate
-    rider = db.get(User, rider_id)
+    # Serialise assignments per rider, rather than only per delivery. Two
+    # different ready deliveries can otherwise both select the same nearest
+    # presence row before either transaction commits its assignment.
+    rider = db.scalar(select(User).where(User.id == rider_id).with_for_update())
     if rider is None:
+        raise HTTPException(status_code=409, detail="Selected delivery partner is no longer available")
+
+    active_delivery = db.scalar(
+        select(Delivery.id)
+        .where(
+            Delivery.delivery_partner_id == rider.id,
+            Delivery.status.in_({DeliveryStatus.ASSIGNED, DeliveryStatus.PICKED_UP}),
+        )
+        .limit(1)
+    )
+    if active_delivery is not None:
         raise HTTPException(status_code=409, detail="Selected delivery partner is no longer available")
 
     now = datetime.now(timezone.utc)
