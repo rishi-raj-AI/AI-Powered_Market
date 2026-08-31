@@ -20,9 +20,12 @@ class _GaonOneAppState extends State<GaonOneApp> {
   bool loggedIn = false;
   String role = 'customer';
 
+  final GlobalKey<ScaffoldMessengerState> _messengerKey = GlobalKey<ScaffoldMessengerState>();
+
   @override
   void initState() {
     super.initState();
+    GaonApi.onSessionExpired = _onSessionExpired;
     _bootstrap();
   }
 
@@ -46,6 +49,18 @@ class _GaonOneAppState extends State<GaonOneApp> {
     await _bootstrap();
   }
 
+  /// An expired token is a normal event: the API layer has already cleared it,
+  /// so the app returns to login instead of leaving the person on a screen
+  /// that fails every action.
+  void _onSessionExpired() {
+    if (!mounted || !loggedIn) return;
+    setState(() { loggedIn = false; role = 'customer'; loading = false; });
+    final messenger = _messengerKey.currentState;
+    messenger?.showSnackBar(
+      const SnackBar(content: Text('Your session expired. Please sign in again.')),
+    );
+  }
+
   Future<void> _logout() async {
     await GaonApi.logout();
     if (mounted) setState(() { loggedIn = false; role = 'customer'; loading = false; });
@@ -65,6 +80,7 @@ class _GaonOneAppState extends State<GaonOneApp> {
   Widget build(BuildContext context) {
     final scheme = ColorScheme.fromSeed(seedColor: const Color(0xFF1F7A45));
     return MaterialApp(
+      scaffoldMessengerKey: _messengerKey,
       debugShowCheckedModeBanner: false,
       title: 'GaonOne',
       theme: ThemeData(
