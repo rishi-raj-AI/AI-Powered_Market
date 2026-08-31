@@ -7,8 +7,22 @@ ORDER_TRANSITIONS: Mapping[OrderStatus, frozenset[OrderStatus]] = {
     OrderStatus.ACCEPTED: frozenset({OrderStatus.PREPARING, OrderStatus.CANCELLED}),
     OrderStatus.PREPARING: frozenset({OrderStatus.READY}),
     OrderStatus.READY: frozenset({OrderStatus.OUT_FOR_DELIVERY}),
-    OrderStatus.OUT_FOR_DELIVERY: frozenset({OrderStatus.DELIVERED}),
+    # RETURNED is the only exit from a delivery that failed after pickup. It is
+    # reachable exclusively through the admin failure-resolution endpoint;
+    # merchant-facing status updates reject it explicitly.
+    OrderStatus.OUT_FOR_DELIVERY: frozenset({OrderStatus.DELIVERED, OrderStatus.RETURNED}),
 }
+
+#: Statuses a merchant may drive from their own order screen. Everything else
+#: is an operations decision with financial consequences.
+MERCHANT_ASSIGNABLE_STATUSES: frozenset[OrderStatus] = frozenset(
+    {
+        OrderStatus.ACCEPTED,
+        OrderStatus.PREPARING,
+        OrderStatus.READY,
+        OrderStatus.CANCELLED,
+    }
+)
 
 DELIVERY_TRANSITIONS: Mapping[DeliveryStatus, frozenset[DeliveryStatus]] = {
     DeliveryStatus.UNASSIGNED: frozenset({DeliveryStatus.ASSIGNED}),

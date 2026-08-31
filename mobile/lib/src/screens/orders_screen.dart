@@ -130,12 +130,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(children: [Expanded(child: Text(order.orderNumber, style: const TextStyle(fontWeight: FontWeight.w800))), Chip(label: Text(order.status.replaceAll('_', ' ')))]),
-                    Text('₹${order.total} • ${order.paymentMethod.toUpperCase()} • ${order.paymentStatus}'),
+                    Text('₹${order.total} • ${order.paymentMethod.toUpperCase()} • ${_paymentLabel(order.paymentStatus)}'),
                     const SizedBox(height: 8),
                     Wrap(spacing: 8, children: [
                       OutlinedButton.icon(onPressed: () => detail(order), icon: const Icon(Icons.receipt_long), label: const Text('Details')),
                       if (order.status == 'placed') TextButton(onPressed: () => cancel(order), child: const Text('Cancel order')),
-                      if (order.paymentMethod == 'upi' && order.paymentStatus != 'paid' && order.status != 'cancelled')
+                      if (order.paymentMethod == 'upi' && order.paymentStatus == 'pending' && order.status != 'cancelled' && order.status != 'returned')
                         FilledButton.icon(
                           onPressed: payingOrderId == order.id ? null : () => pay(order),
                           icon: const Icon(Icons.payments_outlined),
@@ -152,3 +152,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
   }
 }
+
+
+/// Payment wording that matches what the backend actually knows.
+///
+/// `refund_pending` means the money is owed and on its way back; only
+/// `refunded` means a provider confirmed it landed.
+String _paymentLabel(String status) => switch (status) {
+      'refund_pending' => 'refund in progress',
+      'refunded' => 'refunded',
+      _ => status,
+    };

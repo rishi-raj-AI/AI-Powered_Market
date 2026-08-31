@@ -1,20 +1,24 @@
 import hashlib
 import json
-import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, require_roles
 from app.models.commerce import Merchant
-from app.models.integrations import PaymentAttempt, PaymentWebhookEvent, SettlementEntry
+from app.models.integrations import PaymentAttempt, PaymentRefund, PaymentWebhookEvent, SettlementEntry
 from app.models.orders import Order, OrderStatus, PaymentStatus
 from app.models.user import User, UserRole
 from app.schemas.integrations import PaymentVerifyRequest, PaymentVerifyResponse
 from app.services.payments import PaymentProviderUnavailable, verify_razorpay_signature, verify_razorpay_webhook_signature
+from app.services.refunds import (
+    REFUND_REASON_ORPHANED_CAPTURE,
+    apply_provider_refund_result,
+    ensure_refund_request,
+)
 from app.services.settlements import ensure_settlement_entry
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
@@ -35,7 +39,19 @@ def _apply_paid(db: Session, attempt: PaymentAttempt, order: Order, provider_pay
     # Provider capture is a financial fact, but it must not reopen a cancelled
     # commercial order or recreate merchant settlement after cancellation/refund.
     attempt.status = "paid"
-    if order.status == OrderStatus.CANCELLED or order.payment_status == PaymentStatus.REFUNDED:
+    if order.status == OrderStatus.CANCELLED or order.payment_status in {
+        PaymentStatus.REFUNDED,
+        PaymentStatus.REFUND_PENDING,
+    }:
+        # Real money was captured for an order that will never be fulfilled.
+        # Record the debt instead of absorbing it into an attempt/order status
+        # mismatch that nothing would ever act on.
+        if order.status == OrderStatus.CANCELLED and order.payment_status not in {
+            PaymentStatus.REFUNDED,
+            PaymentStatus.REFUND_PENDING,
+        }:
+            order.payment_status = PaymentStatus.PAID
+            ensure_refund_request(db, order, reason=REFUND_REASON_ORPHANED_CAPTURE)
         return
 
     order.payment_status = PaymentStatus.PAID
@@ -45,7 +61,11 @@ def _apply_paid(db: Session, attempt: PaymentAttempt, order: Order, provider_pay
 def _apply_failed(attempt: PaymentAttempt, order: Order) -> None:
     # A late/invalid provider event must never overwrite terminal cancellation or
     # refund state. Active unpaid orders may still transition to payment failed.
-    if order.status == OrderStatus.CANCELLED or order.payment_status in {PaymentStatus.PAID, PaymentStatus.REFUNDED}:
+    if order.status == OrderStatus.CANCELLED or order.payment_status in {
+        PaymentStatus.PAID,
+        PaymentStatus.REFUNDED,
+        PaymentStatus.REFUND_PENDING,
+    }:
         return
     attempt.status = "failed"
     order.payment_status = PaymentStatus.FAILED
@@ -66,7 +86,10 @@ def hardened_verify_payment(
     if not attempt.provider_order_id:
         raise HTTPException(status_code=409, detail="Payment attempt has no provider order")
     if attempt.status == "paid" and attempt.provider_payment_id == payload.razorpay_payment_id:
-        if order.status != OrderStatus.CANCELLED and order.payment_status != PaymentStatus.REFUNDED:
+        if order.status != OrderStatus.CANCELLED and order.payment_status not in {
+            PaymentStatus.REFUNDED,
+            PaymentStatus.REFUND_PENDING,
+        }:
             ensure_settlement_entry(db, order)
         db.commit()
         return PaymentVerifyResponse(order_id=order.id, payment_status=order.payment_status.value, provider_payment_id=payload.razorpay_payment_id)
@@ -89,8 +112,37 @@ def hardened_verify_payment(
     return PaymentVerifyResponse(order_id=order.id, payment_status=order.payment_status.value, provider_payment_id=payload.razorpay_payment_id)
 
 
+def _process_refund_event(db: Session, payload: dict) -> bool:
+    """Reconcile an asynchronous refund outcome reported by the provider."""
+    refund_entity = (((payload.get("payload") or {}).get("refund") or {}).get("entity") or {})
+    provider_refund_id = str(refund_entity.get("id") or "") or None
+    refund_payment_id = str(refund_entity.get("payment_id") or "") or None
+    if not provider_refund_id and not refund_payment_id:
+        return False
+
+    refund = None
+    if provider_refund_id:
+        refund = db.scalar(
+            select(PaymentRefund).where(PaymentRefund.provider_refund_id == provider_refund_id).with_for_update()
+        )
+    if refund is None and refund_payment_id:
+        refund = db.scalar(
+            select(PaymentRefund)
+            .where(PaymentRefund.provider_payment_id == refund_payment_id)
+            .order_by(PaymentRefund.requested_at.desc())
+            .with_for_update()
+        )
+    if refund is None:
+        return False
+    apply_provider_refund_result(db, refund, refund_entity)
+    return True
+
+
 def _process_event(db: Session, payload: dict) -> None:
     event = str(payload.get("event") or "")
+    if event.startswith("refund."):
+        _process_refund_event(db, payload)
+        return
     payment_entity = (((payload.get("payload") or {}).get("payment") or {}).get("entity") or {})
     order_entity = (((payload.get("payload") or {}).get("order") or {}).get("entity") or {})
     provider_payment_id = str(payment_entity.get("id") or "") or None
@@ -159,6 +211,8 @@ async def hardened_razorpay_webhook(request: Request, db: Session = Depends(get_
 
 @router.get("/settlements")
 def list_settlements(
+    limit: int = Query(default=500, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.MERCHANT, UserRole.ADMIN)),
 ):
@@ -168,7 +222,7 @@ def list_settlements(
         if merchant is None:
             return []
         stmt = stmt.where(SettlementEntry.merchant_id == merchant.id)
-    entries = db.scalars(stmt.limit(500)).all()
+    entries = db.scalars(stmt.offset(offset).limit(limit)).all()
     return [
         {
             "id": str(entry.id),
@@ -181,6 +235,8 @@ def list_settlements(
             "delivery_fee_amount": str(entry.delivery_fee_amount),
             "status": entry.status,
             "settled_at": entry.settled_at,
+            "voided_at": entry.voided_at,
+            "void_reason": entry.void_reason,
             "created_at": entry.created_at,
         }
         for entry in entries

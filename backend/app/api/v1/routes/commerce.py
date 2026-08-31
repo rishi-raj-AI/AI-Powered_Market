@@ -9,6 +9,8 @@ from app.api.deps import get_current_user, get_db, require_roles
 from app.models.commerce import Category, Merchant, MerchantStatus, Product, Store, StoreProduct
 from app.models.geography import ServiceArea, Village
 from app.models.user import User, UserRole
+from app.services.spatial import point_is_in_service_area
+from app.services.store_hours import store_is_open
 from app.schemas.commerce import (
     CategoryCreate,
     CategoryRead,
@@ -52,6 +54,13 @@ def _require_store_owner(db: Session, store: Store, user: User) -> Merchant | No
     return merchant
 
 
+def _store_read(store: Store) -> StoreRead:
+    """Serialise a store with its backend-decided current availability."""
+    payload = StoreRead.model_validate(store).model_dump()
+    payload["is_open_now"] = store_is_open(store)
+    return StoreRead(**payload)
+
+
 def _public_store_stmt():
     return (
         select(Store)
@@ -61,10 +70,18 @@ def _public_store_stmt():
 
 
 def _set_merchant_status(db: Session, merchant: Merchant, target: MerchantStatus) -> None:
+    """Apply a platform decision without overwriting the merchant's own.
+
+    Suspension is a platform decision that must take every storefront offline.
+    Approval only removes that block: it does not reactivate a store the
+    merchant deliberately paused, which the previous blanket update did.
+    """
+    previous = merchant.status
     merchant.status = target
     if target == MerchantStatus.SUSPENDED:
         db.execute(update(Store).where(Store.merchant_id == merchant.id).values(is_active=False))
-    elif target == MerchantStatus.APPROVED:
+    elif target == MerchantStatus.APPROVED and previous == MerchantStatus.SUSPENDED:
+        # Reverse only what suspension switched off.
         db.execute(update(Store).where(Store.merchant_id == merchant.id).values(is_active=True))
 
 
@@ -152,15 +169,34 @@ def create_store(
         raise HTTPException(status_code=403, detail="Merchant approval required")
     if db.get(Village, payload.village_id) is None:
         raise HTTPException(status_code=404, detail="Village not found")
-    if payload.service_area_id and db.get(ServiceArea, payload.service_area_id) is None:
-        raise HTTPException(status_code=404, detail="Service area not found")
+    if payload.service_area_id:
+        area = db.get(ServiceArea, payload.service_area_id)
+        if area is None:
+            raise HTTPException(status_code=404, detail="Service area not found")
+        if not area.is_active:
+            raise HTTPException(status_code=409, detail="Service area is not active")
+        # Serviceability is checked at checkout as address-in-area. Without this
+        # a merchant could attach a store to any area on the platform and become
+        # the delivery option for every address in it.
+        if payload.latitude is None or payload.longitude is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Pin the storefront location before assigning a service area",
+            )
+        if not point_is_in_service_area(
+            db, payload.service_area_id, payload.latitude, payload.longitude
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="The storefront location is outside the selected service area",
+            )
     if db.scalar(select(Store).where(Store.slug == payload.slug)):
         raise HTTPException(status_code=409, detail="Store slug already exists")
     store = Store(merchant_id=merchant.id, **payload.model_dump())
     db.add(store)
     db.commit()
     db.refresh(store)
-    return store
+    return _store_read(store)
 
 
 @router.get("/stores", response_model=list[StoreRead])
@@ -168,6 +204,8 @@ def list_stores(
     village_id: uuid.UUID | None = None,
     q: str | None = None,
     delivery: bool | None = None,
+    limit: int = Query(default=100, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ):
     stmt = _public_store_stmt().order_by(Store.name)
@@ -177,7 +215,7 @@ def list_stores(
         stmt = stmt.where(Store.name.ilike(f"%{q}%"))
     if delivery is not None:
         stmt = stmt.where(Store.delivery_enabled.is_(delivery))
-    return db.scalars(stmt).all()
+    return [_store_read(store) for store in db.scalars(stmt.offset(offset).limit(limit)).all()]
 
 
 @router.get("/stores/nearby", response_model=list[NearbyStoreRead])
@@ -199,7 +237,7 @@ def nearby_stores(
     for store in db.scalars(stmt).all():
         distance = _distance_km(lat, lng, float(store.latitude), float(store.longitude))
         if distance <= radius_km:
-            payload = StoreRead.model_validate(store).model_dump()
+            payload = _store_read(store).model_dump()
             results.append(NearbyStoreRead(**payload, distance_km=round(distance, 2)))
     return sorted(results, key=lambda item: item.distance_km)
 
@@ -212,9 +250,12 @@ def my_stores(
     merchant = db.scalar(select(Merchant).where(Merchant.owner_user_id == user.id))
     if merchant is None:
         return []
-    return db.scalars(
-        select(Store).where(Store.merchant_id == merchant.id).order_by(Store.created_at.desc())
-    ).all()
+    return [
+        _store_read(store)
+        for store in db.scalars(
+            select(Store).where(Store.merchant_id == merchant.id).order_by(Store.created_at.desc())
+        ).all()
+    ]
 
 
 @router.get("/stores/{store_id}", response_model=StoreRead)
@@ -222,7 +263,7 @@ def get_store(store_id: uuid.UUID, db: Session = Depends(get_db)):
     store = db.scalar(_public_store_stmt().where(Store.id == store_id))
     if store is None:
         raise HTTPException(status_code=404, detail="Store not found")
-    return store
+    return _store_read(store)
 
 
 @router.patch("/stores/{store_id}", response_model=StoreRead)
@@ -238,11 +279,27 @@ def update_store(
     merchant = _require_store_owner(db, store, user)
     if user.role != UserRole.ADMIN and merchant and merchant.status != MerchantStatus.APPROVED:
         raise HTTPException(status_code=403, detail="Merchant is not active")
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    updates = payload.model_dump(exclude_unset=True)
+    for key, value in updates.items():
         setattr(store, key, value)
+    # Relocating a store must not silently move it out of the area it serves.
+    if ("latitude" in updates or "longitude" in updates) and store.service_area_id is not None:
+        if store.latitude is None or store.longitude is None:
+            raise HTTPException(
+                status_code=422,
+                detail="A store with a service area must keep a pinned location",
+            )
+        if not point_is_in_service_area(
+            db, store.service_area_id, float(store.latitude), float(store.longitude)
+        ):
+            db.rollback()
+            raise HTTPException(
+                status_code=422,
+                detail="The new storefront location is outside this store's service area",
+            )
     db.commit()
     db.refresh(store)
-    return store
+    return _store_read(store)
 
 
 @router.post("/categories", response_model=CategoryRead, status_code=status.HTTP_201_CREATED)
@@ -288,6 +345,8 @@ def create_product(
 def list_products(
     category_id: uuid.UUID | None = None,
     q: str | None = Query(default=None, min_length=1),
+    limit: int = Query(default=100, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ):
     stmt = select(Product).where(Product.is_active.is_(True)).order_by(Product.name)
@@ -295,7 +354,7 @@ def list_products(
         stmt = stmt.where(Product.category_id == category_id)
     if q:
         stmt = stmt.where(Product.name.ilike(f"%{q}%"))
-    return db.scalars(stmt).all()
+    return db.scalars(stmt.offset(offset).limit(limit)).all()
 
 
 @router.post(
@@ -369,6 +428,8 @@ def update_store_product(
 @router.get("/stores/{store_id}/inventory", response_model=list[StoreProductRead])
 def store_inventory(
     store_id: uuid.UUID,
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.MERCHANT, UserRole.ADMIN)),
 ):
@@ -380,11 +441,18 @@ def store_inventory(
         select(StoreProduct)
         .where(StoreProduct.store_id == store_id)
         .order_by(StoreProduct.updated_at.desc())
+        .offset(offset)
+        .limit(limit)
     ).all()
 
 
 @router.get("/stores/{store_id}/products", response_model=list[StoreProductRead])
-def list_store_products(store_id: uuid.UUID, db: Session = Depends(get_db)):
+def list_store_products(
+    store_id: uuid.UUID,
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
     store = db.scalar(_public_store_stmt().where(Store.id == store_id))
     if store is None:
         raise HTTPException(status_code=404, detail="Store not found")
@@ -396,4 +464,6 @@ def list_store_products(store_id: uuid.UUID, db: Session = Depends(get_db)):
             StoreProduct.stock_quantity > 0,
         )
         .order_by(StoreProduct.updated_at.desc())
+        .offset(offset)
+        .limit(limit)
     ).all()

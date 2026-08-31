@@ -5,6 +5,26 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 client = TestClient(app)
+
+def seeded_village() -> dict:
+    """The seeded pilot village, by identity rather than listing position."""
+    villages = client.get("/api/v1/villages").json()
+    for village in villages:
+        if village["name"] == "Pilot Village":
+            return village
+    assert villages, "no villages are seeded"
+    return villages[0]
+
+
+def seeded_store() -> dict:
+    """The seeded pilot store, by slug rather than listing position."""
+    stores = client.get("/api/v1/stores").json()
+    for store in stores:
+        if store["slug"] == "patil-kirana-pilot":
+            return store
+    assert stores, "no stores are seeded"
+    return stores[0]
+
 OTP = "123456"
 
 
@@ -38,7 +58,7 @@ def test_address_pin_must_be_inside_active_service_area() -> None:
         "/api/v1/addresses/me",
         headers=auth(access_token),
         json={
-            "village_id": villages[0]["id"],
+            "village_id": seeded_village()["id"],
             "label": "Home",
             "landmark": "Outside pilot area",
             "latitude": 28.6139,
@@ -53,7 +73,7 @@ def test_address_pin_must_be_inside_active_service_area() -> None:
         "/api/v1/addresses/me",
         headers=auth(access_token),
         json={
-            "village_id": villages[0]["id"],
+            "village_id": seeded_village()["id"],
             "label": "Home",
             "landmark": "Incomplete pin",
             "latitude": 20.08,

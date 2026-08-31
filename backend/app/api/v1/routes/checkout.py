@@ -1,3 +1,4 @@
+import secrets
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -13,7 +14,9 @@ from app.models.orders import Cart, CartItem, Delivery, Order, OrderItem
 from app.models.user import User
 from app.schemas.orders import CheckoutRequest, OrderRead
 from app.services.notifications import enqueue_notification
+from app.services.pricing import order_total, resolve_delivery_fee
 from app.services.spatial import point_is_in_service_area
+from app.services.store_hours import describe_hours, store_is_open
 
 router = APIRouter(tags=["Orders & Checkout"])
 
@@ -53,6 +56,38 @@ def _existing_idempotent_order(db: Session, user_id: uuid.UUID, key: str | None)
     )
 
 
+def _new_order_number() -> str:
+    """Time-ordered and collision-resistant.
+
+    The previous scheme was day/time plus microseconds against a unique column,
+    so two orders in the same microsecond became an unhandled 500 during
+    checkout. The random suffix removes that failure mode.
+    """
+    stamp = datetime.now(timezone.utc).strftime("%y%m%d%H%M%S")
+    # 5 random bytes gives ~1.1e12 values per second, so even a burst of
+    # thousands of orders in the same second collides with vanishing
+    # probability. Total length 24, well inside the column's 32.
+    return f"GO{stamp}{secrets.token_hex(5).upper()}"
+
+
+def _address_snapshot(address: Address) -> dict:
+    """Freeze where this order is going, so order history cannot drift."""
+    return {
+        key: value
+        for key, value in {
+            "recipient_name": address.recipient_name,
+            "phone": address.phone,
+            "house_details": address.house_details,
+            "landmark": address.landmark,
+            "directions": address.directions,
+            "latitude": address.latitude,
+            "longitude": address.longitude,
+            "village_id": str(address.village_id),
+        }.items()
+        if value is not None
+    }
+
+
 def _address_point(db: Session, address: Address) -> tuple[float, float] | None:
     if address.latitude is not None and address.longitude is not None:
         return float(address.latitude), float(address.longitude)
@@ -78,7 +113,7 @@ def safe_checkout(
             return existing
 
     address = db.get(Address, payload.address_id)
-    if address is None or address.user_id != user.id:
+    if address is None or address.user_id != user.id or address.archived_at is not None:
         raise HTTPException(status_code=404, detail="Address not found")
 
     cart = db.scalar(select(Cart).where(Cart.user_id == user.id).with_for_update())
@@ -104,6 +139,16 @@ def safe_checkout(
         raise HTTPException(status_code=409, detail="Store is currently unavailable")
     if not store.delivery_enabled:
         raise HTTPException(status_code=409, detail="This store does not currently support delivery")
+    if not store_is_open(store):
+        hours = describe_hours(store.opens_at, store.closes_at)
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{store.name} is closed right now. Opening hours: {hours}."
+                if hours
+                else f"{store.name} is closed right now."
+            ),
+        )
 
     address_point = _address_point(db, address)
     if store.service_area_id is None or address_point is None:
@@ -134,17 +179,18 @@ def safe_checkout(
         subtotal += listing.price * item.quantity
         validated.append((item, listing))
 
-    delivery_fee = Decimal("20.00")
+    delivery_fee = resolve_delivery_fee(db, store)
     order = Order(
-        order_number=f"GO{datetime.now(timezone.utc).strftime('%y%m%d%H%M%S%f')[-14:]}",
+        order_number=_new_order_number(),
         user_id=user.id,
         store_id=cart.store_id,
         address_id=address.id,
         idempotency_key=idempotency_key,
+        delivery_address=_address_snapshot(address),
         payment_method=payload.payment_method,
         subtotal=subtotal,
         delivery_fee=delivery_fee,
-        total=subtotal + delivery_fee,
+        total=order_total(subtotal, delivery_fee),
     )
     db.add(order)
     db.flush()
