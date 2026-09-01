@@ -45,6 +45,15 @@ services:
     env_file:
       - .env.production
     command: ["python", "-m", "app.scripts.worker"]
+    # The image's default health check probes the API HTTP listener.  This
+    # process is deliberately a background worker, so prove that its PID 1 is
+    # the worker instead of reporting it unhealthy for not serving HTTP.
+    healthcheck:
+      test: ["CMD-SHELL", "tr '\\000' ' ' </proc/1/cmdline | grep -Fq 'app.scripts.worker'"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
     depends_on:
       db:
         condition: service_healthy
