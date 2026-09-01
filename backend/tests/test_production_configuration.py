@@ -12,6 +12,8 @@ second CI environment, so the gated behaviour is verified on every run.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 from redis.exceptions import RedisError
@@ -176,6 +178,16 @@ def test_docs_are_not_served_in_production() -> None:
         text = handle.read()
     assert 'docs_url=None if is_production else "/docs"' in text
     assert 'openapi_url=None if is_production else "/openapi.json"' in text
+
+
+def test_worker_uses_a_worker_liveness_probe_not_the_api_http_probe() -> None:
+    """The worker shares the API image but does not listen on port 8000."""
+    compose = (Path(__file__).parents[2] / "docker-compose.prod.yml").read_text()
+    worker = compose.split("\n  worker:", 1)[1].split("\n  migrate:", 1)[0]
+
+    assert "healthcheck:" in worker
+    assert "/proc/1/cmdline" in worker
+    assert "app.scripts.worker" in worker
 
 
 def test_production_otp_endpoints_are_gated_by_the_widget_provider() -> None:
