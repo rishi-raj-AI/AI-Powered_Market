@@ -7,7 +7,7 @@ test('customer can discover and verify an exact delivery location',async({page})
   await page.goto('/checkout');
   await page.getByRole('button',{name:/Add address/i}).click();
   await page.getByLabel(/Village/).selectOption('village-niphad');
-  const search=page.getByPlaceholder(/Search village, road, landmark or address/i);
+  const search=page.getByPlaceholder(/Search area, road, landmark or address/i);
   await search.fill('Niphad');
   await expect(page.getByRole('button',{name:/Niphad.*Maharashtra/i})).toBeVisible();
   await page.getByRole('button',{name:/Niphad.*Maharashtra/i}).click();
@@ -24,12 +24,23 @@ test('approved merchant can resolve a storefront with area-first location langua
   await expect(locality.locator('option').first()).toHaveText('Select area / locality');
   await page.getByLabel('Store name').fill('Nimbu Kirana Niphad');
   await locality.selectOption('village-niphad');
-  const search=page.getByPlaceholder(/Search village, road, landmark or address/i);
+  const search=page.getByPlaceholder(/Search area, road, landmark or address/i);
   await search.fill('Niphad');
   await page.getByRole('button',{name:/Niphad.*Maharashtra/i}).click();
   await expect(page.getByText(/Store is inside Niphad Local/i)).toBeVisible();
   await expect(page.getByLabel('Service area')).toHaveValue('area-niphad');
   await expect(page.getByLabel(/Landmark/)).toHaveValue(/Niphad, Nashik/i);
+});
+
+test('market preserves location context and searches nearby live inventory',async({page})=>{
+  await installApiMocks(page);
+  await page.goto('/market?lat=20.0778&lng=74.1118&location=Niphad%20Local&serviceable=1&service_area=Niphad%20Local');
+  await expect(page.getByText('Serviceable through')).toBeVisible();
+  await expect(page.getByText('Niphad Local',{exact:true}).last()).toBeVisible();
+  await page.getByPlaceholder(/Search products, categories or stores nearby/i).fill('Rice');
+  await expect(page.getByText('Kolam Rice')).toBeVisible();
+  await expect(page.getByText('Gaon Fresh • 1 kg')).toBeVisible();
+  await expect(page.getByText('0.8 km').first()).toBeVisible();
 });
 
 test('@a11y location picker has no serious or critical accessibility violations',async({page})=>{
