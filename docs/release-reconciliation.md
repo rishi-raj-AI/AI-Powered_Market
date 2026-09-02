@@ -12,8 +12,8 @@ This branch reconciles valid product capabilities from historical feature lineag
 | X04 nearby search suggestions | Selectively recovered | A typed suggestions API returns only approved, active, in-stock nearby commerce results with deterministic prefix/distance ranking. |
 | X05 fulfillment promise | Historical implementation obsolete | The old route generated an unmeasured ETA from straight-line distance and UTC store hours. Current India-local hours and tracking analytics remain authoritative; no fake promise is exposed. |
 | X06 scheduled fulfillment windows | Partially valid intent, not recovered yet | The old route generated generic UTC slots that were not persisted on checkout or orders. A real selectable window requires an auditable order contract rather than display-only slots. |
-| X07 substitutions | Valid intent, pending current vertical | Only explicit customer-selected same-store alternatives are acceptable; silent substitution remains prohibited. |
-| X08 reorder preview | Valid intent, pending current vertical | Preview must use current stock and prices and must never recreate an order without customer review. |
+| X07 substitutions / X29 vertical | Selectively recovered | Backend returns ranked, active, in-stock alternatives from the same approved store. Web and Flutter require the customer to choose; nothing substitutes automatically. |
+| X08 reorder preview / X31 vertical | Selectively recovered | An ownership-protected preview uses current stock and prices, clamps quantities, and exposes explicit add-to-cart controls on web and Flutter. It never recreates an order silently. |
 | X26 authoritative checkout pricing | Recovered early as a release invariant | Cart no longer displays an invented client fee. Checkout obtains an authenticated address-specific backend quote and the mutation revalidates under inventory locks. |
 | Old cumulative X01-X04 branch stacks | Obsolete as integration units | Their valid capability intent is recovered above; obsolete migrations and pre-hardening commerce/payment code are not merged. |
 
@@ -25,6 +25,9 @@ This branch reconciles valid product capabilities from historical feature lineag
 - Location/discovery Playwright coverage: 16 passed across Chromium, Firefox, WebKit, and mobile Chrome.
 - Checkout quote backend tests: 3 passed, including area fee, stock change, and address ownership.
 - Pricing Playwright coverage: 4 passed across Chromium, Firefox, WebKit, and mobile Chrome.
+- Alternatives/reorder backend tests: 4 passed.
+- Alternatives/reorder Playwright coverage: 8 passed across Chromium, Firefox, WebKit, and mobile Chrome.
+- Flutter analysis: no issues in `lib`; Flutter smoke test: 1 passed.
 - No schema change or migration was required for this family.
 
 ## Remaining reconciliation

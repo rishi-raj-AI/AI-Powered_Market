@@ -97,6 +97,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   const SizedBox(height: 12),
                   CustomerLiveTracking(orderId: order.id),
                 ],
+                if (order.status == 'delivered') OutlinedButton.icon(onPressed: () => reorder(order, sheetContext), icon: const Icon(Icons.replay), label: const Text('Preview reorder')),
                 const SizedBox(height: 10),
                 Align(alignment: Alignment.centerRight, child: Text('Total ₹${order.total}', style: const TextStyle(fontWeight: FontWeight.w800))),
               ],
@@ -107,6 +108,19 @@ class _OrdersScreenState extends State<OrdersScreen> {
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
     }
+  }
+
+  Future<void> reorder(OrderModel order, BuildContext sheetContext) async {
+    try {
+      final preview = await GaonApi.reorderPreview(order.id);
+      if (!sheetContext.mounted) return;
+      final items = (preview['items'] as List? ?? []).cast<Map<String, dynamic>>();
+      final add = await showDialog<bool>(context: sheetContext, builder: (dialogContext) => AlertDialog(title: const Text('Buy this basket again?'), content: Text('${preview['available_items']} available • ${preview['unavailable_items']} unavailable\nEstimated subtotal ₹${preview['estimated_subtotal']}\n\nCurrent stock and prices are shown; checkout verifies them again.'), actions: [TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Not now')),FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Add available'))]));
+      if (add == true) {
+        for (final item in items) { if (item['available'] == true && item['listing_id'] != null && (item['available_quantity'] as num) > 0) await GaonApi.addToCart('${item['listing_id']}', quantity: (item['available_quantity'] as num).toInt()); }
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Available items added. Checkout will verify them again.')));
+      }
+    } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'))); }
   }
 
   @override
