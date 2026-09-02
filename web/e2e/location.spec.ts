@@ -18,11 +18,12 @@ test('customer can discover and verify an exact delivery location',async({page})
 test('approved merchant can resolve a storefront with area-first location language',async({page})=>{
   await installApiMocks(page,merchantUser);
   await page.goto('/merchant');
-  await expect(page.getByLabel('Area / locality')).toBeVisible();
+  const locality=page.getByLabel('Area / locality');
+  await expect(locality).toBeVisible();
   await expect(page.getByLabel('Village')).toHaveCount(0);
-  await expect(page.getByRole('option',{name:'Select area / locality'})).toBeVisible();
+  await expect(locality.locator('option').first()).toHaveText('Select area / locality');
   await page.getByLabel('Store name').fill('Nimbu Kirana Niphad');
-  await page.getByLabel('Area / locality').selectOption('village-niphad');
+  await locality.selectOption('village-niphad');
   const search=page.getByPlaceholder(/Search village, road, landmark or address/i);
   await search.fill('Niphad');
   await page.getByRole('button',{name:/Niphad.*Maharashtra/i}).click();
