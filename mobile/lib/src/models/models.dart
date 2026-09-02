@@ -191,7 +191,7 @@ class DeliveryTaskModel {
         recipientName: j['recipient_name'],
         recipientPhone: j['recipient_phone'],
         houseDetails: j['house_details'],
-        customerLandmark: j['customer_landmark'],
+        customerLandmark: j['customer_landmark'] ?? j['dropoff_area'] ?? 'Area disclosed after assignment',
         customerDirections: j['customer_directions'],
         customerLatitude: (j['customer_latitude'] as num?)?.toDouble(),
         customerLongitude: (j['customer_longitude'] as num?)?.toDouble(),

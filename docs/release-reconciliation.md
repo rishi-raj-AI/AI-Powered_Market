@@ -15,6 +15,7 @@ This branch reconciles valid product capabilities from historical feature lineag
 | X07 substitutions / X29 vertical | Selectively recovered | Backend returns ranked, active, in-stock alternatives from the same approved store. Web and Flutter require the customer to choose; nothing substitutes automatically. |
 | X08 reorder preview / X31 vertical | Selectively recovered | An ownership-protected preview uses current stock and prices, clamps quantities, and exposes explicit add-to-cart controls on web and Flutter. It never recreates an order silently. |
 | X26 authoritative checkout pricing | Recovered early as a release invariant | Cart no longer displays an invented client fee. Checkout obtains an authenticated address-specific backend quote and the mutation revalidates under inventory locks. |
+| Live delivery tracking | Completed and hardened | Assigned-rider GPS writes are ownership-, state-, rate-, accuracy-, timestamp-, and plausibility-guarded. Customer web and mobile surfaces show fresh rider position, accuracy, route and maps; rider mobile exposes assigned-only navigation. Provider route estimates now require pickup plus a rider fix no older than 30 seconds, so store-to-customer or stale-coordinate durations are never presented as live ETA. Exact rider PII stops after delivery, and open offers remain coarse/PII-free. |
 | Old cumulative X01-X04 branch stacks | Obsolete as integration units | Their valid capability intent is recovered above; obsolete migrations and pre-hardening commerce/payment code are not merged. |
 
 ## Validation evidence
@@ -28,12 +29,15 @@ This branch reconciles valid product capabilities from historical feature lineag
 - Alternatives/reorder backend tests: 4 passed.
 - Alternatives/reorder Playwright coverage: 8 passed across Chromium, Firefox, WebKit, and mobile Chrome.
 - Flutter analysis: no issues in `lib`; Flutter smoke test: 1 passed.
+- Live-tracking backend lint: pass; focused tracking/maps/route tests: 19 passed.
+- Live-tracking Playwright coverage: 20 passed across Chromium, Firefox, WebKit, and mobile Chrome.
+- Flutter tracking/navigation analysis completed with no errors; Flutter tests: 2 passed, including PII-free open-offer parsing.
 - No schema change or migration was required for this family.
 
 ## Remaining reconciliation
 
 - Audit and reconcile all remaining historical feature lineages.
-- Complete explicit end-to-end live tracking audit across backend, web, and mobile.
+- Audit X09-X25 intelligence lineages and recover only explainable, evidence-backed product behavior.
 - Remove remaining client-authority leaks or product-surface gaps found by the audit (the hardcoded web delivery fee is resolved).
 - Run full backend, web, Playwright, mobile, migration, and production-preflight validation.
 - Freeze one exact candidate SHA, open one real integration PR, require exact-SHA 4/4 CI, merge, and require exact merged-main 4/4 CI.

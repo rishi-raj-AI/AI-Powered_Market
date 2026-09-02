@@ -23,6 +23,7 @@ from app.services.rate_limit import RateLimitExceeded, RateLimitUnavailable, rat
 router = APIRouter(tags=["Live Tracking"])
 ACTIVE_TRACKING_STATUSES = {DeliveryStatus.ASSIGNED, DeliveryStatus.PICKED_UP}
 MIN_LOCATION_INTERVAL_SECONDS = 5
+FRESH_ROUTE_LOCATION_SECONDS = 30
 
 
 def _can_view_tracking(db: Session, order: Order, delivery: Delivery | None, user: User) -> bool:
@@ -39,6 +40,12 @@ def _can_view_tracking(db: Session, order: Order, delivery: Delivery | None, use
 
 def _latest_location(db: Session, delivery_id: uuid.UUID) -> DeliveryLocation | None:
     return db.scalar(select(DeliveryLocation).where(DeliveryLocation.delivery_id == delivery_id).order_by(DeliveryLocation.recorded_at.desc()).limit(1))
+
+
+def _location_is_fresh(location: DeliveryLocation, *, now: datetime | None = None) -> bool:
+    observed_at = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    recorded_at = location.recorded_at.astimezone(timezone.utc)
+    return 0 <= (observed_at - recorded_at).total_seconds() <= FRESH_ROUTE_LOCATION_SECONDS
 
 
 def _location_read(location: DeliveryLocation) -> DeliveryLocationRead:
@@ -101,9 +108,21 @@ def order_tracking(order_id: uuid.UUID,db: Session = Depends(get_db),user: User 
 @router.get("/orders/{order_id}/route", response_model=RouteRead)
 def order_route(order_id: uuid.UUID,db: Session = Depends(get_db),user: User = Depends(get_current_user)):
     order, delivery, store, address = _tracking_context(db, order_id, user)
-    latest = _latest_location(db, delivery.id) if delivery is not None and delivery.status in ACTIVE_TRACKING_STATUSES else None
-    origin = TrackingPoint(latitude=latest.latitude if latest else (float(store.latitude) if store and store.latitude is not None else None),longitude=latest.longitude if latest else (float(store.longitude) if store and store.longitude is not None else None),label="Delivery partner" if latest else (store.name if store else "Store"))
+    latest = _latest_location(db, delivery.id) if delivery is not None and delivery.status == DeliveryStatus.PICKED_UP else None
+    origin = TrackingPoint(
+        latitude=latest.latitude if latest else None,
+        longitude=latest.longitude if latest else None,
+        label="Delivery partner" if latest else None,
+    )
     destination = TrackingPoint(latitude=address.latitude if address else None,longitude=address.longitude if address else None,label=address.landmark if address else "Delivery address")
+    # A store-to-customer travel duration is not a delivery ETA while the order
+    # is still awaiting pickup. Likewise, an old rider fix must not continue to
+    # produce apparently-live route insight. Clients can render the known
+    # points, but route duration is available only from a fresh post-pickup fix.
+    if latest is None:
+        return RouteRead(available=False, provider="none", origin=origin, destination=destination)
+    if not _location_is_fresh(latest):
+        return RouteRead(available=False, provider="none", origin=origin, destination=destination)
     if origin.latitude is None or origin.longitude is None or destination.latitude is None or destination.longitude is None or not maps_enabled():
         return RouteRead(available=False, provider="none", origin=origin, destination=destination)
     _limit_route(user)
