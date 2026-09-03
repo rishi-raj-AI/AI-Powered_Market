@@ -35,6 +35,13 @@ This branch reconciles valid product capabilities from historical feature lineag
 | X50 / X62 notification readiness and device control | Selectively recovered | Customers can see actual FCM configuration state, list only their active registrations, and unregister their own device. Stored events remain explicitly distinct from provider push delivery. |
 | X51 rider presence | Current mobile capability retained | The rider mobile workspace already obtains device GPS and updates backend-authoritative presence. A duplicate web-only presence page is not required for the pilot rider application. |
 | X61 customer address book | Selectively recovered | Customers can review and remove their owner-scoped saved addresses, and add a serviceability-validated exact location through checkout. |
+| X63 store preparation transparency | Historical estimate obsolete | The source depended on the fabricated preparation estimate rejected with X15/X22. No preparation time or confidence is shown without auditable readiness timestamps and sufficient measured samples. |
+| X64 merchant media readiness | Selectively recovered | Merchants can explicitly upload a supported catalog image through the authenticated backend media contract. The browser neither bypasses file validation nor publishes a product automatically. |
+| X65 rider incident / X66 admin recovery | Recovered and hardened | Riders can report only their active assigned delivery through the guarded failure endpoint. Admins receive a protected factual failed-delivery queue; backend custody rules choose between pre-pickup reassignment and post-pickup return/refund/settlement handling. |
+| X67 customer order audit | Superseded by Order journey | The current ownership-checked lifecycle surface reads the same server transition ledger and does not infer transitions. |
+| X68 customer proof receipt | Selectively recovered | Customers can select their own order and view only backend-verified proof metadata through the existing ownership boundary. OTP hashes and unrelated delivery data are never exposed. |
+| X69 customer payment state | Superseded by current orders | Current order cards and lifecycle already display backend payment state, provider retry eligibility and cancellation/refund state. A second read-only list would add no capability. |
+| X70 role workspace navigation | Recovered through current navigation | Navigation exposes only the authenticated role's customer, merchant, rider or admin workspaces, including the newly reconciled operational surfaces. Backend authorization remains authoritative for every destination. |
 | X26 authoritative checkout pricing | Recovered early as a release invariant | Cart no longer displays an invented client fee. Checkout obtains an authenticated address-specific backend quote and the mutation revalidates under inventory locks. |
 | Live delivery tracking | Completed and hardened | Assigned-rider GPS writes are ownership-, state-, rate-, accuracy-, timestamp-, and plausibility-guarded. Customer web and mobile surfaces show fresh rider position, accuracy, route and maps; rider mobile exposes assigned-only navigation. Provider route estimates now require pickup plus a rider fix no older than 30 seconds, so store-to-customer or stale-coordinate durations are never presented as live ETA. Exact rider PII stops after delivery, and open offers remain coarse/PII-free. |
 | Old cumulative X01-X04 branch stacks | Obsolete as integration units | Their valid capability intent is recovered above; obsolete migrations and pre-hardening commerce/payment code are not merged. |
@@ -62,12 +69,13 @@ This branch reconciles valid product capabilities from historical feature lineag
 - Flutter support surface analysis: no issues; full Flutter tests: 3 passed.
 - Admin delivery-performance backend tests: 4 passed with dispatch regression coverage; web production build passed; Playwright: 4 passed across four browser profiles.
 - Merchant settlement, address/device ownership surfaces and actionable updates: web production build passed; Playwright: 12 passed across four browser profiles.
+- Failed-delivery queue backend lint passed; recovery/dispatch regression tests: 13 passed.
+- Rider incident, admin recovery, customer proof and merchant media: web production build passed; Playwright: 16 passed across four browser profiles.
 - No schema change or migration was required for this family.
 
 ## Remaining reconciliation
 
 - Audit and reconcile all remaining historical feature lineages.
-- Complete the X63-X70 surface audit and recover only explainable, evidence-backed product behavior.
 - Remove remaining client-authority leaks or product-surface gaps found by the audit (the hardcoded web delivery fee is resolved).
 - Run full backend, web, Playwright, mobile, migration, and production-preflight validation.
 - Freeze one exact candidate SHA, open one real integration PR, require exact-SHA 4/4 CI, merge, and require exact merged-main 4/4 CI.

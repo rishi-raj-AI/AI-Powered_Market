@@ -56,6 +56,10 @@ def _delivery_payload(db: Session, delivery: Delivery) -> dict:
         "rider_phone": rider.phone if rider else None,
         "status": delivery.status.value,
         "assigned_at": delivery.assigned_at,
+        "picked_up_at": delivery.picked_up_at,
+        "failed_at": delivery.failed_at,
+        "failure_reason": delivery.failure_reason,
+        "failure_notes": delivery.failure_notes,
         "store_name": store.name if store else None,
         "store_landmark": store.landmark if store else None,
         "customer_landmark": address.landmark if address else None,
@@ -111,6 +115,22 @@ def admin_active_deliveries(
         select(Delivery)
         .where(Delivery.status.in_(ACTIVE_DELIVERY_STATUSES))
         .order_by(Delivery.updated_at.desc())
+        .limit(limit)
+    ).all()
+    return [_delivery_payload(db, delivery) for delivery in deliveries]
+
+
+@router.get("/deliveries/failed")
+def admin_failed_deliveries(
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(UserRole.ADMIN)),
+):
+    """Return the operations queue for failed deliveries without changing state."""
+    deliveries = db.scalars(
+        select(Delivery)
+        .where(Delivery.status == DeliveryStatus.FAILED)
+        .order_by(Delivery.failed_at.desc(), Delivery.updated_at.desc())
         .limit(limit)
     ).all()
     return [_delivery_payload(db, delivery) for delivery in deliveries]
