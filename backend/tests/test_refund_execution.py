@@ -10,10 +10,12 @@ from __future__ import annotations
 from decimal import Decimal
 from uuid import uuid4
 
+import httpx
 import pytest
 
 from app.models.integrations import PaymentRefund
 from app.models.orders import OrderStatus, PaymentMethod, PaymentStatus
+from app.services import payments as payment_service
 from app.services import refunds as refund_service
 from app.services.refunds import (
     REFUND_FAILED,
@@ -26,6 +28,45 @@ from app.services.refunds import (
     get_refund_for_order,
 )
 from tests.factories import make_order, session
+
+
+def test_provider_refund_uses_razorpay_refund_idempotency_contract(monkeypatch) -> None:
+    captured: dict = {}
+
+    class Client:
+        def __init__(self, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def post(self, url, *, auth, headers, json):
+            captured.update(url=url, auth=auth, headers=headers, json=json)
+            return httpx.Response(
+                200,
+                request=httpx.Request("POST", url),
+                json={"id": "rfnd_provider", "status": "processed"},
+            )
+
+    monkeypatch.setattr(payment_service.httpx, "Client", Client)
+    monkeypatch.setattr(payment_service.settings, "RAZORPAY_KEY_ID", "rzp_test_example")
+    monkeypatch.setattr(payment_service.settings, "RAZORPAY_KEY_SECRET", "test-secret")
+
+    payload = payment_service.create_razorpay_refund(
+        provider_payment_id="pay_provider",
+        amount=Decimal("55.00"),
+        idempotency_key="order-refund:0a1bd26c-d2cd-4ab9-8926-a571cb038cb5",
+        notes={"gaonone_order_id": "0a1bd26c-d2cd-4ab9-8926-a571cb038cb5"},
+    )
+
+    assert payload["id"] == "rfnd_provider"
+    assert captured["headers"] == {
+        "X-Refund-Idempotency": "order-refund-0a1bd26c-d2cd-4ab9-8926-a571cb038cb5"
+    }
+    assert ":" not in captured["headers"]["X-Refund-Idempotency"]
 
 
 def _rid(label: str) -> str:
