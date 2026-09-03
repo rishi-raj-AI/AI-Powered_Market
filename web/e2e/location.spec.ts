@@ -6,7 +6,7 @@ test('customer can discover and verify an exact delivery location',async({page})
   await installApiMocks(page);
   await page.goto('/checkout');
   await page.getByRole('button',{name:/Add address/i}).click();
-  await page.getByLabel(/Village/).selectOption('village-niphad');
+  await page.getByLabel('Area / locality *').selectOption('village-niphad');
   const search=page.getByPlaceholder(/Search area, road, landmark or address/i);
   await search.fill('Niphad');
   await expect(page.getByRole('button',{name:/Niphad.*Maharashtra/i})).toBeVisible();
@@ -41,6 +41,15 @@ test('market preserves location context and searches nearby live inventory',asyn
   await expect(page.getByText('Kolam Rice')).toBeVisible();
   await expect(page.getByText('Gaon Fresh • 1 kg')).toBeVisible();
   await expect(page.getByText('0.8 km').first()).toBeVisible();
+  await expect(page.getByText('Open now').first()).toBeVisible();
+});
+
+test('storefront exposes backend-computed India-local availability',async({page})=>{
+  await installApiMocks(page);
+  await page.goto('/market/store-nearby');
+  await expect(page.getByText('Open now')).toBeVisible();
+  await expect(page.getByText(/IST/)).toBeVisible();
+  await expect(page.getByText(/village/i)).toHaveCount(0);
 });
 
 test('@a11y location picker has no serious or critical accessibility violations',async({page})=>{

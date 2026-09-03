@@ -5,8 +5,8 @@ import { ConnectivityBanner } from '@/components/ConnectivityBanner';
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://gaonone.in'),
-  title: 'GaonOne — Local commerce for every village',
-  description: 'Discover local shops, essentials, food and delivery in your village.',
+  title: 'GaonOne — Local commerce around you',
+  description: 'Discover local shops, essentials, food and delivery across your area or neighbourhood.',
   applicationName: 'GaonOne',
   alternates: { canonical: '/' },
   icons: {
@@ -18,13 +18,13 @@ export const metadata: Metadata = {
     type: 'website',
     url: 'https://gaonone.in',
     siteName: 'GaonOne',
-    title: 'GaonOne — Local commerce for every village',
-    description: 'Discover local shops, essentials, food and delivery in your village.',
+    title: 'GaonOne — Local commerce around you',
+    description: 'Discover local shops, essentials, food and delivery across your area or neighbourhood.',
   },
   twitter: {
     card: 'summary',
-    title: 'GaonOne — Local commerce for every village',
-    description: 'Discover local shops, essentials, food and delivery in your village.',
+    title: 'GaonOne — Local commerce around you',
+    description: 'Discover local shops, essentials, food and delivery across your area or neighbourhood.',
   },
 };
 

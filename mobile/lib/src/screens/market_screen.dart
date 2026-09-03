@@ -112,7 +112,7 @@ class _MarketScreenState extends State<MarketScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Choose your village or use GPS to find shops around you.',
+                    'Choose an area or locality, or use GPS to find shops around you.',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 14),
@@ -126,7 +126,7 @@ class _MarketScreenState extends State<MarketScreen> {
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
                     initialValue: selectedVillageId,
-                    decoration: const InputDecoration(labelText: 'Or select village'),
+                    decoration: const InputDecoration(labelText: 'Or select area / locality'),
                     items: villages
                         .map((village) => DropdownMenuItem(
                               value: village.id,
@@ -166,6 +166,7 @@ class _MarketScreenState extends State<MarketScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(store.landmark ?? store.description ?? 'Local store'),
+                            Text(store.isOpenNow ? 'Open now' : 'Closed now'),
                             if (store.distanceKm != null)
                               Text('${store.distanceKm!.toStringAsFixed(1)} km away'),
                           ],
@@ -181,7 +182,7 @@ class _MarketScreenState extends State<MarketScreen> {
                   if (stores.isEmpty)
                     const Padding(
                       padding: EdgeInsets.all(24),
-                      child: Center(child: Text('No stores found here yet. Try selecting a village.')),
+                      child: Center(child: Text('No stores found here yet. Try another area or locality.')),
                     ),
                 ],
               ),

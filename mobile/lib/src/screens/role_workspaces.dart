@@ -47,7 +47,7 @@ class _MerchantWorkspaceState extends State<MerchantWorkspace> {
       content: SizedBox(width: 420, child: Column(mainAxisSize: MainAxisSize.min, children: [
         TextField(controller: name, decoration: const InputDecoration(labelText: 'Store name')),
         const SizedBox(height: 10),
-        DropdownButtonFormField<String>(initialValue: village, items: villages.map((item) => DropdownMenuItem(value: item.id, child: Text('${item.name}, ${item.district}'))).toList(), onChanged: (value) { if (value != null) setDialogState(() => village = value); }, decoration: const InputDecoration(labelText: 'Village')),
+        DropdownButtonFormField<String>(initialValue: village, items: villages.map((item) => DropdownMenuItem(value: item.id, child: Text('${item.name}, ${item.district}'))).toList(), onChanged: (value) { if (value != null) setDialogState(() => village = value); }, decoration: const InputDecoration(labelText: 'Area / locality')),
         const SizedBox(height: 10),
         TextField(controller: landmark, decoration: const InputDecoration(labelText: 'Landmark')),
       ])),

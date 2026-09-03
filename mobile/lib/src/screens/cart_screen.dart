@@ -91,6 +91,7 @@ class _CartScreenState extends State<CartScreen> {
               children: [
                 DropdownButtonFormField<String>(
                   initialValue: villageId,
+                  decoration: const InputDecoration(labelText: 'Area / locality'),
                   items: villages.map((v) => DropdownMenuItem(value: v.id, child: Text(v.name))).toList(),
                   onChanged: (v) => setLocal(() => villageId = v ?? villageId),
                 ),

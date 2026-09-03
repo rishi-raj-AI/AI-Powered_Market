@@ -22,6 +22,7 @@ class StoreModel {
   final String? description;
   final String? landmark;
   final bool deliveryEnabled;
+  final bool isOpenNow;
   final double? latitude;
   final double? longitude;
   final double? distanceKm;
@@ -31,6 +32,7 @@ class StoreModel {
     this.description,
     this.landmark,
     required this.deliveryEnabled,
+    required this.isOpenNow,
     this.latitude,
     this.longitude,
     this.distanceKm,
@@ -41,6 +43,7 @@ class StoreModel {
         description: j['description'],
         landmark: j['landmark'],
         deliveryEnabled: j['delivery_enabled'] ?? false,
+        isOpenNow: j['is_open_now'] ?? true,
         latitude: (j['latitude'] as num?)?.toDouble(),
         longitude: (j['longitude'] as num?)?.toDouble(),
         distanceKm: (j['distance_km'] as num?)?.toDouble(),
