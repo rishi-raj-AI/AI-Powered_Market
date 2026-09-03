@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -14,6 +14,7 @@ from app.models.orders import Delivery, DeliveryStatus, Order, OrderStatus, Paym
 from app.models.user import User, UserRole
 from app.services.notifications import enqueue_notification
 from app.services.order_transitions import transition_delivery
+from app.services.delivery_performance import summarize_delivery_performance
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 ACTIVE_DELIVERY_STATUSES = {DeliveryStatus.ASSIGNED, DeliveryStatus.PICKED_UP}
@@ -199,3 +200,24 @@ def admin_overview(db: Session = Depends(get_db), _: User = Depends(require_role
     for order_status in OrderStatus:
         orders_by_status.setdefault(order_status.value, 0)
     return {"users":user_count,"villages":village_count,"active_stores":active_store_count,"merchants":{"pending":pending_merchants,"approved":approved_merchants,"suspended":suspended_merchants},"orders":{"total":total_orders,"by_status":orders_by_status},"operations":{"low_stock_listings":low_stock,"ready_unassigned_deliveries":ready_unassigned,"active_delivery_partners":delivery_users},"paid_gmv":str(paid_gmv),"gross_order_value":str(gross_order_value)}
+
+
+@router.get("/delivery-performance")
+def admin_delivery_performance(
+    window_days: int = Query(default=30, ge=1, le=180),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(UserRole.ADMIN)),
+) -> dict:
+    since = datetime.now(timezone.utc) - timedelta(days=window_days)
+    rows = db.scalars(select(Delivery).where(Delivery.updated_at >= since)).all()
+    performance = summarize_delivery_performance(rows)
+    return {
+        "window_days": window_days,
+        "total_records": len(rows),
+        "delivered": performance.sample_count,
+        "failed": sum(delivery.status == DeliveryStatus.FAILED for delivery in rows),
+        "active": sum(delivery.status in ACTIVE_DELIVERY_STATUSES for delivery in rows),
+        "median_assignment_to_pickup_seconds": performance.median_assignment_to_pickup_seconds,
+        "median_pickup_to_delivery_seconds": performance.median_pickup_to_delivery_seconds,
+        "basis": "recorded_delivery_timestamps",
+    }

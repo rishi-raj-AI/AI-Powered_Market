@@ -23,3 +23,12 @@ test('admin can resolve a triaged ticket',async({page})=>{
   await expect(page.getByText('Refund is missing')).toBeVisible();
   await page.getByRole('button',{name:'Resolve'}).click();
 });
+
+test('admin sees factual delivery performance without invented confidence',async({page})=>{
+  await installApiMocks(page,superAdmin);
+  await page.route('http://localhost:8000/api/v1/admin/delivery-performance',r=>r.fulfill({json:{window_days:30,total_records:12,delivered:9,failed:1,active:2,median_assignment_to_pickup_seconds:600,median_pickup_to_delivery_seconds:1200,basis:'recorded_delivery_timestamps'}}));
+  await page.goto('/admin/delivery-performance');
+  await expect(page.getByText('10 min median')).toBeVisible();
+  await expect(page.getByText('20 min median')).toBeVisible();
+  await expect(page.getByText(/No predicted ETA or confidence score/)).toBeVisible();
+});

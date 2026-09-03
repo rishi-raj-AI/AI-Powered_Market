@@ -23,6 +23,7 @@ This branch reconciles valid product capabilities from historical feature lineag
 | X16 / X23 fulfillment recommendation | Historical implementation obsolete | The later version fixed India-local hours but still recommended scheduled modes that checkout cannot persist. Current UI exposes only backend-supported delivery/pickup state. |
 | X17 / X24 repeat cadence | Intent covered without predictive claim | Historical code labeled products “due” from as few as two purchases. Current explicit reorder previews delivered baskets against live price and stock without claiming purchase urgency. |
 | X18 / X25 merchant reliability | Historical percentage obsolete | The percentage mixed cancellations and failures with arbitrary weights/confidence bands. Verified merchant status, live availability and operational admin data remain factual; no unsupported consumer trust score is exposed. |
+| X41 admin delivery performance | Selectively recovered | Admin-only 30-day counts and assignment-to-pickup / pickup-to-delivery medians use recorded delivery timestamps. The surface labels its sample basis and exposes no invented confidence or on-time claim. |
 | X26 authoritative checkout pricing | Recovered early as a release invariant | Cart no longer displays an invented client fee. Checkout obtains an authenticated address-specific backend quote and the mutation revalidates under inventory locks. |
 | Live delivery tracking | Completed and hardened | Assigned-rider GPS writes are ownership-, state-, rate-, accuracy-, timestamp-, and plausibility-guarded. Customer web and mobile surfaces show fresh rider position, accuracy, route and maps; rider mobile exposes assigned-only navigation. Provider route estimates now require pickup plus a rider fix no older than 30 seconds, so store-to-customer or stale-coordinate durations are never presented as live ETA. Exact rider PII stops after delivery, and open offers remain coarse/PII-free. |
 | Old cumulative X01-X04 branch stacks | Obsolete as integration units | Their valid capability intent is recovered above; obsolete migrations and pre-hardening commerce/payment code are not merged. |
@@ -48,12 +49,13 @@ This branch reconciles valid product capabilities from historical feature lineag
 - Support backend lint: pass; workflow plus authorization regression tests: 20 passed.
 - Support web production build: pass; Playwright: 8 passed across four browser profiles.
 - Flutter support surface analysis: no issues; full Flutter tests: 3 passed.
+- Admin delivery-performance backend tests: 4 passed with dispatch regression coverage; web production build passed; Playwright: 4 passed across four browser profiles.
 - No schema change or migration was required for this family.
 
 ## Remaining reconciliation
 
 - Audit and reconcile all remaining historical feature lineages.
-- Audit X09-X25 intelligence lineages and recover only explainable, evidence-backed product behavior.
+- Continue the X26-X70 audit and recover only explainable, evidence-backed product behavior.
 - Remove remaining client-authority leaks or product-surface gaps found by the audit (the hardcoded web delivery fee is resolved).
 - Run full backend, web, Playwright, mobile, migration, and production-preflight validation.
 - Freeze one exact candidate SHA, open one real integration PR, require exact-SHA 4/4 CI, merge, and require exact merged-main 4/4 CI.
