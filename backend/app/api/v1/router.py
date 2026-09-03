@@ -21,6 +21,7 @@ from app.api.v1.routes.refunds import router as refunds_router
 from app.api.v1.routes.reorder import router as reorder_router
 from app.api.v1.routes.store_discovery import router as store_discovery_router
 from app.api.v1.routes.substitutions import router as substitutions_router
+from app.api.v1.routes.support import router as support_router
 from app.api.v1.routes.tracking import router as tracking_router
 from app.api.v1.routes.tracking_hardening import router as tracking_hardening_router
 from app.api.v1.routes.users import router as users_router
@@ -53,5 +54,6 @@ api_router.include_router(payment_hardening_router)
 api_router.include_router(payments_router)
 api_router.include_router(refunds_router)
 api_router.include_router(notifications_router)
+api_router.include_router(support_router)
 api_router.include_router(media_router)
 api_router.include_router(admin_router)

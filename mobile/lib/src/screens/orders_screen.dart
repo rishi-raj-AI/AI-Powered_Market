@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../api/gaon_api.dart';
 import '../models/models.dart';
 import '../widgets/customer_live_tracking.dart';
+import '../widgets/order_support_card.dart';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
@@ -96,6 +97,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 if (order.status == 'out_for_delivery' || order.status == 'delivered') ...[
                   const SizedBox(height: 12),
                   CustomerLiveTracking(orderId: order.id),
+                  OrderSupportCard(orderId: order.id),
                 ],
                 if (order.status == 'delivered') OutlinedButton.icon(onPressed: () => reorder(order, sheetContext), icon: const Icon(Icons.replay), label: const Text('Preview reorder')),
                 const SizedBox(height: 10),

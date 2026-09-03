@@ -18,7 +18,7 @@ This branch reconciles valid product capabilities from historical feature lineag
 | X10 basket recommendations / X27 vertical | Historical scoring obsolete | Same-category inventory was described as “complementary” without basket-affinity evidence. Same-store substitutions remain explicit and stock-authoritative; no unsupported recommendation claim is restored. |
 | X11 store availability / X32 vertical | Recovered through current architecture | Backend-computed `is_open_now` uses Asia/Kolkata rules. Web discovery/storefront and Flutter marketplace now expose Open now / Closed now rather than recomputing hours client-side. |
 | X12 checkout quote / X14 cart health / X19-X21 checkout intelligence | Superseded | The hardened address-specific `/cart/quote` is the single preflight contract. Historical variants duplicated stock/serviceability checks and one invented a fixed ₹20 fee. |
-| X13 order recovery | Superseded in part; unsupported action rejected | Current cancellation, payment state, tracking, explicit reorder and post-pickup recovery routes cover executable actions. The historical generic “contact support” action had no support workflow behind it and is not presented as functional. |
+| X13 / X36 / X42 order support | Selectively recovered | Current cancellation, payment state, tracking, explicit reorder and post-pickup recovery remain direct actions. Durable ownership-checked support tickets now provide the previously missing escalation path, with deterministic triage and an admin-controlled resolution queue on web plus mobile order entry. |
 | X15 / X22 preparation estimate | Historical implementation obsolete | It measured `updated_at - created_at` after unrelated terminal transitions and invented a 30-minute fallback. No preparation promise is shown until an auditable ready timestamp and sufficient samples exist. |
 | X16 / X23 fulfillment recommendation | Historical implementation obsolete | The later version fixed India-local hours but still recommended scheduled modes that checkout cannot persist. Current UI exposes only backend-supported delivery/pickup state. |
 | X17 / X24 repeat cadence | Intent covered without predictive claim | Historical code labeled products “due” from as few as two purchases. Current explicit reorder previews delivered baskets against live price and stock without claiming purchase urgency. |
@@ -44,6 +44,10 @@ This branch reconciles valid product capabilities from historical feature lineag
 - Store-hours/quote backend regression tests: 26 passed; India-local availability remains backend authoritative.
 - Availability/area-first Playwright coverage: 20 passed across Chromium, Firefox, WebKit, and mobile Chrome.
 - Flutter availability/area-first analysis: no issues; Flutter tests: 3 passed.
+- Support migration: single Alembic head `0018_support_tickets`; upgrade pass.
+- Support backend lint: pass; workflow plus authorization regression tests: 20 passed.
+- Support web production build: pass; Playwright: 8 passed across four browser profiles.
+- Flutter support surface analysis: no issues; full Flutter tests: 3 passed.
 - No schema change or migration was required for this family.
 
 ## Remaining reconciliation
