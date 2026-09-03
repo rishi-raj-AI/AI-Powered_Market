@@ -83,12 +83,18 @@ def create_razorpay_refund(
     payload: dict = {"amount": amount_to_subunits(amount), "speed": "normal"}
     if notes:
         payload["notes"] = notes
+    # Razorpay's refund API has a refund-specific idempotency header and only
+    # accepts alphanumerics, hyphens and underscores in its value. Our durable
+    # application key predates that provider restriction and contains a colon,
+    # so normalise only the provider-facing representation. Existing stored
+    # obligations retain their stable application-level key.
+    provider_idempotency_key = idempotency_key.replace(":", "-")
     try:
         with httpx.Client(timeout=15.0) as client:
             response = client.post(
                 f"https://api.razorpay.com/v1/payments/{provider_payment_id}/refund",
                 auth=(settings.RAZORPAY_KEY_ID or "", settings.RAZORPAY_KEY_SECRET or ""),
-                headers={"X-Payment-Idempotency-Key": idempotency_key},
+                headers={"X-Refund-Idempotency": provider_idempotency_key},
                 json=payload,
             )
         response.raise_for_status()
