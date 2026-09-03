@@ -49,7 +49,7 @@ export function LiveTracking({orderId}:{orderId:string}){
 
   return <div className="card stack" aria-live="polite">
     <div className="row space"><div className="row"><Radio size={18}/><strong>Live delivery</strong></div><span className={`badge status-${data.delivery_status||'unassigned'}`}>{label(data.delivery_status||'unassigned')}</span></div>
-    {route?.available&&!stale&&<div className="row space"><div className="row"><Clock3 size={17}/><strong>ETA {duration(route.duration_seconds)}</strong></div><span className="muted">{distance(route.distance_meters)} remaining</span></div>}
+    {route?.available&&!stale&&<div className="row space"><div className="row"><Clock3 size={17}/><strong>Live route estimate {duration(route.duration_seconds)}</strong></div><span className="muted">{distance(route.distance_meters)} remaining</span></div>}
     {route?.available&&stale&&<div className="notice"><AlertTriangle size={17}/> ETA paused until a fresh rider location arrives.</div>}
     {points.length>0&&<LocationMap latitude={center?.lat} longitude={center?.lng} markers={points} encodedPolyline={!stale?route?.encoded_polyline||'':''} height={320} zoom={15}/>} 
     {data.tracking_active?<>

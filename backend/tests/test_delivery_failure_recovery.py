@@ -99,6 +99,25 @@ def test_prepaid_failure_after_pickup_returns_order_and_owes_a_refund() -> None:
         assert any(e.to_status == "returned" for e in events)
 
 
+def test_admin_failed_delivery_queue_is_protected_and_factual() -> None:
+    with session() as db:
+        order, delivery = _failed_after_pickup(db, payment_status=PaymentStatus.PAID)
+        db.commit()
+        delivery_id = str(delivery.id)
+
+    customer = client.post(
+        "/api/v1/auth/verify-otp", json={"phone": "+919000000099", "otp": OTP}
+    ).json()["access_token"]
+    assert client.get("/api/v1/admin/deliveries/failed", headers=auth(customer)).status_code == 403
+
+    response = client.get("/api/v1/admin/deliveries/failed", headers=auth(admin_token()))
+    assert response.status_code == 200, response.text
+    row = next(item for item in response.json() if item["id"] == delivery_id)
+    assert row["status"] == "failed"
+    assert row["failure_reason"] == "customer_unavailable"
+    assert row["picked_up_at"] is not None
+
+
 def test_cod_failure_after_pickup_never_becomes_paid() -> None:
     with session() as db:
         order, delivery = _failed_after_pickup(

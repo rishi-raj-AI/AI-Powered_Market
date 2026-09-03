@@ -47,7 +47,7 @@ def phone(prefix: int) -> str:
     return f"+91{prefix}{int(uuid4().hex[:8], 16) % 1_000_000_000:09d}"
 
 
-def test_customer_sees_only_active_assigned_rider_location() -> None:
+def test_customer_sees_only_active_assigned_rider_location(monkeypatch) -> None:
     admin_token = token("+919000000001")
     merchant_token = token("+919000000003")
     customer_phone = phone(7)
@@ -90,11 +90,17 @@ def test_customer_sees_only_active_assigned_rider_location() -> None:
 
     tracking_before = client.get(f"/api/v1/orders/{order_id}/tracking", headers=auth(customer_token)); assert tracking_before.status_code == 200, tracking_before.text
     assert tracking_before.json()["tracking_active"] is True; assert tracking_before.json()["rider"] is None
+    route_before_pickup = client.get(f"/api/v1/orders/{order_id}/route", headers=auth(customer_token))
+    assert route_before_pickup.status_code == 200
+    assert route_before_pickup.json()["available"] is False
+    assert route_before_pickup.json()["origin"]["latitude"] is None
     forbidden = client.get(f"/api/v1/orders/{order_id}/tracking", headers=auth(stranger_token)); assert forbidden.status_code == 403
 
     first_recorded_at = datetime.now(timezone.utc)
     ping = client.post(f"/api/v1/delivery/{delivery_id}/location", headers=auth(rider_token), json={"latitude": rider_latitude, "longitude": rider_longitude, "accuracy_m": 8.5, "heading_deg": 135, "speed_mps": 4.2, "recorded_at": first_recorded_at.isoformat()})
     assert ping.status_code == 201, ping.text
+    # A genuine rider fix still is not presented as a route ETA before pickup.
+    assert client.get(f"/api/v1/orders/{order_id}/route", headers=auth(customer_token)).json()["available"] is False
 
     too_fast = client.post(f"/api/v1/delivery/{delivery_id}/location", headers=auth(rider_token), json={"latitude": rider_latitude + 0.0001, "longitude": rider_longitude + 0.0001, "accuracy_m": 8.0, "heading_deg": 136, "speed_mps": 4.3, "recorded_at": (first_recorded_at + timedelta(seconds=1)).isoformat()})
     assert too_fast.status_code == 429, too_fast.text
@@ -108,6 +114,19 @@ def test_customer_sees_only_active_assigned_rider_location() -> None:
     assert payload["rider_location_age_seconds"] >= 0; assert payload["store"]["latitude"] is not None; assert payload["customer"]["latitude"] == customer_latitude
 
     picked_up = client.patch(f"/api/v1/delivery/{delivery_id}/status", headers=auth(rider_token), json={"status": "picked_up"}); assert picked_up.status_code == 200, picked_up.text
+    from app.api.v1.routes import tracking as tracking_routes
+
+    monkeypatch.setattr(tracking_routes, "maps_enabled", lambda: True)
+    monkeypatch.setattr(
+        tracking_routes,
+        "compute_route",
+        lambda *_: type("Route", (), {"distance_meters": 1200, "duration_seconds": 420, "encoded_polyline": ""})(),
+    )
+    live_route = client.get(f"/api/v1/orders/{order_id}/route", headers=auth(customer_token))
+    assert live_route.status_code == 200
+    assert live_route.json()["available"] is True
+    assert live_route.json()["provider"] == "google"
+    assert live_route.json()["origin"]["latitude"] == rider_latitude
     challenge = client.post(f"/api/v1/delivery/{delivery_id}/proof/challenge", headers=auth(rider_token)); assert challenge.status_code == 200, challenge.text
     notifications = client.get("/api/v1/notifications/me", headers=auth(customer_token)); assert notifications.status_code == 200, notifications.text
     otp_event = next(item for item in notifications.json() if item["event_type"] == "delivery.otp")

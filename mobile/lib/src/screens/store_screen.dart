@@ -56,6 +56,19 @@ class _StoreScreenState extends State<StoreScreen> {
     }
   }
 
+  Future<void> alternatives(StoreProduct product) async {
+    try {
+      final items = await GaonApi.substitutions(product.id);
+      if (!mounted) return;
+      await showModalBottomSheet<void>(context: context, builder: (sheetContext) => SafeArea(child: Padding(padding: const EdgeInsets.all(20), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Choose a replacement manually', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+        const Text('Nothing is substituted automatically. Checkout revalidates your choice.'),
+        if (items.isEmpty) const Padding(padding: EdgeInsets.only(top: 12), child: Text('No same-store alternative is available.')),
+        ...items.take(3).map((item) => ListTile(contentPadding: EdgeInsets.zero, title: Text('${item['name']}'), subtitle: Text('${item['unit']} • ₹${item['price']}'), trailing: FilledButton(onPressed: () async { await GaonApi.addToCart('${item['listing_id']}'); if (sheetContext.mounted) Navigator.pop(sheetContext); }, child: const Text('Choose')))),
+      ]))));
+    } catch (exception) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$exception'))); }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -91,12 +104,7 @@ class _StoreScreenState extends State<StoreScreen> {
                         style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                       subtitle: Text('${product.unit} • ${product.stock} in stock'),
-                      trailing: FilledButton(
-                        onPressed: product.stock <= 0
-                            ? null
-                            : () => addToCart(product),
-                        child: Text('₹${product.price} +'),
-                      ),
+                      trailing: Wrap(spacing: 6, children: [if (product.stock <= 5) OutlinedButton(onPressed: () => alternatives(product), child: const Text('Alternatives')),FilledButton(onPressed: product.stock <= 0 ? null : () => addToCart(product), child: Text('₹${product.price} +'))]),
                     ),
                   );
                 },

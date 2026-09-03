@@ -3,6 +3,7 @@
 import {FormEvent,useEffect,useState} from 'react';
 import {useRouter} from 'next/navigation';
 import {BriefcaseBusiness,CheckCircle2,ShieldCheck,UserRound} from 'lucide-react';
+import Link from 'next/link';
 import {ApiError,gaonApi,Merchant,User} from '@/lib/api';
 import {Nav} from '@/components/Nav';
 
@@ -53,6 +54,7 @@ export default function AccountPage(){
         <div><strong>Phone</strong><p className="muted">{me?.phone||'—'}</p></div>
         <div><strong>Role</strong><p className="muted" style={{textTransform:'capitalize'}}>{me?.role||'customer'}</p></div>
         <div className="row"><ShieldCheck size={17}/><span>{me?.is_verified?'Phone verified':'Verification pending'}</span></div>
+        <div className="row"><Link className="btn secondary" href="/account/addresses">Saved addresses</Link><Link className="btn ghost" href="/account/devices">Notification devices</Link></div>
       </section>
 
       {merchant?<section className="panel stack">

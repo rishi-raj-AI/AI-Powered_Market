@@ -29,6 +29,19 @@ class CartRead(BaseModel):
     subtotal: Decimal
 
 
+class CheckoutQuoteRead(BaseModel):
+    store_id: uuid.UUID
+    address_id: uuid.UUID
+    subtotal: Decimal
+    delivery_fee: Decimal
+    total: Decimal
+    serviceable: bool
+    inventory_valid: bool
+    store_open: bool
+    checkout_ready: bool
+    blockers: list[str]
+
+
 class CheckoutRequest(BaseModel):
     address_id: uuid.UUID
     payment_method: PaymentMethod = PaymentMethod.COD

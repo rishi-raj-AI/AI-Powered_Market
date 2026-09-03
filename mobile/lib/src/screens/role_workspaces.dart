@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../api/gaon_api.dart';
 import '../models/models.dart';
 
@@ -46,7 +47,7 @@ class _MerchantWorkspaceState extends State<MerchantWorkspace> {
       content: SizedBox(width: 420, child: Column(mainAxisSize: MainAxisSize.min, children: [
         TextField(controller: name, decoration: const InputDecoration(labelText: 'Store name')),
         const SizedBox(height: 10),
-        DropdownButtonFormField<String>(initialValue: village, items: villages.map((item) => DropdownMenuItem(value: item.id, child: Text('${item.name}, ${item.district}'))).toList(), onChanged: (value) { if (value != null) setDialogState(() => village = value); }, decoration: const InputDecoration(labelText: 'Village')),
+        DropdownButtonFormField<String>(initialValue: village, items: villages.map((item) => DropdownMenuItem(value: item.id, child: Text('${item.name}, ${item.district}'))).toList(), onChanged: (value) { if (value != null) setDialogState(() => village = value); }, decoration: const InputDecoration(labelText: 'Area / locality')),
         const SizedBox(height: 10),
         TextField(controller: landmark, decoration: const InputDecoration(labelText: 'Landmark')),
       ])),
@@ -227,6 +228,12 @@ class _DeliveryWorkspaceState extends State<DeliveryWorkspace> {
     if (mounted) setState(() => _locationMessage = message);
   }
 
+  Future<void> openNavigation(DeliveryTaskModel task) async {
+    if (task.customerLatitude == null || task.customerLongitude == null) { snack('Exact navigation becomes available after assignment.'); return; }
+    final uri = Uri.https('www.google.com', '/maps/dir/', {'api': '1', 'destination': '${task.customerLatitude},${task.customerLongitude}', 'travelmode': 'driving'});
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) snack('Could not open navigation on this device.');
+  }
+
   Widget card(DeliveryTaskModel task, bool canClaim) {
     final isThisSharing = sharing && _sharingDeliveryId == task.id;
     final canShare = !canClaim && (task.status == 'assigned' || task.status == 'picked_up');
@@ -238,6 +245,7 @@ class _DeliveryWorkspaceState extends State<DeliveryWorkspace> {
       if (task.recipientPhone != null) SelectableText('Customer: ${task.recipientPhone}'),
       if (task.customerDirections?.isNotEmpty == true) Text('Directions: ${task.customerDirections}'),
       const SizedBox(height: 10),
+      if (!canClaim && task.customerLatitude != null && task.customerLongitude != null) Padding(padding: const EdgeInsets.only(bottom: 10), child: OutlinedButton.icon(onPressed: () => openNavigation(task), icon: const Icon(Icons.navigation_outlined), label: const Text('Navigate to customer'))),
       if (canShare) Padding(padding: const EdgeInsets.only(bottom: 10), child: OutlinedButton.icon(onPressed: () => isThisSharing ? stopLocationSharing() : startLocationSharing(task), icon: Icon(isThisSharing ? Icons.location_off : Icons.my_location), label: Text(isThisSharing ? 'Stop live location' : 'Share live location'))),
       if (canClaim) FilledButton.icon(onPressed: () => claim(task.id), icon: const Icon(Icons.delivery_dining), label: const Text('Claim delivery'))
       else if (task.status == 'assigned') FilledButton(onPressed: () => update(task, 'picked_up'), child: const Text('Mark picked up'))
