@@ -7,7 +7,10 @@ test('customer creates and sees an ownership-checked support ticket',async({page
   await installApiMocks(page,customer);
   let rows:any[]=[];
   await page.route('http://localhost:8000/api/v1/support/tickets/me',r=>r.fulfill({json:rows}));
-  await page.route('http://localhost:8000/api/v1/support/tickets',r=>{rows=[ticket];return r.fulfill({status:201,json:ticket})});
+  await page.route('http://localhost:8000/api/v1/support/tickets',r=>{
+    if(r.request().method()==='POST'){rows=[ticket];return r.fulfill({status:201,json:ticket})}
+    return r.fallback();
+  });
   await page.goto('/support?order_id=order-1');
   await page.getByLabel('What happened?').fill('Refund is missing');
   await page.getByRole('button',{name:'Create ticket'}).click();
