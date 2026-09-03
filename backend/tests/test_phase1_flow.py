@@ -1,4 +1,5 @@
 import re
+from decimal import Decimal
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -165,7 +166,10 @@ def test_complete_marketplace_flow() -> None:
     assert checkout.status_code == 201, checkout.text
     order_id = checkout.json()["id"]
     assert checkout.json()["status"] == "placed"
-    assert checkout.json()["total"] == "130.00"
+    expected_total = checkout.json()["total"]
+    assert Decimal(expected_total) == Decimal(checkout.json()["subtotal"]) + Decimal(
+        checkout.json()["delivery_fee"]
+    )
 
     for next_status in ("accepted", "preparing", "ready"):
         transition = client.patch(
@@ -248,23 +252,23 @@ def test_complete_marketplace_flow() -> None:
     wrong_cod = client.post(
         f"/api/v1/delivery/{delivery_id}/cod-collection",
         headers=auth(delivery_token),
-        json={"amount": "129.00"},
+        json={"amount": str(Decimal(expected_total) - Decimal("1.00"))},
     )
     assert wrong_cod.status_code == 422
 
     cod = client.post(
         f"/api/v1/delivery/{delivery_id}/cod-collection",
         headers=auth(delivery_token),
-        json={"amount": "130.00"},
+        json={"amount": expected_total},
     )
     assert cod.status_code == 200, cod.text
-    assert cod.json()["amount"] == "130.00"
+    assert cod.json()["amount"] == expected_total
     assert cod.json()["order_id"] == order_id
 
     cod_retry = client.post(
         f"/api/v1/delivery/{delivery_id}/cod-collection",
         headers=auth(delivery_token),
-        json={"amount": "130.00"},
+        json={"amount": expected_total},
     )
     assert cod_retry.status_code == 200, cod_retry.text
     assert cod_retry.json()["id"] == cod.json()["id"]

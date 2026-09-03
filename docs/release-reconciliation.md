@@ -72,12 +72,16 @@ This branch reconciles valid product capabilities from historical feature lineag
 - Failed-delivery queue backend lint passed; recovery/dispatch regression tests: 13 passed.
 - Rider incident, admin recovery, customer proof and merchant media: web production build passed; Playwright: 16 passed across four browser profiles.
 - No schema change or migration was required for this family.
+- Final backend validation: Ruff passed across `app` and `tests`; 221 tests passed.
+- Final web validation: clean lockfile install and production build passed; complete Playwright/accessibility matrix: 148 passed across Chromium, Firefox, WebKit and mobile Chrome.
+- Final Flutter validation: dependency resolution and analysis passed with no issues; 3 tests passed.
+- Migration state: one head and current database revision at `0018_support_tickets`; the migration was applied successfully to the local PostGIS development database.
+- Production preflight: production environment validator and Compose rendering passed with CI-safe placeholder configuration; locked backend and Node 22 web production images built successfully.
 
 ## Remaining reconciliation
 
 - Audit and reconcile all remaining historical feature lineages.
 - Remove remaining client-authority leaks or product-surface gaps found by the audit (the hardcoded web delivery fee is resolved).
-- Run full backend, web, Playwright, mobile, migration, and production-preflight validation.
 - Freeze one exact candidate SHA, open one real integration PR, require exact-SHA 4/4 CI, merge, and require exact merged-main 4/4 CI.
 
 No staging or production deployment is performed by this reconciliation branch.

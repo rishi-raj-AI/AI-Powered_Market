@@ -167,7 +167,10 @@ def test_a_poison_event_does_not_stall_newer_ones(monkeypatch) -> None:
         db.commit()
         bad_id, good_id = bad.id, good.id
 
-        flush_pending(db)
+        # Other integration tests can legitimately leave durable outbox rows in
+        # the shared test database. Include the complete test queue so this
+        # assertion measures poison-event isolation rather than batch paging.
+        flush_pending(db, limit=1000)
 
         db.refresh(bad)
         db.refresh(good)

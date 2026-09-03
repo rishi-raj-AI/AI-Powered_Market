@@ -8,6 +8,7 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      - ./docker-compose.prod.yml:/workspace/docker-compose.prod.yml:ro
       - media_data:/app/data/uploads
     depends_on:
       - db

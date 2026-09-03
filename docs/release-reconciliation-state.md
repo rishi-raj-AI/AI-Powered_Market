@@ -8,12 +8,12 @@
 - Superseded capabilities: historical Python/cumulative discovery stacks; X12/X14/X19-X21 duplicate checkout intelligence; X13 actions already backed by current cancellation/tracking/reorder/recovery flows; X17/X24 predictive cadence replaced by explicit live reorder preview
 - Obsolete capabilities: cumulative historical migrations and pre-hardening payment/order code; unsupported popularity/complement scores (X09-X10); fabricated preparation fallback (X15/X22); non-persistable scheduled-mode recommendations (X16/X23); arbitrary merchant trust percentages (X18/X25)
 - Partially completed capability: X05-X06 promise/window audit remains intentionally unrecovered until checkout can persist an auditable fulfillment-window contract
-- Exact next operation: run the final full backend, web, Playwright/a11y, Flutter, migration and production-preflight validation; fix every release defect found
-- Unresolved non-human defects: full-suite and release-preflight findings not yet known
-- Tests run: discovery, quote, alternatives, reorder, store-hours, tracking, support, delivery-performance and failed-recovery Ruff/tests pass; web production builds pass; focused Playwright 100 passed total; Flutter analysis has no errors; Flutter tests 3 passed
-- Tests still required: full backend; full web; full Playwright/a11y; full Flutter analyze/test; migration downgrade/upgrade cycle; production config/build/preflight
+- Exact next operation: commit and push final validation fixes, freeze the candidate SHA, open the real integration PR and run all four exact-SHA CI gates
+- Unresolved non-human defects: none after final local validation
+- Tests run: full Ruff pass; backend 221 passed; clean web build and full Playwright/a11y 148 passed; Flutter analysis clean and 3 tests passed; production environment/Compose validation and locked backend/web image builds passed
+- Tests still required: exact-candidate Backend CI, Web CI, Mobile CI and Production CI; exact merged-main repetition after authorized merge
 - CI status: not started for the integration candidate
 - Integration PR status: not created
 - Merge status: not merged
 - Post-merge status: not started
-- Deploy-readiness status: not ready; reconciliation remains in progress
+- Deploy-readiness status: locally validated; exact-SHA CI and integration remain

@@ -182,7 +182,12 @@ def test_docs_are_not_served_in_production() -> None:
 
 def test_worker_uses_a_worker_liveness_probe_not_the_api_http_probe() -> None:
     """The worker shares the API image but does not listen on port 8000."""
-    compose = (Path(__file__).parents[2] / "docker-compose.prod.yml").read_text()
+    candidates = [
+        Path(__file__).parents[2] / "docker-compose.prod.yml",
+        Path("/workspace/docker-compose.prod.yml"),
+    ]
+    compose_path = next(path for path in candidates if path.is_file())
+    compose = compose_path.read_text()
     worker = compose.split("\n  worker:", 1)[1].split("\n  migrate:", 1)[0]
 
     assert "healthcheck:" in worker
