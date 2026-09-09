@@ -73,6 +73,10 @@ def test_prepaid_failure_after_pickup_returns_order_and_owes_a_refund() -> None:
     assert body["order_status"] == "returned"
     assert body["refund_requested"] is True
 
+    queue = client.get("/api/v1/admin/deliveries/failed", headers=auth(admin_token()))
+    assert queue.status_code == 200, queue.text
+    assert str(delivery_id) not in {item["id"] for item in queue.json()}
+
     with session() as db:
         from app.models.orders import Order
 
