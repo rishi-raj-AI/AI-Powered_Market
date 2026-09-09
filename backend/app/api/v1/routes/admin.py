@@ -129,7 +129,11 @@ def admin_failed_deliveries(
     """Return the operations queue for failed deliveries without changing state."""
     deliveries = db.scalars(
         select(Delivery)
-        .where(Delivery.status == DeliveryStatus.FAILED)
+        .join(Order, Order.id == Delivery.order_id)
+        .where(
+            Delivery.status == DeliveryStatus.FAILED,
+            Order.status != OrderStatus.RETURNED,
+        )
         .order_by(Delivery.failed_at.desc(), Delivery.updated_at.desc())
         .limit(limit)
     ).all()
