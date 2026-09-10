@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../api/gaon_api.dart';
+import '../localization/gaon_strings.dart';
 import '../models/models.dart';
 
 class CartScreen extends StatefulWidget {
@@ -146,6 +147,12 @@ class _CartScreenState extends State<CartScreen> {
 
   Future<void> checkout(AddressModel address, String payment) async {
     try {
+      final quote = await GaonApi.cartQuote(address.id);
+      if (!quote.checkoutReady) {
+        _snack(quote.blockers.isEmpty ? 'Checkout is not available for this address.' : quote.blockers.join(' • '));
+        return;
+      }
+      if (!mounted || !await _confirmQuote(quote, payment)) return;
       final order = await GaonApi.checkout(address.id, payment);
       if (!mounted) return;
       if (payment == 'upi') {
@@ -169,6 +176,13 @@ class _CartScreenState extends State<CartScreen> {
       _snack(e.toString());
     }
   }
+
+  Future<bool> _confirmQuote(CheckoutQuoteModel quote, String payment) async {
+    final strings = GaonStrings.of(context);
+    return await showDialog<bool>(context: context, builder: (context) => AlertDialog(title: const Text('Confirm order'), content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [_quoteRow(strings.text('subtotal'), quote.subtotal), _quoteRow(strings.text('deliveryFee'), quote.deliveryFee), const Divider(), _quoteRow(strings.text('total'), quote.total, strong: true), const SizedBox(height: 12), Text(payment == 'cod' ? 'Payment: Cash on delivery' : 'Payment: UPI / online')]), actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Place order'))])) ?? false;
+  }
+
+  Widget _quoteRow(String label, String amount, {bool strong = false}) => Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(label), Text('₹$amount', style: strong ? const TextStyle(fontWeight: FontWeight.w800) : null)]));
 
   void _snack(String text) {
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));

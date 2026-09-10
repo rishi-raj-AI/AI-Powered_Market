@@ -3,11 +3,13 @@ import {activeRider,customer,installApiMocks,merchantUser,superAdmin} from './he
 
 test('rider reports an assigned delivery incident through the guarded endpoint',async({page})=>{
   await installApiMocks(page,activeRider);
-  await page.route('http://localhost:8000/api/v1/delivery/delivery-assigned/fail',route=>route.fulfill({json:{id:'delivery-assigned',status:'failed',...route.request().postDataJSON()}}));
+  let submitted:unknown;
+  await page.route('http://localhost:8000/api/v1/delivery/delivery-assigned/fail',route=>{submitted=route.request().postDataJSON();return route.fulfill({json:{id:'delivery-assigned',status:'failed',...route.request().postDataJSON()}})});
   await page.goto('/delivery/incidents');
   await page.getByRole('combobox').first().selectOption('delivery-assigned');
   await page.getByRole('button',{name:'Report incident'}).click();
   await expect(page.getByText('Delivery incident recorded for operations review.')).toBeVisible();
+  expect(submitted).toEqual({reason:'customer_unavailable',notes:null,evidence_url:null});
 });
 
 test('admin recovery action follows recorded custody',async({page})=>{

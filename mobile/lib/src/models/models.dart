@@ -97,6 +97,21 @@ class CartModel {
   factory CartModel.fromJson(Map<String, dynamic> j) => CartModel(id: j['id'], storeId: j['store_id'], items: (j['items'] as List<dynamic>).map((e) => CartItemModel.fromJson(e)).toList(), subtotal: j['subtotal'].toString());
 }
 
+class CheckoutQuoteModel {
+  final String storeId;
+  final String addressId;
+  final String subtotal;
+  final String deliveryFee;
+  final String total;
+  final bool serviceable;
+  final bool inventoryValid;
+  final bool storeOpen;
+  final bool checkoutReady;
+  final List<String> blockers;
+  CheckoutQuoteModel({required this.storeId, required this.addressId, required this.subtotal, required this.deliveryFee, required this.total, required this.serviceable, required this.inventoryValid, required this.storeOpen, required this.checkoutReady, required this.blockers});
+  factory CheckoutQuoteModel.fromJson(Map<String, dynamic> j) => CheckoutQuoteModel(storeId: j['store_id'], addressId: j['address_id'], subtotal: j['subtotal'].toString(), deliveryFee: j['delivery_fee'].toString(), total: j['total'].toString(), serviceable: j['serviceable'] ?? false, inventoryValid: j['inventory_valid'] ?? false, storeOpen: j['store_open'] ?? false, checkoutReady: j['checkout_ready'] ?? false, blockers: (j['blockers'] as List<dynamic>? ?? const []).map((item) => item.toString()).toList());
+}
+
 class AddressModel {
   final String id;
   final String villageId;

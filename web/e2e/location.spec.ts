@@ -15,6 +15,26 @@ test('customer can discover and verify an exact delivery location',async({page})
   await expect(page.getByText(/Pinned coordinates:/i)).toBeVisible();
 });
 
+test('customer can save a landmark address without granting exact location',async({page})=>{
+  await installApiMocks(page);
+  let submitted:any;
+  await page.route('http://localhost:8000/api/v1/addresses/me',async route=>{
+    if(route.request().method()==='POST'){
+      submitted=route.request().postDataJSON();
+      return route.fulfill({status:201,json:{id:'address-manual',...submitted}});
+    }
+    return route.fulfill({json:[]});
+  });
+  await page.goto('/checkout');
+  await page.getByRole('button',{name:/Add address/i}).click();
+  await page.getByLabel('Area / locality *').selectOption('village-niphad');
+  await page.getByLabel('Landmark *').fill('Near Niphad bus stand');
+  await page.getByRole('button',{name:'Save address'}).click();
+  await expect.poll(()=>submitted).toBeTruthy();
+  expect(submitted.latitude).toBeUndefined();
+  expect(submitted.longitude).toBeUndefined();
+});
+
 test('approved merchant can resolve a storefront with area-first location language',async({page})=>{
   await installApiMocks(page,merchantUser);
   await page.goto('/merchant');

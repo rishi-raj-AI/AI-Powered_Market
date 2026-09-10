@@ -1,0 +1,99 @@
+:root {
+  /* Legacy aliases are consumed, never replaced. */
+  --go-green-700: #145b33;
+  --go-green-600: #1f7a45;
+  --go-green-50: #eaf4ed;
+  --go-neutral-0: #fff;
+  --go-neutral-50: #f6f8f4;
+  --go-neutral-100: #e8ece7;
+  --go-neutral-200: #dfe7df;
+  --go-neutral-500: #7c877f;
+  --go-neutral-600: #667069;
+  --go-neutral-900: #17221a;
+  --go-red-700: #b42318;
+  --go-red-50: #fff0ee;
+  --go-amber-700: #765000;
+  --go-amber-50: #fff8db;
+  --go-blue-700: #3456a3;
+  --go-blue-50: #eef4ff;
+  --go-surface-canvas: var(--bg);
+  --go-surface-card: var(--surface);
+  --go-surface-subtle: var(--soft);
+  --go-surface-disabled: var(--go-neutral-100);
+  --go-text-primary: var(--ink);
+  --go-text-secondary: var(--muted);
+  --go-text-inverse: var(--go-neutral-0);
+  --go-text-brand: var(--brand2);
+  --go-text-disabled: var(--go-neutral-600);
+  --go-border-default: var(--line);
+  --go-border-input: var(--go-neutral-500);
+  --go-border-selected: var(--brand);
+  --go-focus-ring: var(--brand2);
+  --go-action-primary: var(--brand);
+  --go-action-pressed: var(--brand2);
+  --go-action-secondary: var(--soft);
+  --go-action-destructive: var(--danger);
+  --go-status-success-bg: var(--soft);
+  --go-status-success-text: var(--brand2);
+  --go-status-warning-bg: var(--go-amber-50);
+  --go-status-warning-text: var(--go-amber-700);
+  --go-status-error-bg: var(--go-red-50);
+  --go-status-error-text: var(--danger);
+  --go-status-info-bg: var(--go-blue-50);
+  --go-status-info-text: var(--go-blue-700);
+  --go-spacing-4: 4px;
+  --go-spacing-8: 8px;
+  --go-spacing-12: 12px;
+  --go-spacing-16: 16px;
+  --go-spacing-24: 24px;
+  --go-spacing-32: 32px;
+  --go-spacing-48: 48px;
+  --go-radius-8: 8px;
+  --go-radius-12: 12px;
+  --go-radius-16: 16px;
+  --go-radius-24: 24px;
+  --go-target-min: 48px;
+  --go-target-primary: 56px;
+  --go-layout-gutter-mobile: 16px;
+  --go-layout-gutter-tablet: 24px;
+  --go-layout-gutter-desktop: 32px;
+  --go-layout-content-max: 1180px;
+  --go-layout-viewport-320: 320px;
+  --go-layout-viewport-360: 360px;
+  --go-layout-viewport-390: 390px;
+  --go-layout-viewport-tablet: 768px;
+  --go-layout-viewport-desktop: 1440px;
+  --go-stroke-default: 1px;
+  --go-stroke-focus: 2px;
+  --go-motion-duration-standard: 150ms;
+  --go-motion-duration-reduced: 0ms;
+  --go-body-size: 1rem;
+  --go-body-line: 1.5rem;
+  --go-supporting-size: 0.875rem;
+  --go-supporting-line: 1.25rem;
+  --go-label-size: 1rem;
+  --go-label-line: 1.5rem;
+  --go-title-small-size: 1.25rem;
+  --go-title-small-line: 1.75rem;
+  --go-title-large-size: 1.5rem;
+  --go-title-large-line: 2rem;
+  --go-family-latin: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --go-family-devanagari: "Noto Sans Devanagari", var(--go-family-latin);
+}
+
+.goNotice-success { background: var(--go-status-success-bg); color: var(--go-status-success-text); }
+.goNotice-warning { background: var(--go-status-warning-bg); color: var(--go-status-warning-text); }
+.goNotice-error { background: var(--go-status-error-bg); color: var(--go-status-error-text); }
+.goNotice-info { background: var(--go-status-info-bg); color: var(--go-status-info-text); }
+.goButton { min-height: var(--go-target-primary); }
+.goButton:focus-visible,
+.goField input:focus-visible {
+  outline: var(--go-stroke-focus) solid var(--go-focus-ring);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--go-surface-card);
+}
+.goField input { min-height: var(--go-target-min); }
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --go-motion-duration-standard: var(--go-motion-duration-reduced); }
+}
