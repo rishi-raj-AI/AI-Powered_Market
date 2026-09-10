@@ -21,14 +21,17 @@ Build a production-ready platform that connects customers, local merchants and d
 - Web/Admin: Next.js
 - Containers: Docker
 
-## Sprint 1
-1. Backend foundation
-2. PostgreSQL/PostGIS connectivity
-3. Health endpoint
-4. Authentication and role model
-5. Village/service area model
-6. Merchant/store/product models
-7. First Flutter shell
+## Delivery-first foundation — complete
+
+The delivery-first foundation and Waves 1–6 implementation program are
+integrated on `main`. This includes authoritative pricing and inventory,
+delivery lifecycle and proof controls, PostGIS serviceability and dispatch,
+payment/COD/refund/settlement boundaries, tracking, notifications, and the
+customer, merchant, rider, and admin product surfaces.
+
+The next operating stage is **staging E2E validation and launch preparation**:
+configure the required provider credentials, exercise real provider flows in
+staging, and retain exact-SHA CI evidence before any production decision.
 
 ## Local backend quick start
 
@@ -43,4 +46,8 @@ Then open:
 - Health: http://localhost:8000/api/v1/health
 
 ## Status
-Foundation setup in progress.
+Foundation complete. The current deployable integration commit is
+`5528f86224ba2cf2533d9f5632740286c2009a14`; its Backend, Web, Mobile, and
+Production CI workflows passed. See `docs/release-reconciliation-state.md` for
+the integration record and `docs/PRODUCTION_DEPLOYMENT.md` for the staging
+deployment procedure.
