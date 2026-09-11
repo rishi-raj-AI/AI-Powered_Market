@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, time, timezone
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.db.session import SessionLocal
 from app.models.commerce import (
@@ -65,8 +65,14 @@ def cleanup_tracked() -> None:
         SettlementEntry,
     )
     from app.models.orders import DeliveryLocation, DeliveryProof, StatusTransitionEvent
-
     with SessionLocal() as db:
+        tracked_user_ids = [row_id for model, row_id in tracked if model is User]
+        tracked_resource_ids = {str(row_id) for _, row_id in tracked}
+        if tracked_user_ids or tracked_resource_ids:
+            # The production table is UPDATE/DELETE protected. Tests use a
+            # disposable database and TRUNCATE only to release audit FKs
+            # between isolated cases; no application path can issue this.
+            db.execute(text("TRUNCATE TABLE administrative_audit_events"))
         order_ids = [row_id for model, row_id in tracked if model is Order]
         delivery_ids = [
             row_id

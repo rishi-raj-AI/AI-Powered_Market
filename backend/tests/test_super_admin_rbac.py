@@ -71,9 +71,16 @@ def test_super_admin_controls_admin_roles_and_is_protected():
     )
     assert forbidden_admin_promotion.status_code == 403
 
-    allowed_rider_promotion = client.patch(
+    forbidden_rider_promotion = client.patch(
         f"/api/v1/admin/users/{candidate_id}/role",
         headers=auth(normal_admin_token),
+        json={"role": "delivery", "is_active": True},
+    )
+    assert forbidden_rider_promotion.status_code == 403
+
+    allowed_rider_promotion = client.patch(
+        f"/api/v1/admin/users/{candidate_id}/role",
+        headers=auth(super_token),
         json={"role": "delivery", "is_active": True},
     )
     assert allowed_rider_promotion.status_code == 200, allowed_rider_promotion.text

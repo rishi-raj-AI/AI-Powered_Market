@@ -4,10 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, get_db, require_roles
+from app.api.deps import get_current_user, get_db, require_capability
+from app.core.capabilities import Capability
 from app.core.config import settings
 from app.models.integrations import DeviceRegistration, NotificationEvent
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.schemas.integrations import DeviceRegistrationCreate, DeviceRegistrationRead, NotificationConfigResponse, NotificationEventRead
 from app.services.fcm import flush_pending
 
@@ -48,5 +49,8 @@ def my_notifications(limit:int=Query(default=50,ge=1,le=100), db:Session=Depends
     return db.scalars(select(NotificationEvent).where(NotificationEvent.user_id==user.id).order_by(NotificationEvent.created_at.desc()).limit(limit)).all()
 
 @router.post("/flush")
-def flush_notifications(db:Session=Depends(get_db), _:User=Depends(require_roles(UserRole.ADMIN))):
+def flush_notifications(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_capability(Capability.NOTIFICATION_OPERATIONS)),
+):
     return flush_pending(db)

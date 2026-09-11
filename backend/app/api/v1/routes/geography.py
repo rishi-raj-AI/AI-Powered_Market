@@ -2,17 +2,19 @@ import uuid
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, get_db, require_roles
+from app.api.deps import get_current_user, get_db, require_capability
+from app.core.capabilities import Capability
 from app.models.geography import Address, ServiceArea, Village
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.schemas.geography import AddressCreate, AddressRead, PlaceDetailsRead, PlaceSuggestion, ReverseGeocodeRead, ServiceAreaCreate, ServiceAreaRead, ServiceabilityRead, VillageCreate, VillageRead
 from app.services.places import PlacesUnavailable, autocomplete, place_details, reverse_geocode
 from app.services.rate_limit import RateLimitExceeded, RateLimitUnavailable, rate_limiter
 from app.services.spatial import serviceability_for_point
+from app.services.governance_audit import record_admin_action
 
 router = APIRouter(tags=["Geography"])
 
@@ -50,9 +52,16 @@ def list_villages(q: str | None = None, db: Session = Depends(get_db)):
 
 
 @router.post("/villages", response_model=VillageRead, status_code=status.HTTP_201_CREATED)
-def create_village(payload: VillageCreate, db: Session = Depends(get_db), _: User = Depends(require_roles(UserRole.ADMIN))):
+def create_village(payload: VillageCreate, request: Request, db: Session = Depends(get_db), admin: User = Depends(require_capability(Capability.GEOGRAPHY_MANAGE))):
     village = Village(**payload.model_dump())
     db.add(village)
+    db.flush()
+    record_admin_action(
+        db, request=request, actor=admin, action="geography.locality_created",
+        capability=Capability.GEOGRAPHY_MANAGE, resource_type="village", resource_id=village.id,
+        resulting_state={"name": village.name, "district": village.district, "state": village.state},
+        reason="service_geography_administration",
+    )
     db.commit()
     db.refresh(village)
     return village
@@ -64,11 +73,18 @@ def list_service_areas(db: Session = Depends(get_db)):
 
 
 @router.post("/service-areas", response_model=ServiceAreaRead, status_code=status.HTTP_201_CREATED)
-def create_service_area(payload: ServiceAreaCreate, db: Session = Depends(get_db), _: User = Depends(require_roles(UserRole.ADMIN))):
+def create_service_area(payload: ServiceAreaCreate, request: Request, db: Session = Depends(get_db), admin: User = Depends(require_capability(Capability.GEOGRAPHY_MANAGE))):
     if db.get(Village, payload.hub_village_id) is None:
         raise HTTPException(status_code=404, detail="Hub village not found")
     area = ServiceArea(**payload.model_dump())
     db.add(area)
+    db.flush()
+    record_admin_action(
+        db, request=request, actor=admin, action="geography.service_area_created",
+        capability=Capability.GEOGRAPHY_MANAGE, resource_type="service_area", resource_id=area.id,
+        resulting_state={"name": area.name, "hub_village_id": str(area.hub_village_id), "radius_km": area.radius_km, "delivery_fee": str(area.delivery_fee) if area.delivery_fee is not None else None},
+        reason="service_geography_administration",
+    )
     db.commit()
     db.refresh(area)
     return area

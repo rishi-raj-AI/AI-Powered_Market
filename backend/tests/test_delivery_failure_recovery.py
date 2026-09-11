@@ -9,8 +9,11 @@ The order was stranded forever and prepaid money with it.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from uuid import uuid4
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
+from app.db.session import SessionLocal
 from app.main import app
 from app.models.integrations import CodCollection, SettlementEntry
 from app.models.orders import (
@@ -21,7 +24,7 @@ from app.models.orders import (
     PaymentStatus,
     StatusTransitionEvent,
 )
-from app.models.user import UserRole
+from app.models.user import User, UserRole
 from app.services.refunds import get_refund_for_order
 from app.services.settlements import SETTLEMENT_VOIDED, ensure_settlement_entry
 from tests.factories import make_order, make_user, session
@@ -31,8 +34,18 @@ OTP = "123456"
 
 
 def admin_token() -> str:
-    response = client.post("/api/v1/auth/verify-otp", json={"phone": "+919000000001", "otp": OTP})
+    phone = f"+915{int(uuid4().hex[:8], 16) % 1_000_000_000:09d}"
+    response = client.post(
+        "/api/v1/auth/verify-otp",
+        json={"phone": phone, "otp": OTP, "full_name": "Recovery Super Admin"},
+    )
     assert response.status_code == 200, response.text
+    with SessionLocal() as db:
+        admin = db.scalar(select(User).where(User.phone == phone))
+        assert admin is not None
+        admin.role = UserRole.ADMIN
+        admin.is_super_admin = True
+        db.commit()
     return response.json()["access_token"]
 
 

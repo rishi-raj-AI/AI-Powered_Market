@@ -7,7 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, get_db, require_roles
+from app.api.deps import ensure_capability, get_current_user, get_db, require_roles
+from app.core.capabilities import Capability
 from app.models.commerce import Merchant
 from app.models.integrations import PaymentAttempt, PaymentRefund, PaymentWebhookEvent, SettlementEntry
 from app.models.orders import Order, OrderStatus, PaymentStatus
@@ -216,6 +217,8 @@ def list_settlements(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.MERCHANT, UserRole.ADMIN)),
 ):
+    if user.role == UserRole.ADMIN:
+        ensure_capability(user, Capability.SETTLEMENT_READ)
     stmt = select(SettlementEntry).order_by(SettlementEntry.created_at.desc())
     if user.role == UserRole.MERCHANT:
         merchant = db.scalar(select(Merchant).where(Merchant.owner_user_id == user.id))

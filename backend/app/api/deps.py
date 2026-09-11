@@ -7,6 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.core.security import decode_access_token
+from app.core.capabilities import Capability, has_capability
 from app.db.session import SessionLocal
 from app.models.user import User, UserRole
 
@@ -45,5 +46,22 @@ def require_roles(*roles: UserRole):
         if current_user.role not in roles:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
         return current_user
+
+    return dependency
+
+
+def ensure_capability(current_user: User, capability: Capability) -> User:
+    """Enforce an explicit capability outside dependency-only route shapes."""
+    if not has_capability(current_user, capability):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Missing required capability: {capability.value}",
+        )
+    return current_user
+
+
+def require_capability(capability: Capability):
+    def dependency(current_user: User = Depends(get_current_user)) -> User:
+        return ensure_capability(current_user, capability)
 
     return dependency

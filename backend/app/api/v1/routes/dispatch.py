@@ -1,11 +1,12 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_roles
+from app.api.deps import get_db, require_capability, require_roles
+from app.core.capabilities import Capability
 from app.models.commerce import Store
 from app.models.dispatch import RiderPresence
 from app.models.orders import Delivery, DeliveryStatus, Order, OrderStatus
@@ -19,6 +20,7 @@ from app.schemas.dispatch import (
 from app.services.notifications import enqueue_notification
 from app.services.order_transitions import transition_delivery
 from app.services.spatial import nearest_eligible_rider
+from app.services.governance_audit import record_admin_action
 
 router = APIRouter(tags=["Dispatch"])
 
@@ -55,8 +57,9 @@ def my_rider_presence(
 def auto_assign_delivery(
     delivery_id: uuid.UUID,
     payload: AutoDispatchRequest,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.ADMIN)),
+    admin: User = Depends(require_capability(Capability.RIDER_OPERATIONS)),
 ):
     delivery = db.scalar(select(Delivery).where(Delivery.id == delivery_id).with_for_update())
     if delivery is None:
@@ -111,6 +114,13 @@ def auto_assign_delivery(
         title="Delivery partner assigned",
         body=f"{rider.full_name or 'Your delivery partner'} is assigned to order {order.order_number}.",
         data={"order_id": str(order.id), "order_number": order.order_number, "delivery_id": str(delivery.id)},
+    )
+    record_admin_action(
+        db, request=request, actor=admin, action="delivery.auto_assigned",
+        capability=Capability.RIDER_OPERATIONS, resource_type="delivery", resource_id=delivery.id,
+        previous_state={"status": DeliveryStatus.UNASSIGNED.value, "delivery_partner_id": None},
+        resulting_state={"status": delivery.status.value, "delivery_partner_id": str(rider.id)},
+        reason="automatic_dispatch_requested_by_admin",
     )
     enqueue_notification(
         db,

@@ -1,10 +1,11 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, get_db, require_roles
+from app.api.deps import ensure_capability, get_current_user, get_db, require_roles
+from app.core.capabilities import Capability
 from app.models.commerce import Merchant, MerchantStatus, Store
 from app.models.orders import Order, OrderStatus
 from app.models.user import User, UserRole
@@ -22,6 +23,7 @@ from app.services.refunds import (
     try_dispatch_order_refund,
 )
 from app.services.stock import restore_order_stock_once
+from app.services.governance_audit import record_admin_action
 
 router = APIRouter(tags=["Order Mutations"])
 
@@ -105,6 +107,7 @@ def cancel_my_order_safely(
 def update_order_status_safely(
     order_id: uuid.UUID,
     payload: OrderStatusUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.MERCHANT, UserRole.ADMIN)),
 ):
@@ -119,6 +122,8 @@ def update_order_status_safely(
             raise HTTPException(status_code=403, detail="Order does not belong to your store")
         if merchant.status != MerchantStatus.APPROVED:
             raise HTTPException(status_code=403, detail="Merchant is not active")
+    else:
+        ensure_capability(user, Capability.ORDER_OPERATIONS)
 
     if payload.status not in MERCHANT_ASSIGNABLE_STATUSES:
         # RETURNED and DELIVERED carry financial consequences and are owned by
@@ -135,6 +140,10 @@ def update_order_status_safely(
 
     store_refund = None
     if payload.status == OrderStatus.CANCELLED:
+        if user.role == UserRole.ADMIN:
+            # Cancellation creates and may immediately dispatch a real refund.
+            # Operational admin authority is not financial authority.
+            ensure_capability(user, Capability.REFUND_WRITE)
         restore_order_stock_once(db, order)
         store_refund = ensure_refund_request(db, order, reason=REFUND_REASON_CANCELLED)
         _notify_customer(
@@ -162,6 +171,7 @@ def update_order_status_safely(
             "Your order is ready for pickup by a delivery partner.",
         )
 
+    previous_status = order.status.value
     transition_order(order, payload.status)
     annotate_order_transition(
         db,
@@ -170,6 +180,20 @@ def update_order_status_safely(
         actor_user_id=user.id,
         reason="merchant_status_update",
     )
+    if user.role == UserRole.ADMIN:
+        capability = Capability.REFUND_WRITE if payload.status == OrderStatus.CANCELLED else Capability.ORDER_OPERATIONS
+        record_admin_action(
+            db,
+            request=request,
+            actor=user,
+            action="order.status_updated",
+            capability=capability,
+            resource_type="order",
+            resource_id=order.id,
+            previous_state={"status": previous_status},
+            resulting_state={"status": order.status.value, "refund_requested": store_refund is not None},
+            reason="admin_order_cancellation" if payload.status == OrderStatus.CANCELLED else "admin_order_operations",
+        )
     db.commit()
     if store_refund is not None:
         try_dispatch_order_refund(db, order.id)

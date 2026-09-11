@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, get_db, require_roles
+from app.api.deps import ensure_capability, get_current_user, get_db, require_roles
+from app.core.capabilities import Capability
 from app.models.commerce import Merchant, Store
 from app.models.geography import Address
 from app.models.orders import Delivery, DeliveryLocation, DeliveryStatus, Order
@@ -53,6 +54,8 @@ def _location_read(location: DeliveryLocation) -> DeliveryLocationRead:
 
 
 def _tracking_context(db: Session, order_id: uuid.UUID, user: User):
+    if user.role == UserRole.ADMIN:
+        ensure_capability(user, Capability.ORDER_READ)
     order = db.get(Order, order_id)
     if order is None:
         raise HTTPException(status_code=404, detail="Order not found")

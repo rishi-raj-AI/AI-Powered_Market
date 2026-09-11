@@ -2,11 +2,12 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, get_db, require_roles
+from app.api.deps import ensure_capability, get_current_user, get_db, require_roles
+from app.core.capabilities import Capability
 from app.models.commerce import Merchant, MerchantStatus, Store, StoreProduct
 from app.models.geography import Address
 from app.models.orders import (
@@ -41,6 +42,7 @@ from app.services.order_transitions import (
 )
 from app.services.refunds import REFUND_REASON_CANCELLED, ensure_refund_request
 from app.services.store_hours import store_is_open
+from app.services.governance_audit import record_admin_action
 
 router = APIRouter(tags=["Orders & Delivery"])
 
@@ -386,6 +388,8 @@ def merchant_orders(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.MERCHANT, UserRole.ADMIN)),
 ):
+    if user.role == UserRole.ADMIN:
+        ensure_capability(user, Capability.ORDER_READ)
     stmt = select(Order).order_by(Order.created_at.desc())
     if user.role != UserRole.ADMIN:
         merchant = db.scalar(select(Merchant).where(Merchant.owner_user_id == user.id))
@@ -400,6 +404,7 @@ def merchant_orders(
 def update_order_status(
     order_id: uuid.UUID,
     payload: OrderStatusUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.MERCHANT, UserRole.ADMIN)),
 ):
@@ -413,6 +418,8 @@ def update_order_status(
             raise HTTPException(status_code=403, detail="Order does not belong to your store")
         if merchant.status != MerchantStatus.APPROVED:
             raise HTTPException(status_code=403, detail="Merchant is not active")
+    else:
+        ensure_capability(user, Capability.ORDER_OPERATIONS)
 
     if not can_transition_order(order.status, payload.status):
         raise HTTPException(
@@ -421,6 +428,8 @@ def update_order_status(
         )
 
     if payload.status == OrderStatus.CANCELLED:
+        if user.role == UserRole.ADMIN:
+            ensure_capability(user, Capability.REFUND_WRITE)
         _restore_cancelled_stock(db, order)
         ensure_refund_request(db, order, reason=REFUND_REASON_CANCELLED)
         _notify_customer(
@@ -437,7 +446,16 @@ def update_order_status(
     elif payload.status == OrderStatus.READY:
         _notify_customer(db, order, "order.ready", "Order ready", "Your order is ready for pickup by a delivery partner.")
 
+    previous_status = order.status.value
     transition_order(order, payload.status)
+    if user.role == UserRole.ADMIN:
+        record_admin_action(
+            db, request=request, actor=user, action="order.status_updated",
+            capability=Capability.REFUND_WRITE if payload.status == OrderStatus.CANCELLED else Capability.ORDER_OPERATIONS,
+            resource_type="order", resource_id=order.id,
+            previous_state={"status": previous_status}, resulting_state={"status": order.status.value},
+            reason="legacy_admin_order_cancellation" if payload.status == OrderStatus.CANCELLED else "legacy_admin_order_operations",
+        )
     db.commit()
     db.refresh(order)
     return order
@@ -447,8 +465,10 @@ def update_order_status(
 def available_deliveries(
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.DELIVERY, UserRole.ADMIN)),
+    user: User = Depends(require_roles(UserRole.DELIVERY, UserRole.ADMIN)),
 ):
+    if user.role == UserRole.ADMIN:
+        ensure_capability(user, Capability.RIDER_READ)
     stmt = (
         select(Delivery)
         .join(Order, Delivery.order_id == Order.id)
@@ -467,6 +487,8 @@ def my_deliveries(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.DELIVERY, UserRole.ADMIN)),
 ):
+    if user.role == UserRole.ADMIN:
+        ensure_capability(user, Capability.RIDER_READ)
     stmt = select(Delivery).order_by(Delivery.updated_at.desc()).limit(limit)
     if user.role != UserRole.ADMIN:
         stmt = stmt.where(Delivery.delivery_partner_id == user.id)
@@ -541,13 +563,16 @@ def update_delivery_status(
     # handler now has no branch that could act on them even if that changed.
     delivery_id: uuid.UUID,
     payload: DeliveryStatusUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.DELIVERY, UserRole.ADMIN)),
 ):
     delivery = db.scalar(select(Delivery).where(Delivery.id == delivery_id).with_for_update())
     if delivery is None:
         raise HTTPException(status_code=404, detail="Delivery not found")
-    if user.role != UserRole.ADMIN and delivery.delivery_partner_id != user.id:
+    if user.role == UserRole.ADMIN:
+        ensure_capability(user, Capability.RIDER_OPERATIONS)
+    elif delivery.delivery_partner_id != user.id:
         raise HTTPException(status_code=403, detail="Delivery is not assigned to you")
     if not can_transition_delivery(delivery.status, payload.status):
         raise HTTPException(
@@ -595,6 +620,13 @@ def update_delivery_status(
         )
 
     transition_delivery(delivery, payload.status)
+    if user.role == UserRole.ADMIN:
+        record_admin_action(
+            db, request=request, actor=user, action="delivery.status_updated",
+            capability=Capability.RIDER_OPERATIONS, resource_type="delivery", resource_id=delivery.id,
+            resulting_state={"delivery_status": delivery.status.value, "order_status": order.status.value},
+            reason="legacy_admin_delivery_operations",
+        )
     db.commit()
     db.refresh(delivery)
     return delivery
