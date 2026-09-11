@@ -48,6 +48,9 @@ def upgrade() -> None:
             "administrative_audit_events",
             [column],
         )
+    # This protects application DML. As with any owner-managed PostgreSQL
+    # trigger, a database owner can still alter/drop the trigger or truncate
+    # the table; database-owner access therefore remains a separate control.
     op.execute(
         """
         CREATE FUNCTION prevent_administrative_audit_mutation()

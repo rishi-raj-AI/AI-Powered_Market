@@ -5,7 +5,7 @@ import {AlertTriangle,Boxes,IndianRupee,MapPinned,PackageCheck,RefreshCw,ShieldC
 import {AdminOverview,api,DeliveryTaskOffer,gaonApi,Merchant,MerchantStatus,User} from '@/lib/api';
 import {Nav} from '@/components/Nav';
 
-const money=(value:string|number)=>new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(Number(value||0));
+const money=(value:string|number|null|undefined)=>value==null?'—':new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(Number(value));
 const label=(value:string)=>value.replaceAll('_',' ').replace(/\b\w/g,char=>char.toUpperCase());
 type AdminUser=User&{is_super_admin?:boolean};
 type ActiveDelivery={id:string;order_id:string;order_number?:string;delivery_partner_id?:string;rider_name?:string;rider_phone?:string;status:string;assigned_at?:string;store_name?:string;store_landmark?:string;customer_landmark?:string};

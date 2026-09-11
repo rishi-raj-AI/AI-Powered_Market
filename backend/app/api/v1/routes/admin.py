@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ensure_capability, get_db, require_capability
-from app.core.capabilities import Capability
+from app.core.capabilities import Capability, has_capability
 from app.models.commerce import Merchant, MerchantStatus, Store, StoreProduct
 from app.models.geography import Address, Village
 from app.models.governance import AdministrativeAuditEvent
@@ -271,7 +271,10 @@ def admin_unassign_delivery(
 
 
 @router.get("/overview")
-def admin_overview(db: Session = Depends(get_db), _: User = Depends(require_capability(Capability.ORDER_READ))) -> dict:
+def admin_overview(
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_capability(Capability.ORDER_READ)),
+) -> dict:
     user_count = db.scalar(select(func.count()).select_from(User)) or 0
     village_count = db.scalar(select(func.count()).select_from(Village).where(Village.is_active.is_(True))) or 0
     active_store_count = db.scalar(select(func.count()).select_from(Store).where(Store.is_active.is_(True))) or 0
@@ -280,15 +283,19 @@ def admin_overview(db: Session = Depends(get_db), _: User = Depends(require_capa
     suspended_merchants = db.scalar(select(func.count()).select_from(Merchant).where(Merchant.status == MerchantStatus.SUSPENDED)) or 0
     delivery_users = db.scalar(select(func.count()).select_from(User).where(User.role == UserRole.DELIVERY, User.is_active.is_(True))) or 0
     total_orders = db.scalar(select(func.count()).select_from(Order)) or 0
-    paid_gmv = db.scalar(select(func.coalesce(func.sum(Order.total), 0)).where(Order.payment_status == PaymentStatus.PAID)) or Decimal("0")
-    gross_order_value = db.scalar(select(func.coalesce(func.sum(Order.total), 0)).where(Order.status != OrderStatus.CANCELLED)) or Decimal("0")
+    can_read_financials = has_capability(admin, Capability.PAYMENT_READ)
+    paid_gmv = None
+    gross_order_value = None
+    if can_read_financials:
+        paid_gmv = db.scalar(select(func.coalesce(func.sum(Order.total), 0)).where(Order.payment_status == PaymentStatus.PAID)) or Decimal("0")
+        gross_order_value = db.scalar(select(func.coalesce(func.sum(Order.total), 0)).where(Order.status != OrderStatus.CANCELLED)) or Decimal("0")
     low_stock = db.scalar(select(func.count()).select_from(StoreProduct).where(StoreProduct.stock_quantity <= 5, StoreProduct.is_available.is_(True))) or 0
     ready_unassigned = db.scalar(select(func.count()).select_from(Delivery).join(Order, Delivery.order_id == Order.id).where(Delivery.status == DeliveryStatus.UNASSIGNED, Order.status == OrderStatus.READY)) or 0
     grouped = db.execute(select(Order.status, func.count(Order.id)).group_by(Order.status)).all()
     orders_by_status = {status.value: count for status, count in grouped}
     for order_status in OrderStatus:
         orders_by_status.setdefault(order_status.value, 0)
-    return {"users":user_count,"villages":village_count,"active_stores":active_store_count,"merchants":{"pending":pending_merchants,"approved":approved_merchants,"suspended":suspended_merchants},"orders":{"total":total_orders,"by_status":orders_by_status},"operations":{"low_stock_listings":low_stock,"ready_unassigned_deliveries":ready_unassigned,"active_delivery_partners":delivery_users},"paid_gmv":str(paid_gmv),"gross_order_value":str(gross_order_value)}
+    return {"users":user_count,"villages":village_count,"active_stores":active_store_count,"merchants":{"pending":pending_merchants,"approved":approved_merchants,"suspended":suspended_merchants},"orders":{"total":total_orders,"by_status":orders_by_status},"operations":{"low_stock_listings":low_stock,"ready_unassigned_deliveries":ready_unassigned,"active_delivery_partners":delivery_users},"financials_visible":can_read_financials,"paid_gmv":str(paid_gmv) if paid_gmv is not None else None,"gross_order_value":str(gross_order_value) if gross_order_value is not None else None}
 
 
 @router.get("/delivery-performance")

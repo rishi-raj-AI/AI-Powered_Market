@@ -99,6 +99,24 @@ def test_deactivated_admin_token_is_rejected_on_the_next_request() -> None:
     ).status_code == 401
 
 
+def test_operations_overview_redacts_global_financial_aggregates() -> None:
+    normal_token, _ = _normal_admin()
+    normal = client.get("/api/v1/admin/overview", headers=_auth(normal_token))
+    assert normal.status_code == 200, normal.text
+    assert normal.json()["orders"]["total"] >= 0
+    assert normal.json()["financials_visible"] is False
+    assert normal.json()["paid_gmv"] is None
+    assert normal.json()["gross_order_value"] is None
+
+    elevated = client.get(
+        "/api/v1/admin/overview", headers=_auth(_super_admin_token())
+    )
+    assert elevated.status_code == 200, elevated.text
+    assert elevated.json()["financials_visible"] is True
+    assert isinstance(elevated.json()["paid_gmv"], str)
+    assert isinstance(elevated.json()["gross_order_value"], str)
+
+
 def test_normal_admin_cannot_retry_refunds_or_promote_admins() -> None:
     normal_token, _ = _normal_admin()
     assert client.get(
