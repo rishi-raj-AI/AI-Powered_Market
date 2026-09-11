@@ -234,6 +234,36 @@ def test_normal_admin_cannot_impersonate_rider_financial_completion_steps() -> N
     ).status_code == 403
 
 
+def test_normal_admin_can_assign_a_ready_delivery() -> None:
+    normal_token, admin_id = _normal_admin()
+    with session() as db:
+        order = make_order(db, status=OrderStatus.READY, with_delivery=True)
+        rider = make_user(db, role=UserRole.DELIVERY, prefix="9")
+        delivery = db.query(Delivery).filter(Delivery.order_id == order.id).one()
+        db.commit()
+        delivery_id, rider_id = delivery.id, rider.id
+
+    response = client.post(
+        f"/api/v1/admin/deliveries/{delivery_id}/assign",
+        headers=_auth(normal_token),
+        json={"rider_id": str(rider_id)},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["delivery_partner_id"] == str(rider_id)
+    assert response.json()["status"] == DeliveryStatus.ASSIGNED.value
+
+    with session() as db:
+        event = db.scalar(
+            select(AdministrativeAuditEvent).where(
+                AdministrativeAuditEvent.actor_user_id == admin_id,
+                AdministrativeAuditEvent.resource_type == "delivery",
+                AdministrativeAuditEvent.resource_id == str(delivery_id),
+            )
+        )
+        assert event is not None
+        assert event.capability == "rider.operations"
+
+
 def test_admin_audit_is_attributable_and_committed_with_access_change() -> None:
     super_token = _super_admin_token()
     with session() as db:
