@@ -48,7 +48,31 @@ def upgrade() -> None:
             "administrative_audit_events",
             [column],
         )
+    op.execute(
+        """
+        CREATE FUNCTION prevent_administrative_audit_mutation()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            RAISE EXCEPTION 'administrative audit events are append-only';
+        END;
+        $$
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER administrative_audit_events_append_only
+        BEFORE UPDATE OR DELETE ON administrative_audit_events
+        FOR EACH ROW EXECUTE FUNCTION prevent_administrative_audit_mutation()
+        """
+    )
 
 
 def downgrade() -> None:
+    op.execute(
+        "DROP TRIGGER IF EXISTS administrative_audit_events_append_only "
+        "ON administrative_audit_events"
+    )
+    op.execute("DROP FUNCTION IF EXISTS prevent_administrative_audit_mutation()")
     op.drop_table("administrative_audit_events")

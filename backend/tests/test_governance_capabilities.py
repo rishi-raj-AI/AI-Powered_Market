@@ -4,8 +4,11 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+import pytest
+from sqlalchemy import delete, select, update
+from sqlalchemy.exc import DBAPIError
 
+from app.api.v1.routes import admin as admin_routes
 from app.main import app
 from app.models.governance import AdministrativeAuditEvent
 from app.models.orders import Delivery, DeliveryStatus, Order, OrderStatus, PaymentMethod, PaymentStatus
@@ -53,12 +56,15 @@ def test_capabilities_are_explicit_and_deny_financial_writes_by_default() -> Non
     normal_token, _ = _normal_admin()
     normal = client.get("/api/v1/users/me/capabilities", headers=_auth(normal_token))
     assert normal.status_code == 200, normal.text
-    assert "refund.read" in normal.json()["capabilities"]
+    assert "refund.read" not in normal.json()["capabilities"]
+    assert "payment.read" not in normal.json()["capabilities"]
     assert "rider.operations" in normal.json()["capabilities"]
     assert "refund.write" not in normal.json()["capabilities"]
     assert "settlement.write" not in normal.json()["capabilities"]
+    assert "settlement.read" not in normal.json()["capabilities"]
     assert "delivery_financial.write" not in normal.json()["capabilities"]
     assert "admin.manage" not in normal.json()["capabilities"]
+    assert "user.manage" not in normal.json()["capabilities"]
 
     with session() as db:
         customer = make_user(db)
@@ -78,6 +84,21 @@ def test_capabilities_are_explicit_and_deny_financial_writes_by_default() -> Non
     assert "admin.manage" in elevated.json()["capabilities"]
 
 
+def test_deactivated_admin_token_is_rejected_on_the_next_request() -> None:
+    normal_token, admin_id = _normal_admin()
+    assert client.get(
+        "/api/v1/users/me/capabilities", headers=_auth(normal_token)
+    ).status_code == 200
+    with session() as db:
+        admin = db.get(User, admin_id)
+        assert admin is not None
+        admin.is_active = False
+        db.commit()
+    assert client.get(
+        "/api/v1/users/me/capabilities", headers=_auth(normal_token)
+    ).status_code == 401
+
+
 def test_normal_admin_cannot_retry_refunds_or_promote_admins() -> None:
     normal_token, _ = _normal_admin()
     assert client.get(
@@ -85,6 +106,12 @@ def test_normal_admin_cannot_retry_refunds_or_promote_admins() -> None:
     ).status_code == 403
     assert client.post(
         f"/api/v1/admin/refunds/{uuid4()}/retry", headers=_auth(normal_token)
+    ).status_code == 403
+    assert client.get(
+        "/api/v1/payments/settlements", headers=_auth(normal_token)
+    ).status_code == 403
+    assert client.get(
+        "/api/v1/admin/refunds", headers=_auth(normal_token)
     ).status_code == 403
 
     with session() as db:
@@ -97,6 +124,12 @@ def test_normal_admin_cannot_retry_refunds_or_promote_admins() -> None:
         json={"role": "admin", "is_active": True},
     )
     assert promotion.status_code == 403
+    role_change = client.patch(
+        f"/api/v1/admin/users/{candidate_id}/role",
+        headers=_auth(normal_token),
+        json={"role": "delivery", "is_active": True},
+    )
+    assert role_change.status_code == 403
     with session() as db:
         assert db.scalar(
             select(AdministrativeAuditEvent).where(
@@ -187,6 +220,7 @@ def test_admin_audit_is_attributable_and_committed_with_access_change() -> None:
     super_token = _super_admin_token()
     with session() as db:
         candidate = make_user(db)
+        candidate.is_verified = False
         db.commit()
         candidate_id = candidate.id
 
@@ -209,9 +243,11 @@ def test_admin_audit_is_attributable_and_committed_with_access_change() -> None:
         assert event is not None
         assert event.actor_user_id is not None
         assert event.action == "user.access_updated"
-        assert event.capability == "user.manage"
+        assert event.capability == "admin.manage"
         assert event.previous_state["role"] == "customer"
         assert event.resulting_state["role"] == "delivery"
+        assert event.previous_state["is_verified"] is False
+        assert event.resulting_state["is_verified"] is False
 
     audit_response = client.get(
         "/api/v1/admin/audit-events", headers=_auth(super_token)
@@ -222,3 +258,78 @@ def test_admin_audit_is_attributable_and_committed_with_access_change() -> None:
         and item["resource_id"] == str(candidate_id)
         for item in audit_response.json()
     )
+
+
+def test_audit_rows_reject_update_and_delete() -> None:
+    super_token = _super_admin_token()
+    with session() as db:
+        candidate = make_user(db)
+        db.commit()
+        candidate_id = candidate.id
+    request_id = f"governance-immutable-{uuid4()}"
+    response = client.patch(
+        f"/api/v1/admin/users/{candidate_id}/role",
+        headers=_auth(super_token, request_id),
+        json={"role": "delivery", "is_active": True},
+    )
+    assert response.status_code == 200, response.text
+
+    with session() as db:
+        event_id = db.scalar(
+            select(AdministrativeAuditEvent.id).where(
+                AdministrativeAuditEvent.request_id == request_id
+            )
+        )
+        assert event_id is not None
+        with pytest.raises(DBAPIError, match="append-only"):
+            db.execute(
+                update(AdministrativeAuditEvent)
+                .where(AdministrativeAuditEvent.id == event_id)
+                .values(reason="tampered")
+            )
+            db.commit()
+        db.rollback()
+        with pytest.raises(DBAPIError, match="append-only"):
+            db.execute(
+                delete(AdministrativeAuditEvent).where(
+                    AdministrativeAuditEvent.id == event_id
+                )
+            )
+            db.commit()
+        db.rollback()
+
+
+def test_audit_persistence_failure_rolls_back_access_mutation(monkeypatch) -> None:
+    super_token = _super_admin_token()
+    with session() as db:
+        candidate = make_user(db)
+        candidate.is_verified = False
+        db.commit()
+        candidate_id = candidate.id
+
+    def add_invalid_audit(db, **_kwargs):
+        db.add(
+            AdministrativeAuditEvent(
+                actor_user_id=uuid4(),
+                action="forced.failure",
+                capability="admin.manage",
+                resource_type="user",
+                resource_id=str(candidate_id),
+                request_id="forced-audit-failure",
+            )
+        )
+
+    monkeypatch.setattr(admin_routes, "record_admin_action", add_invalid_audit)
+    failure_client = TestClient(app, raise_server_exceptions=False)
+    response = failure_client.patch(
+        f"/api/v1/admin/users/{candidate_id}/role",
+        headers=_auth(super_token),
+        json={"role": "delivery", "is_active": True},
+    )
+    assert response.status_code == 500
+
+    with session() as db:
+        candidate = db.get(User, candidate_id)
+        assert candidate is not None
+        assert candidate.role == UserRole.CUSTOMER
+        assert candidate.is_verified is False

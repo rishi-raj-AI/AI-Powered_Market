@@ -42,7 +42,6 @@ class Capability(str, enum.Enum):
 ADMIN_CAPABILITIES = frozenset(
     {
         Capability.USER_READ,
-        Capability.USER_MANAGE,
         Capability.MERCHANT_READ,
         Capability.MERCHANT_MANAGE,
         Capability.CATALOG_MANAGE,
@@ -54,17 +53,17 @@ ADMIN_CAPABILITIES = frozenset(
         Capability.SUPPORT_MANAGE,
         Capability.MEDIA_MODERATE,
         Capability.NOTIFICATION_OPERATIONS,
-        Capability.PAYMENT_READ,
-        Capability.REFUND_READ,
-        Capability.SETTLEMENT_READ,
     }
 )
 
 SUPER_ADMIN_CAPABILITIES = ADMIN_CAPABILITIES | frozenset(
     {
         Capability.ADMIN_MANAGE,
+        Capability.PAYMENT_READ,
+        Capability.REFUND_READ,
         Capability.REFUND_WRITE,
         Capability.SETTLEMENT_WRITE,
+        Capability.SETTLEMENT_READ,
         Capability.DELIVERY_FINANCIAL_WRITE,
         Capability.AUDIT_READ,
     }

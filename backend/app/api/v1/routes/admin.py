@@ -120,7 +120,7 @@ def admin_update_user(
     payload: UserRoleUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_capability(Capability.USER_MANAGE)),
+    admin: User = Depends(require_capability(Capability.ADMIN_MANAGE)),
 ):
     user = db.get(User, user_id)
     if user is None:
@@ -130,25 +130,24 @@ def admin_update_user(
         if user.id != admin.id or payload.role != UserRole.ADMIN or not payload.is_active:
             raise HTTPException(status_code=403, detail="Super Admin account is protected")
         return _user_payload(user)
-    if user.role == UserRole.ADMIN or payload.role == UserRole.ADMIN:
+    if payload.role != user.role or user.role == UserRole.ADMIN:
         ensure_capability(admin, Capability.ADMIN_MANAGE)
     if user.id == admin.id and (payload.role != UserRole.ADMIN or not payload.is_active):
         raise HTTPException(status_code=400, detail="You cannot remove or deactivate your own admin access")
     previous = {"role": user.role.value, "is_active": user.is_active, "is_verified": user.is_verified}
     user.role = payload.role
     user.is_active = payload.is_active
-    user.is_verified = True
     record_admin_action(
         db,
         request=request,
         actor=admin,
         action="user.access_updated",
-        capability=Capability.ADMIN_MANAGE if user.role == UserRole.ADMIN or previous["role"] == UserRole.ADMIN.value else Capability.USER_MANAGE,
+        capability=Capability.ADMIN_MANAGE,
         resource_type="user",
         resource_id=user.id,
         previous_state=previous,
         resulting_state={"role": user.role.value, "is_active": user.is_active, "is_verified": user.is_verified},
-        reason="administrator_access_management" if user.role == UserRole.ADMIN or previous["role"] == UserRole.ADMIN.value else "operational_user_management",
+        reason="administrator_access_management",
     )
     db.commit()
     db.refresh(user)
