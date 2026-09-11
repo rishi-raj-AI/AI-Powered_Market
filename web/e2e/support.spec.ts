@@ -6,16 +6,33 @@ const ticket={id:'ticket-1',subject:'Order support',description:'Refund is missi
 test('customer creates and sees an ownership-checked support ticket',async({page})=>{
   await installApiMocks(page,customer);
   let rows:any[]=[];
-  await page.route('http://localhost:8000/api/v1/support/tickets/me',r=>r.fulfill({json:rows}));
+  let listRequestCount=0;
+  let releaseInitialList!:()=>void;
+  let markInitialStarted!:()=>void;
+  let markInitialFinished!:()=>void;
+  const initialListGate=new Promise<void>(resolve=>{releaseInitialList=resolve});
+  const initialListStarted=new Promise<void>(resolve=>{markInitialStarted=resolve});
+  const initialListFinished=new Promise<void>(resolve=>{markInitialFinished=resolve});
+  await page.route('http://localhost:8000/api/v1/support/tickets/me',async r=>{
+    const requestNumber=++listRequestCount;
+    const snapshot=[...rows];
+    if(requestNumber===1){markInitialStarted();await initialListGate}
+    await r.fulfill({json:snapshot});
+    if(requestNumber===1)markInitialFinished();
+  });
   await page.route('http://localhost:8000/api/v1/support/tickets',r=>{
     if(r.request().method()==='POST'){rows=[ticket];return r.fulfill({status:201,json:ticket})}
     return r.fallback();
   });
   await page.goto('/support?order_id=order-1');
+  await initialListStarted;
   await page.getByLabel('What happened?').fill('Refund is missing');
   await page.getByRole('button',{name:'Create ticket'}).click();
   await expect(page.getByText('Order support')).toBeVisible();
   await expect(page.getByText(/payment • high • open/)).toBeVisible();
+  releaseInitialList();
+  await initialListFinished;
+  await expect(page.getByText('Order support')).toBeVisible();
 });
 
 test('admin can resolve a triaged ticket',async({page})=>{
