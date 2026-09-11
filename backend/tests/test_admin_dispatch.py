@@ -1,8 +1,11 @@
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
+from app.db.session import SessionLocal
 from app.main import app
+from app.models.user import User, UserRole
 
 client = TestClient(app)
 
@@ -37,6 +40,18 @@ def token(phone: str, name: str | None = None) -> str:
     return response.json()["access_token"]
 
 
+def super_admin_token() -> str:
+    admin_phone = phone(5)
+    access_token = token(admin_phone, "Dispatch Super Admin")
+    with SessionLocal() as db:
+        admin = db.scalar(select(User).where(User.phone == admin_phone))
+        assert admin is not None
+        admin.role = UserRole.ADMIN
+        admin.is_super_admin = True
+        db.commit()
+    return access_token
+
+
 def auth(value: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {value}"}
 
@@ -58,7 +73,7 @@ def _ready_order(customer_token: str, merchant_token: str, address_id: str, list
 
 
 def test_admin_can_assign_recover_and_reassign_ready_delivery() -> None:
-    admin_token=token("+919000000001");merchant_token=token("+919000000003");customer_token=token(phone(7),"Dispatch Customer");rider_token=token(phone(6),"Dispatch Rider")
+    admin_token=super_admin_token();merchant_token=token("+919000000003");customer_token=token(phone(7),"Dispatch Customer");rider_token=token(phone(6),"Dispatch Rider")
     rider=client.get("/api/v1/users/me",headers=auth(rider_token)).json()
     promote=client.patch(f"/api/v1/admin/users/{rider['id']}/role",headers=auth(admin_token),json={"role":"delivery","is_active":True})
     assert promote.status_code==200,promote.text
