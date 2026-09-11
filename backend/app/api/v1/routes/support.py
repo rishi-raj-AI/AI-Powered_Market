@@ -2,15 +2,17 @@ import uuid
 from datetime import datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, get_db, require_roles
+from app.api.deps import ensure_capability, get_current_user, get_db, require_capability
+from app.core.capabilities import Capability
 from app.models.orders import Delivery, Order
 from app.models.support import SupportTicket
 from app.models.user import User, UserRole
+from app.services.governance_audit import record_admin_action
 from app.services.support_triage import triage_ticket
 
 router = APIRouter(tags=["Support"])
@@ -50,7 +52,14 @@ def _validate_references(db: Session, payload: TicketCreate, user: User) -> None
 
 
 @router.post("/support/tickets", status_code=status.HTTP_201_CREATED)
-def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def create_ticket(
+    payload: TicketCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if user.role == UserRole.ADMIN:
+        ensure_capability(user, Capability.SUPPORT_MANAGE)
     _validate_references(db, payload, user)
     triage = triage_ticket(payload.subject, payload.description)
     ticket = SupportTicket(
@@ -64,7 +73,16 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), user: Us
         triage_summary=triage["summary"],
         suggested_action=triage["suggested_action"],
     )
-    db.add(ticket); db.commit(); db.refresh(ticket)
+    db.add(ticket)
+    db.flush()
+    if user.role == UserRole.ADMIN:
+        record_admin_action(
+            db, request=request, actor=user, action="support.ticket_created",
+            capability=Capability.SUPPORT_MANAGE, resource_type="support_ticket",
+            resource_id=ticket.id, resulting_state={"status": ticket.status},
+            reason="administrator_support_escalation",
+        )
+    db.commit(); db.refresh(ticket)
     return _read(ticket)
 
 
@@ -75,20 +93,34 @@ def my_tickets(db: Session = Depends(get_db), user: User = Depends(get_current_u
 
 
 @router.get("/admin/support/tickets")
-def admin_queue(db: Session = Depends(get_db), _: User = Depends(require_roles(UserRole.ADMIN))):
+def admin_queue(db: Session = Depends(get_db), _: User = Depends(require_capability(Capability.SUPPORT_MANAGE))):
     return [_read(row) for row in db.scalars(select(SupportTicket).order_by(SupportTicket.created_at.desc()).limit(500)).all()]
 
 
 @router.patch("/admin/support/tickets/{ticket_id}")
-def update_ticket(ticket_id: uuid.UUID, payload: TicketUpdate, db: Session = Depends(get_db), _: User = Depends(require_roles(UserRole.ADMIN))):
+def update_ticket(ticket_id: uuid.UUID, payload: TicketUpdate, request: Request, db: Session = Depends(get_db), admin: User = Depends(require_capability(Capability.SUPPORT_MANAGE))):
     ticket = db.scalar(select(SupportTicket).where(SupportTicket.id == ticket_id).with_for_update())
     if ticket is None:
         raise HTTPException(status_code=404, detail="Support ticket not found")
+    previous = {
+        "status": ticket.status,
+        "has_resolution_notes": bool(ticket.resolution_notes),
+    }
     ticket.status = payload.status; ticket.resolution_notes = payload.resolution_notes
     ticket.resolved_at = (
         ticket.resolved_at or datetime.now(timezone.utc)
         if payload.status in {"resolved", "closed"}
         else None
+    )
+    record_admin_action(
+        db, request=request, actor=admin, action="support.ticket_updated",
+        capability=Capability.SUPPORT_MANAGE, resource_type="support_ticket", resource_id=ticket.id,
+        previous_state=previous,
+        resulting_state={
+            "status": ticket.status,
+            "has_resolution_notes": bool(ticket.resolution_notes),
+        },
+        reason="support_ticket_resolution",
     )
     db.commit(); db.refresh(ticket)
     return _read(ticket)

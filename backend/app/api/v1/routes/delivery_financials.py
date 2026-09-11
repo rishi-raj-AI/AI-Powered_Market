@@ -1,11 +1,12 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_roles
+from app.api.deps import ensure_capability, get_db, require_roles
+from app.core.capabilities import Capability
 from app.models.integrations import CodCollection
 from app.models.orders import (
     Delivery,
@@ -26,6 +27,7 @@ from app.services.order_transitions import (
     transition_order,
 )
 from app.services.settlements import ensure_settlement_entry
+from app.services.governance_audit import record_admin_action
 
 router = APIRouter(tags=["Delivery Operations"])
 
@@ -33,6 +35,7 @@ router = APIRouter(tags=["Delivery Operations"])
 @router.post("/delivery/{delivery_id}/complete", response_model=DeliveryRead)
 def complete_delivery_with_financials(
     delivery_id: uuid.UUID,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.DELIVERY, UserRole.ADMIN)),
 ):
@@ -42,7 +45,9 @@ def complete_delivery_with_financials(
     order = db.scalar(select(Order).where(Order.id == delivery.order_id).with_for_update())
     if order is None:
         raise HTTPException(status_code=409, detail="Delivery order is missing")
-    if user.role != UserRole.ADMIN and delivery.delivery_partner_id != user.id:
+    if user.role == UserRole.ADMIN:
+        ensure_capability(user, Capability.DELIVERY_FINANCIAL_WRITE)
+    elif delivery.delivery_partner_id != user.id:
         raise HTTPException(status_code=403, detail="Delivery is not assigned to you")
     if not can_transition_delivery(delivery.status, DeliveryStatus.DELIVERED):
         raise HTTPException(status_code=409, detail=f"Delivery cannot be completed from {delivery.status.value}")
@@ -77,6 +82,14 @@ def complete_delivery_with_financials(
         body=f"Order {order.order_number} has been delivered. Thank you for using GaonOne.",
         data={"order_id": str(order.id), "delivery_id": str(delivery.id)},
     )
+    if user.role == UserRole.ADMIN:
+        record_admin_action(
+            db, request=request, actor=user, action="delivery.completed",
+            capability=Capability.DELIVERY_FINANCIAL_WRITE, resource_type="delivery", resource_id=delivery.id,
+            previous_state={"delivery_status": DeliveryStatus.PICKED_UP.value, "order_status": OrderStatus.OUT_FOR_DELIVERY.value},
+            resulting_state={"delivery_status": delivery.status.value, "order_status": order.status.value, "payment_status": order.payment_status.value},
+            reason="privileged_delivery_completion",
+        )
     db.commit()
     db.refresh(delivery)
     return delivery

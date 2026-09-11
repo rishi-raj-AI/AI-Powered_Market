@@ -5,7 +5,8 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
-from app.api.deps import require_roles
+from app.api.deps import ensure_capability, require_roles
+from app.core.capabilities import Capability
 from app.core.config import settings
 from app.models.user import User, UserRole
 from app.services.rate_limit import RateLimitExceeded, RateLimitUnavailable, rate_limiter
@@ -45,6 +46,8 @@ async def upload_image(
     file: UploadFile = File(...),
     user: User = Depends(require_roles(UserRole.MERCHANT, UserRole.ADMIN)),
 ) -> dict[str, str | int]:
+    if user.role == UserRole.ADMIN:
+        ensure_capability(user, Capability.MEDIA_MODERATE)
     # Uploads write to a shared volume, so an unbounded endpoint is a disk
     # exhaustion vector as much as an abuse one.
     try:

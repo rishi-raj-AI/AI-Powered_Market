@@ -4,11 +4,12 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, get_db, require_roles
+from app.api.deps import ensure_capability, get_current_user, get_db, require_capability, require_roles
+from app.core.capabilities import Capability
 from app.models.commerce import Merchant, Store
 from app.models.integrations import CodCollection
 from app.models.orders import (
@@ -48,6 +49,7 @@ from app.services.settlements import (
     void_settlement_for_refund,
 )
 from app.services.stock import restore_order_stock_once
+from app.services.governance_audit import record_admin_action
 
 router = APIRouter(tags=["Delivery Operations"])
 OTP_TTL_MINUTES = 15
@@ -67,8 +69,15 @@ def _locked_delivery_order(db: Session, delivery_id: uuid.UUID) -> tuple[Deliver
     return delivery, order
 
 
-def _require_assigned_rider(delivery: Delivery, user: User) -> None:
-    if user.role != UserRole.ADMIN and delivery.delivery_partner_id != user.id:
+def _require_assigned_rider(
+    delivery: Delivery,
+    user: User,
+    *,
+    admin_capability: Capability = Capability.RIDER_OPERATIONS,
+) -> None:
+    if user.role == UserRole.ADMIN:
+        ensure_capability(user, admin_capability)
+    elif delivery.delivery_partner_id != user.id:
         raise HTTPException(status_code=403, detail="Delivery is not assigned to you")
 
 
@@ -89,6 +98,7 @@ def _can_view_order(db: Session, order: Order, user: User) -> bool:
 def fail_delivery(
     delivery_id: uuid.UUID,
     payload: DeliveryFailureRequest,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.DELIVERY, UserRole.ADMIN)),
 ):
@@ -119,6 +129,14 @@ def fail_delivery(
         body=f"Delivery for order {order.order_number} could not be completed. Our operations team will review it.",
         data={"order_id": str(order.id), "delivery_id": str(delivery.id), "reason": payload.reason},
     )
+    if user.role == UserRole.ADMIN:
+        record_admin_action(
+            db, request=request, actor=user, action="delivery.failed",
+            capability=Capability.RIDER_OPERATIONS, resource_type="delivery", resource_id=delivery.id,
+            previous_state={"status": DeliveryStatus.ASSIGNED.value if delivery.picked_up_at is None else DeliveryStatus.PICKED_UP.value},
+            resulting_state={"status": delivery.status.value, "after_pickup": delivery.picked_up_at is not None},
+            reason=payload.reason,
+        )
     db.commit()
     db.refresh(delivery)
     return delivery
@@ -127,8 +145,9 @@ def fail_delivery(
 @router.post("/admin/deliveries/{delivery_id}/recover", response_model=DeliveryRead)
 def recover_failed_delivery(
     delivery_id: uuid.UUID,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.ADMIN)),
+    admin: User = Depends(require_capability(Capability.RIDER_OPERATIONS)),
 ):
     """Reassign a delivery that failed before the goods ever left the store."""
     delivery, order = _locked_delivery_order(db, delivery_id)
@@ -147,7 +166,7 @@ def recover_failed_delivery(
         db,
         delivery,
         to_status=DeliveryStatus.UNASSIGNED.value,
-        actor_user_id=_.id,
+        actor_user_id=admin.id,
         reason="admin_recovered_before_pickup",
     )
     enqueue_notification(
@@ -157,6 +176,13 @@ def recover_failed_delivery(
         title="Delivery partner is being reassigned",
         body=f"We are assigning another delivery partner to order {order.order_number}.",
         data={"order_id": str(order.id), "delivery_id": str(delivery.id)},
+    )
+    record_admin_action(
+        db, request=request, actor=admin, action="delivery.recovered_before_pickup",
+        capability=Capability.RIDER_OPERATIONS, resource_type="delivery", resource_id=delivery.id,
+        previous_state={"status": DeliveryStatus.FAILED.value},
+        resulting_state={"status": delivery.status.value, "delivery_partner_id": None},
+        reason="admin_recovered_before_pickup",
     )
     db.commit()
     db.refresh(delivery)
@@ -170,8 +196,9 @@ def recover_failed_delivery(
 def resolve_failed_delivery(
     delivery_id: uuid.UUID,
     payload: DeliveryFailureResolution,
+    request: Request,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_roles(UserRole.ADMIN)),
+    admin: User = Depends(require_capability(Capability.RIDER_OPERATIONS)),
 ):
     """Close out a failed delivery so no order can be stranded.
 
@@ -216,6 +243,13 @@ def resolve_failed_delivery(
             body=f"We are assigning another delivery partner to order {order.order_number}.",
             data={"order_id": str(order.id), "delivery_id": str(delivery.id)},
         )
+        record_admin_action(
+            db, request=request, actor=admin, action="delivery.failure_reassigned",
+            capability=Capability.RIDER_OPERATIONS, resource_type="delivery", resource_id=delivery.id,
+            previous_state={"status": DeliveryStatus.FAILED.value},
+            resulting_state={"status": delivery.status.value, "delivery_partner_id": None},
+            reason=payload.notes or "failed_delivery_reassignment",
+        )
         db.commit()
         db.refresh(delivery)
         db.refresh(order)
@@ -229,7 +263,10 @@ def resolve_failed_delivery(
             settlement_voided=False,
         )
 
-    # return_to_store
+    # Returning goods changes settlement/refund state, so operational authority
+    # alone is insufficient even though this is a delivery route.
+    ensure_capability(admin, Capability.REFUND_WRITE)
+    ensure_capability(admin, Capability.SETTLEMENT_WRITE)
     if not can_transition_order(order.status, OrderStatus.RETURNED):
         raise HTTPException(
             status_code=409,
@@ -290,6 +327,14 @@ def resolve_failed_delivery(
             data={"order_id": str(order.id), "delivery_id": str(delivery.id)},
         )
 
+    record_admin_action(
+        db, request=request, actor=admin, action="delivery.failure_returned_to_store",
+        capability=Capability.SETTLEMENT_WRITE, resource_type="delivery", resource_id=delivery.id,
+        previous_state={"delivery_status": DeliveryStatus.FAILED.value, "order_status": OrderStatus.OUT_FOR_DELIVERY.value},
+        resulting_state={"delivery_status": delivery.status.value, "order_status": order.status.value, "refund_requested": refund is not None, "settlement_voided": True},
+        reason=payload.notes or "delivery_failed_after_pickup",
+    )
+
     db.commit()
     if refund is not None:
         try_dispatch_order_refund(db, order.id)
@@ -309,11 +354,12 @@ def resolve_failed_delivery(
 @router.post("/delivery/{delivery_id}/proof/challenge", response_model=DeliveryProofChallengeRead)
 def issue_delivery_proof_challenge(
     delivery_id: uuid.UUID,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.DELIVERY, UserRole.ADMIN)),
 ):
     delivery, order = _locked_delivery_order(db, delivery_id)
-    _require_assigned_rider(delivery, user)
+    _require_assigned_rider(delivery, user, admin_capability=Capability.DELIVERY_FINANCIAL_WRITE)
     if delivery.status != DeliveryStatus.PICKED_UP or order.status != OrderStatus.OUT_FOR_DELIVERY:
         raise HTTPException(status_code=409, detail="Proof challenge is available only after pickup")
 
@@ -336,6 +382,12 @@ def issue_delivery_proof_challenge(
         body=f"Your GaonOne delivery code is {otp}. Share it only after receiving order {order.order_number}.",
         data={"order_id": str(order.id), "delivery_id": str(delivery.id), "expires_at": expires_at.isoformat()},
     )
+    if user.role == UserRole.ADMIN:
+        record_admin_action(
+            db, request=request, actor=user, action="delivery.proof_challenge_issued",
+            capability=Capability.DELIVERY_FINANCIAL_WRITE, resource_type="delivery", resource_id=delivery.id,
+            resulting_state={"expires_at": expires_at.isoformat()}, reason="privileged_delivery_proof_challenge",
+        )
     db.commit()
     return DeliveryProofChallengeRead(delivery_id=delivery.id, expires_at=expires_at)
 
@@ -344,11 +396,12 @@ def issue_delivery_proof_challenge(
 def verify_delivery_proof(
     delivery_id: uuid.UUID,
     payload: DeliveryProofSubmit,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.DELIVERY, UserRole.ADMIN)),
 ):
     delivery, order = _locked_delivery_order(db, delivery_id)
-    _require_assigned_rider(delivery, user)
+    _require_assigned_rider(delivery, user, admin_capability=Capability.DELIVERY_FINANCIAL_WRITE)
     if delivery.status != DeliveryStatus.PICKED_UP or order.status != OrderStatus.OUT_FOR_DELIVERY:
         raise HTTPException(status_code=409, detail="Delivery proof can only be verified after pickup")
 
@@ -365,6 +418,12 @@ def verify_delivery_proof(
     proof.evidence_url = payload.evidence_url
     proof.recipient_name = payload.recipient_name
     proof.notes = payload.notes
+    if user.role == UserRole.ADMIN:
+        record_admin_action(
+            db, request=request, actor=user, action="delivery.proof_verified",
+            capability=Capability.DELIVERY_FINANCIAL_WRITE, resource_type="delivery", resource_id=delivery.id,
+            resulting_state={"verified": True}, reason="privileged_delivery_proof_verification",
+        )
     db.commit()
     db.refresh(proof)
     return proof
@@ -392,11 +451,12 @@ def get_delivery_proof(
 def record_cod_collection(
     delivery_id: uuid.UUID,
     payload: CodCollectionRequest,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.DELIVERY, UserRole.ADMIN)),
 ):
     delivery, order = _locked_delivery_order(db, delivery_id)
-    _require_assigned_rider(delivery, user)
+    _require_assigned_rider(delivery, user, admin_capability=Capability.DELIVERY_FINANCIAL_WRITE)
     if order.payment_method != PaymentMethod.COD:
         raise HTTPException(status_code=409, detail="Cash collection is only valid for COD orders")
     if delivery.status != DeliveryStatus.PICKED_UP or order.status != OrderStatus.OUT_FOR_DELIVERY:
@@ -420,6 +480,14 @@ def record_cod_collection(
         collected_at=datetime.now(timezone.utc),
     )
     db.add(collection)
+    db.flush()
+    if user.role == UserRole.ADMIN:
+        record_admin_action(
+            db, request=request, actor=user, action="delivery.cod_collection_recorded",
+            capability=Capability.DELIVERY_FINANCIAL_WRITE, resource_type="delivery", resource_id=delivery.id,
+            resulting_state={"collection_id": str(collection.id), "amount": str(order.total)},
+            reason="privileged_cod_collection_recording",
+        )
     db.commit()
     db.refresh(collection)
     return collection
@@ -428,11 +496,12 @@ def record_cod_collection(
 @router.post("/delivery/{delivery_id}/complete", response_model=DeliveryRead)
 def complete_delivery(
     delivery_id: uuid.UUID,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.DELIVERY, UserRole.ADMIN)),
 ):
     delivery, order = _locked_delivery_order(db, delivery_id)
-    _require_assigned_rider(delivery, user)
+    _require_assigned_rider(delivery, user, admin_capability=Capability.DELIVERY_FINANCIAL_WRITE)
     if not can_transition_delivery(delivery.status, DeliveryStatus.DELIVERED):
         raise HTTPException(status_code=409, detail=f"Delivery cannot be completed from {delivery.status.value}")
     if not can_transition_order(order.status, OrderStatus.DELIVERED):
@@ -465,6 +534,14 @@ def complete_delivery(
         body=f"Order {order.order_number} has been delivered. Thank you for using GaonOne.",
         data={"order_id": str(order.id), "delivery_id": str(delivery.id)},
     )
+    if user.role == UserRole.ADMIN:
+        record_admin_action(
+            db, request=request, actor=user, action="delivery.completed",
+            capability=Capability.DELIVERY_FINANCIAL_WRITE, resource_type="delivery", resource_id=delivery.id,
+            previous_state={"delivery_status": DeliveryStatus.PICKED_UP.value, "order_status": OrderStatus.OUT_FOR_DELIVERY.value},
+            resulting_state={"delivery_status": delivery.status.value, "order_status": order.status.value, "payment_status": order.payment_status.value},
+            reason="privileged_delivery_completion",
+        )
     db.commit()
     db.refresh(delivery)
     return delivery

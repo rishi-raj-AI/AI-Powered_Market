@@ -18,3 +18,8 @@ class UserResponse(BaseModel):
     is_verified: bool
     created_at: datetime
     updated_at: datetime
+
+
+class CapabilityResponse(BaseModel):
+    is_super_admin: bool
+    capabilities: list[str]

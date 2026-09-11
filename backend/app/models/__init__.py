@@ -15,6 +15,7 @@ from app.models.orders import (
     PaymentStatus,
 )
 from app.models.support import SupportTicket
+from app.models.governance import AdministrativeAuditEvent
 
 __all__ = [
     "User",
@@ -43,4 +44,5 @@ __all__ = [
     "PaymentAttempt",
     "CodCollection",
     "SupportTicket",
+    "AdministrativeAuditEvent",
 ]

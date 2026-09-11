@@ -13,7 +13,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_roles
+from app.api.deps import ensure_capability, get_db, require_roles
+from app.core.capabilities import Capability
 from app.models.commerce import Store
 from app.models.geography import Address, Village
 from app.models.orders import Delivery, DeliveryStatus, Order, OrderItem, OrderStatus
@@ -122,6 +123,8 @@ def available_tasks(
     user: User = Depends(require_roles(UserRole.DELIVERY, UserRole.ADMIN)),
 ):
     """Open delivery offers. Customer identity is withheld until assignment."""
+    if user.role == UserRole.ADMIN:
+        ensure_capability(user, Capability.RIDER_READ)
     if user.role == UserRole.DELIVERY:
         active = db.scalar(
             select(Delivery.id)
@@ -153,6 +156,8 @@ def my_tasks(
     user: User = Depends(require_roles(UserRole.DELIVERY, UserRole.ADMIN)),
 ):
     """Deliveries assigned to the caller, with the detail needed to deliver."""
+    if user.role == UserRole.ADMIN:
+        ensure_capability(user, Capability.RIDER_READ)
     stmt = select(Delivery).order_by(Delivery.updated_at.desc()).limit(limit)
     if user.role != UserRole.ADMIN:
         stmt = stmt.where(Delivery.delivery_partner_id == user.id)
