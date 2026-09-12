@@ -125,25 +125,34 @@ def _admin_read(ticket: SupportTicket) -> dict:
 def _validate_references(
     db: Session, payload: TicketCreate, user: User
 ) -> tuple[Order | None, Delivery | None, Store | None]:
+    if user.role == UserRole.ADMIN:
+        ensure_capability(user, Capability.SUPPORT_MANAGE)
+
+    def missing(resource: str) -> None:
+        detail = (
+            f"{resource} not found"
+            if user.role == UserRole.ADMIN
+            else "Linked support context not found"
+        )
+        raise HTTPException(status_code=404, detail=detail)
+
     explicit_order = db.get(Order, payload.order_id) if payload.order_id else None
     if payload.order_id and explicit_order is None:
-        raise HTTPException(status_code=404, detail="Order not found")
+        missing("Order")
     explicit_delivery = db.get(Delivery, payload.delivery_id) if payload.delivery_id else None
     if payload.delivery_id and explicit_delivery is None:
-        raise HTTPException(status_code=404, detail="Delivery not found")
+        missing("Delivery")
     delivery_order = None
     if explicit_delivery is not None:
         delivery_order = db.get(Order, explicit_delivery.order_id)
         if delivery_order is None:
-            raise HTTPException(status_code=404, detail="Delivery not found")
+            missing("Delivery")
     explicit_store = db.get(Store, payload.store_id) if payload.store_id else None
     if payload.store_id and explicit_store is None:
-        raise HTTPException(status_code=404, detail="Store not found")
+        missing("Store")
 
     has_reference = any((payload.store_id, payload.order_id, payload.delivery_id))
-    if user.role == UserRole.ADMIN:
-        ensure_capability(user, Capability.SUPPORT_MANAGE)
-    elif user.role == UserRole.CUSTOMER:
+    if user.role == UserRole.CUSTOMER:
         authorized_orders = tuple(
             order for order in (explicit_order, delivery_order) if order is not None
         )
@@ -194,7 +203,7 @@ def _validate_references(
             )
         ):
             raise HTTPException(status_code=404, detail="Linked support context not found")
-    else:
+    elif user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Unsupported requester role")
 
     # Relationship errors are safe to reveal only after every explicitly supplied
@@ -286,6 +295,31 @@ def _add_message(
     return message, True
 
 
+def _idempotent_replay(
+    db: Session,
+    *,
+    ticket: SupportTicket,
+    author: User,
+    visibility: str,
+    payload: MessageCreate,
+) -> SupportMessage | None:
+    existing = db.scalar(
+        select(SupportMessage).where(
+            SupportMessage.ticket_id == ticket.id,
+            SupportMessage.idempotency_key == payload.idempotency_key,
+        )
+    )
+    if existing is None:
+        return None
+    if (
+        existing.author_user_id != author.id
+        or existing.visibility != visibility
+        or existing.body != payload.body
+    ):
+        raise HTTPException(status_code=409, detail="Idempotency key payload mismatch")
+    return existing
+
+
 @router.post("/support/tickets", status_code=status.HTTP_201_CREATED)
 def create_ticket(
     payload: TicketCreate,
@@ -369,6 +403,11 @@ def add_requester_message(
     ticket = _locked_ticket(db, ticket_id)
     if ticket.user_id != user.id:
         raise HTTPException(status_code=404, detail="Support ticket not found")
+    replay = _idempotent_replay(
+        db, ticket=ticket, author=user, visibility="public", payload=payload
+    )
+    if replay is not None:
+        return _public_message(replay)
     if ticket.status == "closed":
         raise HTTPException(status_code=409, detail="Closed tickets must be reopened before replying")
     message, created = _add_message(
@@ -536,6 +575,11 @@ def add_admin_public_message(
     admin: User = Depends(require_capability(Capability.SUPPORT_MANAGE)),
 ):
     ticket = _locked_ticket(db, ticket_id)
+    replay = _idempotent_replay(
+        db, ticket=ticket, author=admin, visibility="public", payload=payload
+    )
+    if replay is not None:
+        return _public_message(replay)
     if ticket.status == "closed":
         raise HTTPException(status_code=409, detail="Closed tickets must be reopened before replying")
     message, created = _add_message(

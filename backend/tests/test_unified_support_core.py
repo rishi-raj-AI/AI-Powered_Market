@@ -131,6 +131,47 @@ def test_linked_context_is_derived_and_cross_role_ownership_is_hidden() -> None:
     ).status_code == 404
 
 
+def test_non_admin_missing_and_unauthorized_references_share_one_404_contract() -> None:
+    with session() as db:
+        owner = make_user(db, prefix="7")
+        stranger = make_user(db, prefix="7")
+        order = make_order(db, customer=owner, with_delivery=True)
+        delivery = db.scalar(select(Delivery).where(Delivery.order_id == order.id))
+        assert delivery is not None
+        db.commit()
+        stranger_phone = stranger.phone
+        references = {
+            "order_id": order.id,
+            "delivery_id": delivery.id,
+            "store_id": order.store_id,
+        }
+    token = _token(stranger_phone)
+
+    for field, existing_id in references.items():
+        unauthorized = client.post(
+            "/api/v1/support/tickets",
+            headers=_auth(token),
+            json={
+                "subject": "Private context",
+                "description": "This reference belongs to another requester",
+                field: str(existing_id),
+            },
+        )
+        missing = client.post(
+            "/api/v1/support/tickets",
+            headers=_auth(token),
+            json={
+                "subject": "Missing context",
+                "description": "This reference does not exist",
+                field: str(uuid4()),
+            },
+        )
+        assert unauthorized.status_code == missing.status_code == 404
+        assert unauthorized.json() == missing.json() == {
+            "detail": "Linked support context not found"
+        }
+
+
 def test_public_messages_are_idempotent_and_internal_notes_never_leak_or_notify() -> None:
     with session() as db:
         requester = make_user(db, prefix="7")
@@ -221,6 +262,97 @@ def test_public_messages_are_idempotent_and_internal_notes_never_leak_or_notify(
                 NotificationEvent.event_type == "support.public_message",
             )
         ) == 1
+
+
+def test_successful_public_message_replay_survives_later_ticket_closure() -> None:
+    with session() as db:
+        requester = make_user(db, prefix="7")
+        db.commit()
+        requester_phone = requester.phone
+    requester_token = _token(requester_phone)
+    admin_token, _ = _admin()
+
+    requester_ticket = _ticket(requester_token)
+    requester_key = str(uuid4())
+    requester_payload = {
+        "body": "Please retain this reply",
+        "idempotency_key": requester_key,
+    }
+    requester_first = client.post(
+        f"/api/v1/support/tickets/{requester_ticket['id']}/messages",
+        headers=_auth(requester_token),
+        json=requester_payload,
+    )
+    assert requester_first.status_code == 201, requester_first.text
+    closed = client.patch(
+        f"/api/v1/admin/support/tickets/{requester_ticket['id']}",
+        headers=_auth(admin_token),
+        json={"status": "closed", "expected_version": 1},
+    )
+    assert closed.status_code == 200, closed.text
+    requester_replay = client.post(
+        f"/api/v1/support/tickets/{requester_ticket['id']}/messages",
+        headers=_auth(requester_token),
+        json=requester_payload,
+    )
+    assert requester_replay.status_code == 201
+    assert requester_replay.json() == requester_first.json()
+    requester_new = client.post(
+        f"/api/v1/support/tickets/{requester_ticket['id']}/messages",
+        headers=_auth(requester_token),
+        json={"body": "A genuinely new reply", "idempotency_key": str(uuid4())},
+    )
+    assert requester_new.status_code == 409
+    requester_mismatch = client.post(
+        f"/api/v1/support/tickets/{requester_ticket['id']}/messages",
+        headers=_auth(requester_token),
+        json={"body": "Changed payload", "idempotency_key": requester_key},
+    )
+    assert requester_mismatch.status_code == 409
+
+    admin_ticket = _ticket(requester_token)
+    admin_key = str(uuid4())
+    admin_payload = {"body": "Public staff reply", "idempotency_key": admin_key}
+    admin_first = client.post(
+        f"/api/v1/admin/support/tickets/{admin_ticket['id']}/messages",
+        headers=_auth(admin_token),
+        json=admin_payload,
+    )
+    assert admin_first.status_code == 201, admin_first.text
+    closed = client.patch(
+        f"/api/v1/admin/support/tickets/{admin_ticket['id']}",
+        headers=_auth(admin_token),
+        json={"status": "closed", "expected_version": 1},
+    )
+    assert closed.status_code == 200, closed.text
+    admin_replay = client.post(
+        f"/api/v1/admin/support/tickets/{admin_ticket['id']}/messages",
+        headers=_auth(admin_token),
+        json=admin_payload,
+    )
+    assert admin_replay.status_code == 201
+    assert admin_replay.json() == admin_first.json()
+    admin_new = client.post(
+        f"/api/v1/admin/support/tickets/{admin_ticket['id']}/messages",
+        headers=_auth(admin_token),
+        json={"body": "A genuinely new staff reply", "idempotency_key": str(uuid4())},
+    )
+    assert admin_new.status_code == 409
+    admin_mismatch = client.post(
+        f"/api/v1/admin/support/tickets/{admin_ticket['id']}/messages",
+        headers=_auth(admin_token),
+        json={"body": "Changed staff payload", "idempotency_key": admin_key},
+    )
+    assert admin_mismatch.status_code == 409
+
+    with session() as db:
+        for ticket_id in (requester_ticket["id"], admin_ticket["id"]):
+            assert db.scalar(
+                select(func.count()).select_from(SupportMessage).where(
+                    SupportMessage.ticket_id == ticket_id,
+                    SupportMessage.visibility == "public",
+                )
+            ) == 1
 
 
 def test_assignment_requires_eligible_admin_and_is_audited() -> None:
