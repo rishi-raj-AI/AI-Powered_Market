@@ -14,7 +14,7 @@ from app.models.orders import (
     PaymentMethod,
     PaymentStatus,
 )
-from app.models.support import SupportTicket
+from app.models.support import SupportMessage, SupportTicket
 from app.models.governance import AdministrativeAuditEvent
 
 __all__ = [
@@ -44,5 +44,6 @@ __all__ = [
     "PaymentAttempt",
     "CodCollection",
     "SupportTicket",
+    "SupportMessage",
     "AdministrativeAuditEvent",
 ]
