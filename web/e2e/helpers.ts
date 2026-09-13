@@ -24,6 +24,7 @@ export async function installApiMocks(page:Page,currentUser:MockUser=customer){
   await page.route('http://localhost:8000/api/v1/**',async route=>{
     const request=route.request();const url=new URL(request.url());const path=url.pathname.replace('/api/v1','');const method=request.method();
     if(path==='/users/me')return route.fulfill({json:currentUser});
+    if(path==='/users/me/capabilities')return route.fulfill({json:{is_super_admin:Boolean(currentUser.is_super_admin),capabilities:currentUser.role==='admin'?['support.manage','user.read']:[]}});
     if(path==='/admin/overview')return route.fulfill({json:overview});
     if(path==='/admin/users')return route.fulfill({json:[superAdmin,normalAdmin,activeRider,busyRider,riderCandidate,customer,merchantUser]});
     if(path==='/admin/deliveries/active')return route.fulfill({json:[activeDelivery]});
