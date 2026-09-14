@@ -3,6 +3,7 @@ import 'src/api/gaon_api.dart';
 import 'src/screens/login_screen.dart';
 import 'src/screens/customer_shell.dart';
 import 'src/screens/role_workspaces.dart';
+import 'src/theme/gaon_theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -78,17 +79,11 @@ class _GaonOneAppState extends State<GaonOneApp> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = ColorScheme.fromSeed(seedColor: const Color(0xFF1F7A45));
     return MaterialApp(
       scaffoldMessengerKey: _messengerKey,
       debugShowCheckedModeBanner: false,
       title: 'GaonOne',
-      theme: ThemeData(
-        colorScheme: scheme,
-        useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFFF6F8F4),
-        inputDecorationTheme: const InputDecorationTheme(border: OutlineInputBorder()),
-      ),
+      theme: gaonTheme(),
       home: loading ? const Scaffold(body: Center(child: CircularProgressIndicator())) : _home(),
     );
   }
