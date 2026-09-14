@@ -97,6 +97,32 @@ class CartModel {
   factory CartModel.fromJson(Map<String, dynamic> j) => CartModel(id: j['id'], storeId: j['store_id'], items: (j['items'] as List<dynamic>).map((e) => CartItemModel.fromJson(e)).toList(), subtotal: j['subtotal'].toString());
 }
 
+class CheckoutQuoteModel {
+  final String storeId;
+  final String addressId;
+  final String subtotal;
+  final String deliveryFee;
+  final String total;
+  final bool serviceable;
+  final bool inventoryValid;
+  final bool storeOpen;
+  final bool checkoutReady;
+  final List<String> blockers;
+  CheckoutQuoteModel({required this.storeId, required this.addressId, required this.subtotal, required this.deliveryFee, required this.total, required this.serviceable, required this.inventoryValid, required this.storeOpen, required this.checkoutReady, required this.blockers});
+  factory CheckoutQuoteModel.fromJson(Map<String, dynamic> j) => CheckoutQuoteModel(storeId: j['store_id'], addressId: j['address_id'], subtotal: j['subtotal'].toString(), deliveryFee: j['delivery_fee'].toString(), total: j['total'].toString(), serviceable: j['serviceable'] ?? false, inventoryValid: j['inventory_valid'] ?? false, storeOpen: j['store_open'] ?? false, checkoutReady: j['checkout_ready'] ?? false, blockers: (j['blockers'] as List<dynamic>? ?? const []).map((item) => item.toString()).toList());
+}
+
+class PendingCheckoutAttempt {
+  final String ownerUserId;
+  final String idempotencyKey;
+  final String addressId;
+  final String paymentMethod;
+  final String cartFingerprint;
+  PendingCheckoutAttempt({required this.ownerUserId, required this.idempotencyKey, required this.addressId, required this.paymentMethod, required this.cartFingerprint});
+  factory PendingCheckoutAttempt.fromJson(Map<String, dynamic> j) => PendingCheckoutAttempt(ownerUserId: j['owner_user_id'], idempotencyKey: j['idempotency_key'], addressId: j['address_id'], paymentMethod: j['payment_method'], cartFingerprint: j['cart_fingerprint']);
+  Map<String, dynamic> toJson() => {'owner_user_id': ownerUserId, 'idempotency_key': idempotencyKey, 'address_id': addressId, 'payment_method': paymentMethod, 'cart_fingerprint': cartFingerprint};
+}
+
 class AddressModel {
   final String id;
   final String villageId;
