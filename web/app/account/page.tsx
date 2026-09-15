@@ -16,11 +16,12 @@ export default function AccountPage(){
   const [loading,setLoading]=useState(true);
   const [submitting,setSubmitting]=useState(false);
   const [message,setMessage]=useState('');
+  const [fullName,setFullName]=useState('');
 
   useEffect(()=>{
     (async()=>{
       try{
-        const user=await gaonApi.me();setMe(user);
+        const user=await gaonApi.me();setMe(user);setFullName(user.full_name||'');
         if(user.role==='merchant'){
           try{setMerchant(await gaonApi.merchant())}catch(e){if(!(e instanceof ApiError&&e.status===404))throw e}
         }
@@ -43,6 +44,8 @@ export default function AccountPage(){
     }catch(e:any){setMessage(e.message||'Unable to submit merchant application.')}finally{setSubmitting(false)}
   }
 
+  async function saveProfile(e:FormEvent){e.preventDefault();if(!fullName.trim()){setMessage('Enter your name.');return}setSubmitting(true);setMessage('');try{const user=await gaonApi.updateProfile(fullName.trim());setMe(user);setFullName(user.full_name||'');setMessage('Name updated.')}catch(e:any){setMessage(e.message||'Unable to update your name.')}finally{setSubmitting(false)}}
+
   if(loading)return <><Nav/><main className="container section"><div className="panel"><p>Loading account…</p></div></main></>;
 
   return <><Nav/><main className="container section">
@@ -52,6 +55,7 @@ export default function AccountPage(){
       <section className="panel stack">
         <div className="row"><span className="storeIcon"><UserRound size={22}/></span><div><h3 style={{margin:0}}>Account</h3><p className="muted" style={{margin:'4px 0 0'}}>Verified GaonOne user</p></div></div>
         <div><strong>Phone</strong><p className="muted">{me?.phone||'—'}</p></div>
+        <form className="stack" onSubmit={saveProfile}><label className="field" htmlFor="account-name">Name<input id="account-name" value={fullName} onChange={event=>setFullName(event.target.value)} maxLength={120} autoComplete="name"/></label><button className="btn secondary" disabled={submitting}>{submitting?'Saving…':'Save name'}</button></form>
         <div><strong>Role</strong><p className="muted" style={{textTransform:'capitalize'}}>{me?.role||'customer'}</p></div>
         <div className="row"><ShieldCheck size={17}/><span>{me?.is_verified?'Phone verified':'Verification pending'}</span></div>
         <div className="row"><Link className="btn secondary" href="/account/addresses">Saved addresses</Link><Link className="btn ghost" href="/account/devices">Notification devices</Link></div>

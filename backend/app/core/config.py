@@ -37,8 +37,10 @@ class Settings(BaseSettings):
         if self.APP_ENV in {"staging","production"}:
             if len(self.SECRET_KEY.encode())<32 or self.SECRET_KEY=="change-this-in-production": raise ValueError("SECRET_KEY must be at least 32 bytes and changed outside development")
             if self.APP_DEBUG: raise ValueError("APP_DEBUG must be false outside development/test")
+            if self.DEV_OTP: raise ValueError("DEV_OTP must be empty outside development/test")
             if self.SMS_PROVIDER=="msg91" and (not self.MSG91_AUTH_KEY or not self.MSG91_TEMPLATE_ID): raise ValueError("MSG91_AUTH_KEY and MSG91_TEMPLATE_ID are required when SMS_PROVIDER=msg91")
             if self.AUTH_PROVIDER=="msg91_widget" and not self.MSG91_AUTH_KEY: raise ValueError("MSG91_AUTH_KEY is required when AUTH_PROVIDER=msg91_widget")
+            if self.AUTH_PROVIDER=="local_otp" and self.SMS_PROVIDER!="msg91": raise ValueError("SMS_PROVIDER must be msg91 for direct OTP outside development/test")
             if bool(self.FCM_PROJECT_ID)!=bool(self.FCM_SERVICE_ACCOUNT_JSON_B64): raise ValueError("FCM_PROJECT_ID and FCM_SERVICE_ACCOUNT_JSON_B64 must be configured together")
         return self
     @field_validator("DEFAULT_DELIVERY_FEE")

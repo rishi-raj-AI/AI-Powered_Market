@@ -41,7 +41,7 @@ def token(phone: str, name: str | None = None) -> str:
 
 
 def super_admin_token() -> str:
-    admin_phone = phone(5)
+    admin_phone = phone(9)
     access_token = token(admin_phone, "Dispatch Super Admin")
     with SessionLocal() as db:
         admin = db.scalar(select(User).where(User.phone == admin_phone))

@@ -26,8 +26,8 @@ def auth(access_token: str) -> dict[str, str]:
 
 
 def random_phone(prefix: str) -> str:
-    suffix = int(uuid4().hex[:8], 16) % 10_000_000
-    return f"+91{prefix}{suffix:07d}"
+    suffix = int(uuid4().hex[:8], 16) % 100_000_000
+    return f"+91{prefix}{suffix:08d}"
 
 
 def test_super_admin_controls_admin_roles_and_is_protected():

@@ -87,10 +87,14 @@ def main() -> int:
     if sms_provider not in {'none', 'msg91'}:
         fail('SMS_PROVIDER must be none or msg91', errors)
     if sms_provider == 'msg91':
-        if not env.get('MSG91_AUTH_KEY', '').strip():
+        auth_key = env.get('MSG91_AUTH_KEY', '').strip()
+        template_id = env.get('MSG91_TEMPLATE_ID', '').strip()
+        if not auth_key or auth_key.startswith('REPLACE_'):
             fail('MSG91_AUTH_KEY is required when SMS_PROVIDER=msg91', errors)
-        if not env.get('MSG91_TEMPLATE_ID', '').strip():
+        if not template_id or template_id.startswith('REPLACE_'):
             fail('MSG91_TEMPLATE_ID is required when SMS_PROVIDER=msg91', errors)
+    if auth_provider == 'local_otp' and sms_provider != 'msg91':
+        fail('SMS_PROVIDER must be msg91 when AUTH_PROVIDER=local_otp', errors)
 
     email = env.get('ACME_EMAIL', '')
     if '@' not in email or email.endswith('@example.com'):

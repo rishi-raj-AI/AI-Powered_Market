@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -20,20 +21,27 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 def _login_verified_phone(phone: str, full_name: str | None, db: Session) -> TokenResponse:
+    full_name = " ".join(full_name.split()) if full_name and full_name.strip() else None
     user = db.scalar(select(User).where(User.phone == phone))
     if user is None:
         user = User(phone=phone, full_name=full_name, is_verified=True)
         db.add(user)
-        db.commit()
-        db.refresh(user)
-    else:
-        if not user.is_active:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled")
-        if full_name and not user.full_name:
-            user.full_name = full_name
-        user.is_verified = True
-        db.commit()
-        db.refresh(user)
+        try:
+            db.commit()
+        except IntegrityError:
+            # A concurrent verification of the same canonical phone may have
+            # created the identity first. Never create or merge a second user.
+            db.rollback()
+            user = db.scalar(select(User).where(User.phone == phone))
+            if user is None:
+                raise
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled")
+    if full_name and not user.full_name:
+        user.full_name = full_name
+    user.is_verified = True
+    db.commit()
+    db.refresh(user)
     return TokenResponse(access_token=create_access_token(str(user.id)))
 
 
@@ -50,7 +58,14 @@ def request_otp(payload: OTPRequest) -> OTPRequestResponse:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
-    return OTPRequestResponse(message=result.message, dev_otp=result.dev_otp)
+    return OTPRequestResponse(
+        message=result.message,
+        dev_otp=result.dev_otp,
+        expires_in_seconds=result.expires_in_seconds,
+        resend_after_seconds=None,
+        request_limit=settings.OTP_MAX_REQUESTS_PER_WINDOW,
+        request_window_seconds=settings.OTP_RATE_WINDOW_SECONDS,
+    )
 
 
 @router.post("/verify-otp", response_model=TokenResponse)
@@ -60,7 +75,11 @@ def verify_otp(payload: OTPVerifyRequest, db: Session = Depends(get_db)) -> Toke
             status_code=status.HTTP_410_GONE,
             detail="Production OTP is handled by the MSG91 widget",
         )
-    if not otp_service.verify(payload.phone, payload.otp):
+    try:
+        verified = otp_service.verify(payload.phone, payload.otp)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    if not verified:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired OTP")
     return _login_verified_phone(payload.phone, payload.full_name, db)
 

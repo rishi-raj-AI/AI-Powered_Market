@@ -149,7 +149,7 @@ def test_postgis_discovery_serviceability_and_nearest_dispatch() -> None:
     assert nearby.json()[0]["distance_km"] >= 0
 
     near_token = token(phone(6), "Near Rider")
-    far_token = token(phone(5), "Far Rider")
+    far_token = token(phone(8), "Far Rider")
     near_id = promote_rider(admin_token, near_token)
     far_id = promote_rider(admin_token, far_token)
     set_presence(near_token, village["latitude"] + 0.001, village["longitude"] + 0.001)
@@ -188,7 +188,7 @@ def test_concurrent_dispatch_does_not_double_assign_one_rider() -> None:
     merchant_token = token("+919000000003")
     village = seeded_village()
 
-    rider_token = token(phone(4), "Race Rider")
+    rider_token = token(phone(9), "Race Rider")
     rider_id = promote_rider(admin_token, rider_token)
     set_presence(rider_token, village["latitude"] + 0.001, village["longitude"] + 0.001)
 

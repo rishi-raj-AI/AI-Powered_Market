@@ -30,6 +30,9 @@ BASE = {
     "APP_ENV": "production",
     "APP_DEBUG": False,
     "SECRET_KEY": STRONG_SECRET,
+    "AUTH_PROVIDER": "msg91_widget",
+    "MSG91_AUTH_KEY": "configured-widget-key",
+    "DEV_OTP": "",
 }
 
 
@@ -63,6 +66,16 @@ def test_msg91_sms_requires_its_credentials_in_production() -> None:
 def test_msg91_widget_auth_requires_its_key_in_production() -> None:
     with pytest.raises(ValidationError, match="MSG91_AUTH_KEY"):
         production_settings(AUTH_PROVIDER="msg91_widget", MSG91_AUTH_KEY=None)
+
+
+def test_direct_otp_requires_real_sms_outside_development() -> None:
+    with pytest.raises(ValidationError, match="SMS_PROVIDER"):
+        production_settings(AUTH_PROVIDER="local_otp", SMS_PROVIDER="none")
+
+
+def test_development_otp_is_rejected_outside_development() -> None:
+    with pytest.raises(ValidationError, match="DEV_OTP"):
+        production_settings(DEV_OTP="123456")
 
 
 def test_fcm_credentials_must_be_configured_together() -> None:
@@ -141,7 +154,7 @@ def test_rate_limiting_fails_open_only_in_development(monkeypatch) -> None:
 def test_staging_also_fails_closed(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.services.rate_limit.settings",
-        Settings(APP_ENV="staging", APP_DEBUG=False, SECRET_KEY=STRONG_SECRET),
+        Settings(APP_ENV="staging", APP_DEBUG=False, SECRET_KEY=STRONG_SECRET, AUTH_PROVIDER="msg91_widget", MSG91_AUTH_KEY="configured-widget-key", DEV_OTP=""),
     )
     limiter = _limiter(_BrokenRedis())
     with pytest.raises(RateLimitUnavailable):

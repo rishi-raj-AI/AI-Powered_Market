@@ -19,6 +19,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool otpSent = false;
   bool loading = false;
   String? message;
+  String requestedPhone = '';
 
   @override
   void dispose() {
@@ -35,11 +36,12 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final code = await GaonApi.requestOtp(phoneController.text.trim());
+      final result = await GaonApi.requestOtp(phoneController.text.trim());
       if (!mounted) return;
       setState(() {
         otpSent = true;
-        message = code == null ? 'OTP sent' : 'Development OTP: $code';
+        requestedPhone = phoneController.text.trim();
+        message = result.developmentOtp != null ? 'Development OTP: ${result.developmentOtp}' : result.expiresInSeconds == null ? 'Request accepted. SMS delivery and code expiry are controlled by the provider.' : 'Code requested. It expires in ${(result.expiresInSeconds!/60).ceil()} minutes.';
       });
     } catch (error) {
       if (!mounted) return;
@@ -57,7 +59,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       await GaonApi.verifyOtp(
-        phoneController.text.trim(),
+        requestedPhone,
         otpController.text.trim(),
         nameController.text.trim(),
       );
@@ -70,6 +72,8 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) setState(() => loading = false);
     }
   }
+
+  void changeNumber(){setState((){otpSent=false;requestedPhone='';otpController.clear();message=null;});}
 
   @override
   Widget build(BuildContext context) {
@@ -100,6 +104,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(height: 28),
                       TextField(
                         controller: phoneController,
+                        enabled: !otpSent,
                         keyboardType: TextInputType.phone,
                         decoration: const InputDecoration(
                           labelText: 'Mobile number',
@@ -137,6 +142,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   : 'Send OTP',
                         ),
                       ),
+                      if(otpSent)...[const SizedBox(height:8),Row(children:[Expanded(child:OutlinedButton(onPressed:loading?null:requestOtp,child:const Text('Resend code'))),const SizedBox(width:8),Expanded(child:TextButton(onPressed:loading?null:changeNumber,child:const Text('Change number')))]),const Text('Resend limits apply. GaonOne does not resend automatically.',textAlign:TextAlign.center)],
                       if (message != null) ...[
                         const SizedBox(height: 12),
                         Text(message!, textAlign: TextAlign.center),

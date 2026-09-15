@@ -52,7 +52,7 @@ def test_customer_sees_only_active_assigned_rider_location(monkeypatch) -> None:
     merchant_token = token("+919000000003")
     customer_phone = phone(7)
     rider_phone = phone(6)
-    stranger_phone = phone(5)
+    stranger_phone = phone(8)
     customer_token = token(customer_phone, "Tracking Customer")
     rider_token = token(rider_phone, "Tracking Rider")
     stranger_token = token(stranger_phone, "Tracking Stranger")
