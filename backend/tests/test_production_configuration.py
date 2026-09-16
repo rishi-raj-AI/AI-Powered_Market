@@ -95,6 +95,18 @@ def test_a_valid_production_configuration_is_accepted() -> None:
     assert settings.trusted_hosts == ["gaonone.in"]
 
 
+def test_a_valid_direct_otp_production_configuration_is_accepted() -> None:
+    settings = production_settings(
+        AUTH_PROVIDER="local_otp",
+        SMS_PROVIDER="msg91",
+        MSG91_AUTH_KEY="configured-direct-otp-key",
+        MSG91_TEMPLATE_ID="configured-direct-otp-template",
+    )
+
+    assert settings.AUTH_PROVIDER == "local_otp"
+    assert settings.SMS_PROVIDER == "msg91"
+
+
 def test_staging_is_held_to_the_same_safety_rules() -> None:
     with pytest.raises(ValidationError, match="SECRET_KEY"):
         Settings(APP_ENV="staging", APP_DEBUG=False, SECRET_KEY="change-this-in-production")
