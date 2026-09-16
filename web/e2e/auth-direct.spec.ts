@@ -11,8 +11,9 @@ test('direct OTP keeps phone context, supports resend, and completes a safe retu
   });
   await page.goto('/login?next=%2Forders');
   await page.getByLabel('Mobile number').fill('98765 43210');
-  await page.getByRole('button',{name:'Send OTP'}).dblclick();
+  await page.getByRole('button',{name:'Send OTP'}).click();
   await expect(page.getByLabel('One-time code')).toBeVisible();
+  await expect(page.getByLabel('One-time code')).toBeEnabled();
   expect(requests).toBe(1);
   await page.getByRole('button',{name:'Resend code'}).click();
   await expect.poll(()=>requests).toBe(2);
@@ -33,9 +34,11 @@ test('change number resets the challenge and role-restricted next is rejected',a
   await page.goto('/login?next=%2Fadmin');
   await page.getByLabel('Mobile number').fill('9876543210');
   await page.getByRole('button',{name:'Send OTP'}).click();
+  await expect(page.getByLabel('One-time code')).toBeEnabled();
   await page.getByRole('button',{name:'Change number'}).click();
   await expect(page.getByLabel('Mobile number')).toBeEnabled();
   await page.getByRole('button',{name:'Send OTP'}).click();
+  await expect(page.getByLabel('One-time code')).toBeEnabled();
   await page.getByLabel('One-time code').fill('123456');
   await page.getByRole('button',{name:'Verify & continue'}).click();
   await expect(page).toHaveURL(/\/market$/);
@@ -51,7 +54,7 @@ test('verified token survives profile bootstrap failure without consuming anothe
     if(path.endsWith('/users/me'))return route.fulfill({status:401,json:{detail:'Not authenticated'}});
     return route.fulfill({status:200,json:[]});
   });
-  await page.goto('/login');await page.getByLabel('Mobile number').fill('9876543210');await page.getByRole('button',{name:'Send OTP'}).click();await page.getByLabel('One-time code').fill('123456');await page.getByRole('button',{name:'Verify & continue'}).dblclick();
+  await page.goto('/login');await page.getByLabel('Mobile number').fill('9876543210');await page.getByRole('button',{name:'Send OTP'}).click();await expect(page.getByLabel('One-time code')).toBeEnabled();await page.getByLabel('One-time code').fill('123456');await page.getByRole('button',{name:'Verify & continue'}).click();
   await expect(page.getByRole('button',{name:'Continue signed-in session'})).toBeVisible();expect(verifies).toBe(1);expect(await page.evaluate(()=>localStorage.getItem('gaonone_token'))).toBe('application-token');
   await page.getByRole('button',{name:'Continue signed-in session'}).click();await expect(page).toHaveURL(/\/market$/);expect(verifies).toBe(1);
 });
