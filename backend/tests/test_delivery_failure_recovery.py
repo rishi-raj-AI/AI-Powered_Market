@@ -34,7 +34,7 @@ OTP = "123456"
 
 
 def admin_token() -> str:
-    phone = f"+915{int(uuid4().hex[:8], 16) % 1_000_000_000:09d}"
+    phone = f"+919{int(uuid4().hex[:8], 16) % 1_000_000_000:09d}"
     response = client.post(
         "/api/v1/auth/verify-otp",
         json={"phone": phone, "otp": OTP, "full_name": "Recovery Super Admin"},

@@ -30,6 +30,9 @@ BASE = {
     "APP_ENV": "production",
     "APP_DEBUG": False,
     "SECRET_KEY": STRONG_SECRET,
+    "AUTH_PROVIDER": "msg91_widget",
+    "MSG91_AUTH_KEY": "configured-widget-key",
+    "DEV_OTP": "",
 }
 
 
@@ -65,6 +68,16 @@ def test_msg91_widget_auth_requires_its_key_in_production() -> None:
         production_settings(AUTH_PROVIDER="msg91_widget", MSG91_AUTH_KEY=None)
 
 
+def test_direct_otp_requires_real_sms_outside_development() -> None:
+    with pytest.raises(ValidationError, match="SMS_PROVIDER"):
+        production_settings(AUTH_PROVIDER="local_otp", SMS_PROVIDER="none")
+
+
+def test_development_otp_is_rejected_outside_development() -> None:
+    with pytest.raises(ValidationError, match="DEV_OTP"):
+        production_settings(DEV_OTP="123456")
+
+
 def test_fcm_credentials_must_be_configured_together() -> None:
     with pytest.raises(ValidationError, match="FCM"):
         production_settings(FCM_PROJECT_ID="gaonone", FCM_SERVICE_ACCOUNT_JSON_B64=None)
@@ -80,6 +93,18 @@ def test_a_valid_production_configuration_is_accepted() -> None:
     assert settings.APP_ENV == "production"
     assert settings.cors_origins == ["https://gaonone.in"]
     assert settings.trusted_hosts == ["gaonone.in"]
+
+
+def test_a_valid_direct_otp_production_configuration_is_accepted() -> None:
+    settings = production_settings(
+        AUTH_PROVIDER="local_otp",
+        SMS_PROVIDER="msg91",
+        MSG91_AUTH_KEY="configured-direct-otp-key",
+        MSG91_TEMPLATE_ID="configured-direct-otp-template",
+    )
+
+    assert settings.AUTH_PROVIDER == "local_otp"
+    assert settings.SMS_PROVIDER == "msg91"
 
 
 def test_staging_is_held_to_the_same_safety_rules() -> None:
@@ -141,7 +166,7 @@ def test_rate_limiting_fails_open_only_in_development(monkeypatch) -> None:
 def test_staging_also_fails_closed(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.services.rate_limit.settings",
-        Settings(APP_ENV="staging", APP_DEBUG=False, SECRET_KEY=STRONG_SECRET),
+        Settings(APP_ENV="staging", APP_DEBUG=False, SECRET_KEY=STRONG_SECRET, AUTH_PROVIDER="msg91_widget", MSG91_AUTH_KEY="configured-widget-key", DEV_OTP=""),
     )
     limiter = _limiter(_BrokenRedis())
     with pytest.raises(RateLimitUnavailable):

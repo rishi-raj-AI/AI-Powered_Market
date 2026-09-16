@@ -20,6 +20,7 @@ class _GaonOneAppState extends State<GaonOneApp> {
   bool loading = true;
   bool loggedIn = false;
   String role = 'customer';
+  bool bootstrapUnavailable = false;
 
   final GlobalKey<ScaffoldMessengerState> _messengerKey = GlobalKey<ScaffoldMessengerState>();
 
@@ -35,13 +36,14 @@ class _GaonOneAppState extends State<GaonOneApp> {
       if (await GaonApi.hasToken()) {
         final me = await GaonApi.me();
         if (!mounted) return;
-        setState(() { loggedIn = true; role = me.role; loading = false; });
+        setState(() { loggedIn = true; role = me.role; loading = false; bootstrapUnavailable = false; });
       } else if (mounted) {
         setState(() => loading = false);
       }
+    } on SessionExpired {
+      if (mounted) setState(() { loggedIn = false; loading = false; bootstrapUnavailable = false; });
     } catch (_) {
-      await GaonApi.logout();
-      if (mounted) setState(() { loggedIn = false; loading = false; });
+      if (mounted) setState(() { loading = false; bootstrapUnavailable = true; });
     }
   }
 
@@ -68,6 +70,7 @@ class _GaonOneAppState extends State<GaonOneApp> {
   }
 
   Widget _home() {
+    if (bootstrapUnavailable) return Scaffold(body:Center(child:Padding(padding:const EdgeInsets.all(24),child:Column(mainAxisSize:MainAxisSize.min,children:[const Text('We could not confirm your account because the network or service is unavailable.',textAlign:TextAlign.center),const SizedBox(height:16),FilledButton(onPressed:(){setState(()=>loading=true);_bootstrap();},child:const Text('Retry'))]))));
     if (!loggedIn) return LoginScreen(onLoggedIn: _onLoggedIn);
     return switch (role) {
       'merchant' => MerchantWorkspace(onLogout: _logout),

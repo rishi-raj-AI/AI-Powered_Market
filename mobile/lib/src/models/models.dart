@@ -7,6 +7,17 @@ class UserModel {
   factory UserModel.fromJson(Map<String, dynamic> j) => UserModel(id: j['id'], phone: j['phone'], fullName: j['full_name'], role: j['role']);
 }
 
+class OtpRequestModel {
+  final String message;
+  final String? developmentOtp;
+  final int? expiresInSeconds;
+  final int? resendAfterSeconds;
+  final int requestLimit;
+  final int requestWindowSeconds;
+  OtpRequestModel({required this.message,this.developmentOtp,this.expiresInSeconds,this.resendAfterSeconds,required this.requestLimit,required this.requestWindowSeconds});
+  factory OtpRequestModel.fromJson(Map<String,dynamic> j)=>OtpRequestModel(message:j['message'],developmentOtp:j['dev_otp'],expiresInSeconds:j['expires_in_seconds'],resendAfterSeconds:j['resend_after_seconds'],requestLimit:j['request_limit'],requestWindowSeconds:j['request_window_seconds']);
+}
+
 class Village {
   final String id;
   final String name;

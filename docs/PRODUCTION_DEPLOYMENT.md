@@ -131,7 +131,17 @@ The `media_data` Docker volume contains uploaded product/store images. Until obj
 
 The application is provider-ready, but real credentials are intentionally absent from Git.
 
-- SMS: configure the selected Indian SMS provider and disable development OTP behavior.
+- SMS OTP: use `AUTH_PROVIDER=local_otp` and `SMS_PROVIDER=msg91` so web and
+  mobile use the same backend-owned verification flow. Keep `DEV_OTP` empty.
+  Obtain `MSG91_AUTH_KEY` from the MSG91 account and `MSG91_TEMPLATE_ID` from
+  an approved transactional OTP template; enter both only in the server's
+  `.env.production`. Confirm the account has balance, the Indian DLT
+  entity/sender/template registrations are approved where required, and the
+  template's OTP placeholder and validity are configured in MSG91. Run
+  `python3 deploy/validate_env.py` without printing the environment. The legacy
+  `msg91_widget` exchange endpoint remains compatible, but is not the shared
+  web/mobile login mode. Real-device SMS receipt, wrong/expired code, resend,
+  returning user and disabled-user checks remain mandatory staging evidence.
 - Razorpay: set `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET`; use test mode first.
 - Firebase: set project/service credentials once push transport is activated.
 - Maps: GPS/radius discovery works now; map rendering/geocoding can be enabled later.

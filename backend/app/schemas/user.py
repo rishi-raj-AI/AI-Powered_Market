@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.user import UserRole
 
@@ -23,3 +23,16 @@ class UserResponse(BaseModel):
 class CapabilityResponse(BaseModel):
     is_super_admin: bool
     capabilities: list[str]
+
+
+class UserProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    full_name: str = Field(min_length=1, max_length=120)
+
+    @field_validator("full_name")
+    @classmethod
+    def clean_name(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if not cleaned:
+            raise ValueError("Name cannot be empty")
+        return cleaned

@@ -136,7 +136,7 @@ def test_concurrent_duplicate_checkout_returns_one_order_and_decrements_once() -
     merchant_token, store_id, listing_id = seeded_listing()
     set_stock(merchant_token, store_id, listing_id, 5)
 
-    phone = customer_phone(5)
+    phone = customer_phone(8)
     customer_token = token(phone, "Concurrent Idempotent Customer")
     address_id = create_address(customer_token, phone)
     added = client.post(

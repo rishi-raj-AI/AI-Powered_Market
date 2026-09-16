@@ -15,6 +15,7 @@ from app.core.config import settings
 class OTPResult:
     message: str
     dev_otp: str | None = None
+    expires_in_seconds: int | None = None
 
 
 class OTPService:
@@ -67,16 +68,16 @@ class OTPService:
                 params={
                     "template_id": settings.MSG91_TEMPLATE_ID,
                     "mobile": self._msg91_mobile(phone),
-                    "authkey": settings.MSG91_AUTH_KEY,
                 },
-                headers={"accept": "application/json"},
+                headers={"authkey": settings.MSG91_AUTH_KEY or "", "accept": "application/json"},
                 timeout=settings.SMS_HTTP_TIMEOUT_SECONDS,
             )
-            response.raise_for_status()
             payload = response.json()
         except (httpx.HTTPError, ValueError) as exc:
             raise RuntimeError("OTP provider request failed") from exc
 
+        if response.status_code < 200 or response.status_code >= 300 or not isinstance(payload, dict):
+            raise RuntimeError("OTP provider rejected the request")
         if str(payload.get("type", "")).lower() != "success":
             raise RuntimeError("OTP provider rejected the request")
 
@@ -88,11 +89,14 @@ class OTPService:
                 headers={"authkey": settings.MSG91_AUTH_KEY or "", "accept": "application/json"},
                 timeout=settings.SMS_HTTP_TIMEOUT_SECONDS,
             )
-            if response.status_code != 200:
-                return False
             payload = response.json()
-        except (httpx.HTTPError, ValueError):
-            return False
+        except httpx.HTTPError as exc:
+            raise RuntimeError("OTP verification provider is unavailable") from exc
+        except ValueError as exc:
+            raise RuntimeError("OTP verification provider returned an invalid response") from exc
+
+        if response.status_code < 200 or response.status_code >= 300 or not isinstance(payload, dict):
+            raise RuntimeError("OTP verification provider is unavailable")
 
         return str(payload.get("type", "")).lower() == "success"
 
@@ -105,11 +109,13 @@ class OTPService:
                 self._redis.setex(self._otp_key(phone), settings.OTP_TTL_SECONDS, otp)
             except RedisError:
                 pass
-            return OTPResult(message="Development OTP generated", dev_otp=otp)
+            return OTPResult(message="Development OTP generated", dev_otp=otp, expires_in_seconds=settings.OTP_TTL_SECONDS)
 
         if settings.SMS_PROVIDER == "msg91":
             self._msg91_send(phone)
-            return OTPResult(message="OTP sent")
+            # MSG91 owns code expiry and resend delivery. Do not publish a
+            # countdown the provider has not confirmed to this request.
+            return OTPResult(message="OTP request accepted")
 
         raise RuntimeError("SMS OTP provider is not configured")
 

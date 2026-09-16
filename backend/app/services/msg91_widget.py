@@ -6,6 +6,7 @@ import logging
 import httpx
 
 from app.core.config import settings
+from app.core.phone import normalize_indian_phone
 
 VERIFY_ACCESS_TOKEN_URL = "https://control.msg91.com/api/v5/widget/verifyAccessToken"
 logger = logging.getLogger(__name__)
@@ -50,13 +51,10 @@ def _extract_identifier(payload: dict) -> str | None:
 
 
 def _normalize_indian_phone(identifier: str) -> str:
-    value = identifier.strip().replace(" ", "").replace("-", "")
-    digits = value[1:] if value.startswith("+") else value
-    if digits.startswith("91") and len(digits) == 12:
-        return f"+{digits}"
-    if len(digits) == 10:
-        return f"+91{digits}"
-    raise ValueError("MSG91 returned an unsupported mobile identifier")
+    try:
+        return normalize_indian_phone(identifier)
+    except ValueError as exc:
+        raise ValueError("MSG91 returned an unsupported mobile identifier") from exc
 
 
 def _provider_message(payload: dict, fallback: str) -> str:
