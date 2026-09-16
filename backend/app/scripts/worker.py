@@ -20,6 +20,7 @@ import time
 from app.db.session import SessionLocal
 from app.services.fcm import flush_pending
 from app.services.refunds import dispatch_due_refunds
+from app.services.store_banners import process_due_banner_jobs
 
 logging.basicConfig(
     level=os.environ.get("WORKER_LOG_LEVEL", "INFO"),
@@ -30,6 +31,7 @@ logger = logging.getLogger("gaonone.worker")
 POLL_SECONDS = int(os.environ.get("WORKER_POLL_SECONDS", "20"))
 NOTIFICATION_BATCH = int(os.environ.get("WORKER_NOTIFICATION_BATCH", "100"))
 REFUND_BATCH = int(os.environ.get("WORKER_REFUND_BATCH", "25"))
+BANNER_BATCH = int(os.environ.get("BANNER_JOB_BATCH", "25"))
 
 _running = True
 
@@ -55,6 +57,14 @@ def tick() -> dict[str, dict]:
     except Exception:
         logger.exception("Refund dispatch failed")
         result["refunds"] = {"error": 1}
+    try:
+        with SessionLocal() as db:
+            result["banners"] = process_due_banner_jobs(db, limit=BANNER_BATCH)
+    except Exception:
+        # Banner presentation is never an obligation that may delay financial
+        # recovery or notification delivery.
+        logger.exception("Banner generation flush failed")
+        result["banners"] = {"error": 1}
     return result
 
 
@@ -66,8 +76,14 @@ def main() -> int:
         outcome = tick()
         notifications = outcome.get("notifications", {})
         refunds = outcome.get("refunds", {})
-        if notifications.get("events") or refunds.get("considered"):
-            logger.info("Worker tick notifications=%s refunds=%s", notifications, refunds)
+        banners = outcome.get("banners", {})
+        if notifications.get("events") or refunds.get("considered") or banners.get("considered"):
+            logger.info(
+                "Worker tick notifications=%s refunds=%s banners=%s",
+                notifications,
+                refunds,
+                banners,
+            )
         for _ in range(POLL_SECONDS):
             if not _running:
                 break

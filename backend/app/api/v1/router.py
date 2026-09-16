@@ -20,6 +20,10 @@ from app.api.v1.routes.payments import router as payments_router
 from app.api.v1.routes.refunds import router as refunds_router
 from app.api.v1.routes.reorder import router as reorder_router
 from app.api.v1.routes.store_discovery import router as store_discovery_router
+from app.api.v1.routes.store_banners import (
+    admin_router as store_banner_admin_router,
+    merchant_router as store_banner_router,
+)
 from app.api.v1.routes.substitutions import router as substitutions_router
 from app.api.v1.routes.support import router as support_router
 from app.api.v1.routes.tracking import router as tracking_router
@@ -36,6 +40,7 @@ api_router.include_router(discovery_router)
 # same public path, preserving API compatibility while replacing its runtime path.
 api_router.include_router(store_discovery_router)
 api_router.include_router(commerce_router)
+api_router.include_router(store_banner_router)
 api_router.include_router(substitutions_router)
 api_router.include_router(reorder_router)
 api_router.include_router(delivery_tasks_router)
@@ -57,3 +62,4 @@ api_router.include_router(notifications_router)
 api_router.include_router(support_router)
 api_router.include_router(media_router)
 api_router.include_router(admin_router)
+api_router.include_router(store_banner_admin_router)

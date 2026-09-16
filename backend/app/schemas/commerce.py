@@ -5,6 +5,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.commerce import MerchantStatus
+from app.schemas.banners import BannerPresentationRead
 
 
 class MerchantCreate(BaseModel):
@@ -64,6 +65,8 @@ class StoreRead(StoreCreate):
     #: Backend-computed, India-local. Clients render this; they never derive
     #: their own answer from opens_at/closes_at.
     is_open_now: bool = True
+    #: Never exposes draft source, job state, moderation or provider details.
+    banner: BannerPresentationRead | None = None
 
 
 class NearbyStoreRead(StoreRead):

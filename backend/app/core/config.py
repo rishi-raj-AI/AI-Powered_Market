@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     RAZORPAY_KEY_ID:str|None=None; RAZORPAY_KEY_SECRET:str|None=None; RAZORPAY_WEBHOOK_SECRET:str|None=None
     FCM_PROJECT_ID:str|None=None; FCM_SERVICE_ACCOUNT_JSON_B64:str|None=None
     MAPS_PROVIDER:str="none"; MAPS_API_KEY:str|None=None
+    # Template-only processing limits. They are provider-neutral defaults and
+    # remain configurable before any external media-generation service exists.
+    BANNER_REGEN_MAX_REQUESTS:int=3; BANNER_REGEN_WINDOW_SECONDS:int=86400
+    BANNER_JOB_MAX_ATTEMPTS:int=3; BANNER_JOB_LEASE_SECONDS:int=120; BANNER_JOB_BATCH:int=25
     DEFAULT_DELIVERY_FEE:Decimal=Decimal("20.00")
     model_config=SettingsConfigDict(env_file=".env",extra="ignore")
     @field_validator("APP_ENV")
@@ -47,6 +51,11 @@ class Settings(BaseSettings):
     @classmethod
     def validate_delivery_fee(cls,value:Decimal)->Decimal:
         if value < 0: raise ValueError("DEFAULT_DELIVERY_FEE cannot be negative")
+        return value
+    @field_validator("BANNER_REGEN_MAX_REQUESTS", "BANNER_REGEN_WINDOW_SECONDS", "BANNER_JOB_MAX_ATTEMPTS", "BANNER_JOB_LEASE_SECONDS", "BANNER_JOB_BATCH")
+    @classmethod
+    def validate_banner_limits(cls,value:int)->int:
+        if value <= 0: raise ValueError("Banner processing limits must be positive")
         return value
     @property
     def cors_origins(self)->list[str]: return [x.strip() for x in self.CORS_ORIGINS.split(",") if x.strip()]

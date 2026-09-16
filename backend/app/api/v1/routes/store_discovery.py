@@ -8,6 +8,7 @@ from app.models.commerce import Store
 from app.schemas.commerce import NearbyStoreRead, StoreRead
 from app.services.spatial import nearby_store_distances
 from app.services.store_hours import store_is_open
+from app.services.store_banners import public_presentations_for_stores
 
 router = APIRouter(tags=["Commerce"])
 
@@ -27,9 +28,9 @@ def nearby_stores_postgis(
     # One query for the page of stores instead of a fetch per ranked row.
     store_ids = [store_id for store_id, _ in ranked]
     by_id = {
-        store.id: store
-        for store in db.scalars(select(Store).where(Store.id.in_(store_ids))).all()
+        store.id: store for store in db.scalars(select(Store).where(Store.id.in_(store_ids))).all()
     }
+    banners = public_presentations_for_stores(db, store_ids)
     results: list[NearbyStoreRead] = []
     for store_id, distance_km in ranked:
         store = by_id.get(store_id)
@@ -37,5 +38,6 @@ def nearby_stores_postgis(
             continue
         payload = StoreRead.model_validate(store).model_dump()
         payload["is_open_now"] = store_is_open(store)
+        payload["banner"] = banners.get(store.id)
         results.append(NearbyStoreRead(**payload, distance_km=round(distance_km, 2)))
     return results
