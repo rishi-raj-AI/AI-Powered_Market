@@ -1,7 +1,12 @@
 from app.models.user import User, UserRole
 from app.models.geography import Address, ServiceArea, Village
 from app.models.commerce import Category, Merchant, MerchantStatus, Product, Store, StoreProduct
-from app.models.integrations import CodCollection, DeviceRegistration, NotificationEvent, PaymentAttempt
+from app.models.integrations import (
+    CodCollection,
+    DeviceRegistration,
+    NotificationEvent,
+    PaymentAttempt,
+)
 from app.models.orders import (
     Cart,
     CartItem,
@@ -16,6 +21,12 @@ from app.models.orders import (
 )
 from app.models.support import SupportMessage, SupportTicket
 from app.models.governance import AdministrativeAuditEvent
+from app.models.banners import (
+    BannerAuditEvent,
+    BannerGenerationJob,
+    StoreBannerSelection,
+    StoreBannerVersion,
+)
 
 __all__ = [
     "User",
@@ -46,4 +57,8 @@ __all__ = [
     "SupportTicket",
     "SupportMessage",
     "AdministrativeAuditEvent",
+    "StoreBannerVersion",
+    "BannerGenerationJob",
+    "StoreBannerSelection",
+    "BannerAuditEvent",
 ]

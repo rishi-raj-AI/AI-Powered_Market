@@ -5,7 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.api.deps import ensure_capability, get_current_user, get_db, require_capability, require_roles
+from app.api.deps import (
+    ensure_capability,
+    get_current_user,
+    get_db,
+    require_capability,
+    require_roles,
+)
 from app.core.capabilities import Capability
 from app.models.commerce import Category, Merchant, MerchantStatus, Product, Store, StoreProduct
 from app.models.geography import ServiceArea, Village
@@ -29,8 +35,10 @@ from app.schemas.commerce import (
     StoreUpdate,
 )
 from app.services.governance_audit import record_admin_action
+from app.services.store_banners import create_banner_job, public_presentations_for_stores
 
 router = APIRouter(tags=["Commerce"])
+_BANNER_UNSET = object()
 
 
 def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -64,10 +72,13 @@ def _require_store_owner(
     return merchant
 
 
-def _store_read(store: Store) -> StoreRead:
+def _store_read(db: Session, store: Store, *, banner=_BANNER_UNSET) -> StoreRead:
     """Serialise a store with its backend-decided current availability."""
     payload = StoreRead.model_validate(store).model_dump()
     payload["is_open_now"] = store_is_open(store)
+    if banner is _BANNER_UNSET:
+        banner = public_presentations_for_stores(db, [store.id]).get(store.id)
+    payload["banner"] = banner
     return StoreRead(**payload)
 
 
@@ -150,9 +161,15 @@ def approve_merchant(
     previous = merchant.status.value
     _set_merchant_status(db, merchant, MerchantStatus.APPROVED)
     record_admin_action(
-        db, request=request, actor=admin, action="merchant.approved",
-        capability=Capability.MERCHANT_MANAGE, resource_type="merchant", resource_id=merchant.id,
-        previous_state={"status": previous}, resulting_state={"status": merchant.status.value},
+        db,
+        request=request,
+        actor=admin,
+        action="merchant.approved",
+        capability=Capability.MERCHANT_MANAGE,
+        resource_type="merchant",
+        resource_id=merchant.id,
+        previous_state={"status": previous},
+        resulting_state={"status": merchant.status.value},
         reason="merchant_onboarding_approval",
     )
     db.commit()
@@ -174,9 +191,15 @@ def update_merchant_status(
     previous = merchant.status.value
     _set_merchant_status(db, merchant, payload.status)
     record_admin_action(
-        db, request=request, actor=admin, action="merchant.status_updated",
-        capability=Capability.MERCHANT_MANAGE, resource_type="merchant", resource_id=merchant.id,
-        previous_state={"status": previous}, resulting_state={"status": merchant.status.value},
+        db,
+        request=request,
+        actor=admin,
+        action="merchant.status_updated",
+        capability=Capability.MERCHANT_MANAGE,
+        resource_type="merchant",
+        resource_id=merchant.id,
+        previous_state={"status": previous},
+        resulting_state={"status": merchant.status.value},
         reason="merchant_operational_status_change",
     )
     db.commit()
@@ -226,16 +249,29 @@ def create_store(
     store = Store(merchant_id=merchant.id, **payload.model_dump())
     db.add(store)
     db.flush()
+    # This durable local job is not a provider/media call. Store registration
+    # stays independent from every later worker, moderation or storage result.
+    create_banner_job(
+        db,
+        store=store,
+        trigger="store_created",
+        idempotency_key=f"store-created:{store.id}",
+    )
     if user.role == UserRole.ADMIN:
         record_admin_action(
-            db, request=request, actor=user, action="store.created",
-            capability=Capability.CATALOG_MANAGE, resource_type="store", resource_id=store.id,
+            db,
+            request=request,
+            actor=user,
+            action="store.created",
+            capability=Capability.CATALOG_MANAGE,
+            resource_type="store",
+            resource_id=store.id,
             resulting_state={"merchant_id": str(store.merchant_id), "is_active": store.is_active},
             reason="administrator_catalog_operations",
         )
     db.commit()
     db.refresh(store)
-    return _store_read(store)
+    return _store_read(db, store)
 
 
 @router.get("/stores", response_model=list[StoreRead])
@@ -254,7 +290,9 @@ def list_stores(
         stmt = stmt.where(Store.name.ilike(f"%{q}%"))
     if delivery is not None:
         stmt = stmt.where(Store.delivery_enabled.is_(delivery))
-    return [_store_read(store) for store in db.scalars(stmt.offset(offset).limit(limit)).all()]
+    stores = db.scalars(stmt.offset(offset).limit(limit)).all()
+    banners = public_presentations_for_stores(db, [store.id for store in stores])
+    return [_store_read(db, store, banner=banners.get(store.id)) for store in stores]
 
 
 @router.get("/stores/nearby", response_model=list[NearbyStoreRead])
@@ -272,11 +310,13 @@ def nearby_stores(
     if delivery is not None:
         stmt = stmt.where(Store.delivery_enabled.is_(delivery))
 
+    stores = db.scalars(stmt).all()
+    banners = public_presentations_for_stores(db, [store.id for store in stores])
     results: list[NearbyStoreRead] = []
-    for store in db.scalars(stmt).all():
+    for store in stores:
         distance = _distance_km(lat, lng, float(store.latitude), float(store.longitude))
         if distance <= radius_km:
-            payload = _store_read(store).model_dump()
+            payload = _store_read(db, store, banner=banners.get(store.id)).model_dump()
             results.append(NearbyStoreRead(**payload, distance_km=round(distance, 2)))
     return sorted(results, key=lambda item: item.distance_km)
 
@@ -291,12 +331,11 @@ def my_stores(
     merchant = db.scalar(select(Merchant).where(Merchant.owner_user_id == user.id))
     if merchant is None:
         return []
-    return [
-        _store_read(store)
-        for store in db.scalars(
-            select(Store).where(Store.merchant_id == merchant.id).order_by(Store.created_at.desc())
-        ).all()
-    ]
+    stores = db.scalars(
+        select(Store).where(Store.merchant_id == merchant.id).order_by(Store.created_at.desc())
+    ).all()
+    banners = public_presentations_for_stores(db, [store.id for store in stores])
+    return [_store_read(db, store, banner=banners.get(store.id)) for store in stores]
 
 
 @router.get("/stores/{store_id}", response_model=StoreRead)
@@ -304,7 +343,7 @@ def get_store(store_id: uuid.UUID, db: Session = Depends(get_db)):
     store = db.scalar(_public_store_stmt().where(Store.id == store_id))
     if store is None:
         raise HTTPException(status_code=404, detail="Store not found")
-    return _store_read(store)
+    return _store_read(db, store)
 
 
 @router.patch("/stores/{store_id}", response_model=StoreRead)
@@ -318,9 +357,7 @@ def update_store(
     store = db.get(Store, store_id)
     if store is None:
         raise HTTPException(status_code=404, detail="Store not found")
-    merchant = _require_store_owner(
-        db, store, user, admin_capability=Capability.CATALOG_MANAGE
-    )
+    merchant = _require_store_owner(db, store, user, admin_capability=Capability.CATALOG_MANAGE)
     if user.role != UserRole.ADMIN and merchant and merchant.status != MerchantStatus.APPROVED:
         raise HTTPException(status_code=403, detail="Merchant is not active")
     updates = payload.model_dump(exclude_unset=True)
@@ -344,15 +381,20 @@ def update_store(
             )
     if user.role == UserRole.ADMIN:
         record_admin_action(
-            db, request=request, actor=user, action="store.updated",
-            capability=Capability.CATALOG_MANAGE, resource_type="store", resource_id=store.id,
+            db,
+            request=request,
+            actor=user,
+            action="store.updated",
+            capability=Capability.CATALOG_MANAGE,
+            resource_type="store",
+            resource_id=store.id,
             previous_state=previous,
             resulting_state={key: str(getattr(store, key)) for key in updates},
             reason="administrator_catalog_operations",
         )
     db.commit()
     db.refresh(store)
-    return _store_read(store)
+    return _store_read(db, store)
 
 
 @router.post("/categories", response_model=CategoryRead, status_code=status.HTTP_201_CREATED)
@@ -370,9 +412,18 @@ def create_category(
     db.add(category)
     db.flush()
     record_admin_action(
-        db, request=request, actor=admin, action="catalog.category_created",
-        capability=Capability.CATALOG_MANAGE, resource_type="category", resource_id=category.id,
-        resulting_state={"name": category.name, "slug": category.slug, "is_active": category.is_active},
+        db,
+        request=request,
+        actor=admin,
+        action="catalog.category_created",
+        capability=Capability.CATALOG_MANAGE,
+        resource_type="category",
+        resource_id=category.id,
+        resulting_state={
+            "name": category.name,
+            "slug": category.slug,
+            "is_active": category.is_active,
+        },
         reason="catalog_administration",
     )
     db.commit()
@@ -400,9 +451,18 @@ def create_product(
     db.add(product)
     db.flush()
     record_admin_action(
-        db, request=request, actor=admin, action="catalog.product_created",
-        capability=Capability.CATALOG_MANAGE, resource_type="product", resource_id=product.id,
-        resulting_state={"name": product.name, "category_id": str(product.category_id), "is_active": product.is_active},
+        db,
+        request=request,
+        actor=admin,
+        action="catalog.product_created",
+        capability=Capability.CATALOG_MANAGE,
+        resource_type="product",
+        resource_id=product.id,
+        resulting_state={
+            "name": product.name,
+            "category_id": str(product.category_id),
+            "is_active": product.is_active,
+        },
         reason="catalog_administration",
     )
     db.commit()
@@ -441,10 +501,10 @@ def upsert_store_product(
     store = db.get(Store, store_id)
     if store is None:
         raise HTTPException(status_code=404, detail="Store not found")
-    merchant = _require_store_owner(
-        db, store, user, admin_capability=Capability.CATALOG_MANAGE
-    )
-    if user.role != UserRole.ADMIN and (merchant is None or merchant.status != MerchantStatus.APPROVED):
+    merchant = _require_store_owner(db, store, user, admin_capability=Capability.CATALOG_MANAGE)
+    if user.role != UserRole.ADMIN and (
+        merchant is None or merchant.status != MerchantStatus.APPROVED
+    ):
         raise HTTPException(status_code=403, detail="Merchant is not active")
     if db.get(Product, payload.product_id) is None:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -456,7 +516,11 @@ def upsert_store_product(
     )
     previous = None
     if listing:
-        previous = {"price": str(listing.price), "stock_quantity": listing.stock_quantity, "is_available": listing.is_available}
+        previous = {
+            "price": str(listing.price),
+            "stock_quantity": listing.stock_quantity,
+            "is_available": listing.is_available,
+        }
         for key, value in payload.model_dump().items():
             setattr(listing, key, value)
     else:
@@ -465,10 +529,19 @@ def upsert_store_product(
     db.flush()
     if user.role == UserRole.ADMIN:
         record_admin_action(
-            db, request=request, actor=user, action="store_product.upserted",
-            capability=Capability.CATALOG_MANAGE, resource_type="store_product", resource_id=listing.id,
+            db,
+            request=request,
+            actor=user,
+            action="store_product.upserted",
+            capability=Capability.CATALOG_MANAGE,
+            resource_type="store_product",
+            resource_id=listing.id,
             previous_state=previous,
-            resulting_state={"price": str(listing.price), "stock_quantity": listing.stock_quantity, "is_available": listing.is_available},
+            resulting_state={
+                "price": str(listing.price),
+                "stock_quantity": listing.stock_quantity,
+                "is_available": listing.is_available,
+            },
             reason="administrator_catalog_operations",
         )
     db.commit()
@@ -491,10 +564,10 @@ def update_store_product(
     store = db.get(Store, store_id)
     if store is None:
         raise HTTPException(status_code=404, detail="Store not found")
-    merchant = _require_store_owner(
-        db, store, user, admin_capability=Capability.CATALOG_MANAGE
-    )
-    if user.role != UserRole.ADMIN and (merchant is None or merchant.status != MerchantStatus.APPROVED):
+    merchant = _require_store_owner(db, store, user, admin_capability=Capability.CATALOG_MANAGE)
+    if user.role != UserRole.ADMIN and (
+        merchant is None or merchant.status != MerchantStatus.APPROVED
+    ):
         raise HTTPException(status_code=403, detail="Merchant is not active")
     listing = db.scalar(
         select(StoreProduct).where(
@@ -510,8 +583,13 @@ def update_store_product(
         setattr(listing, key, value)
     if user.role == UserRole.ADMIN:
         record_admin_action(
-            db, request=request, actor=user, action="store_product.updated",
-            capability=Capability.CATALOG_MANAGE, resource_type="store_product", resource_id=listing.id,
+            db,
+            request=request,
+            actor=user,
+            action="store_product.updated",
+            capability=Capability.CATALOG_MANAGE,
+            resource_type="store_product",
+            resource_id=listing.id,
             previous_state=previous,
             resulting_state={key: str(getattr(listing, key)) for key in updates},
             reason="administrator_catalog_operations",
