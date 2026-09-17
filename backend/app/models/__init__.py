@@ -27,6 +27,7 @@ from app.models.banners import (
     StoreBannerSelection,
     StoreBannerVersion,
 )
+from app.models.product_media import ProductMediaAsset, ProductMediaAuditEvent, ProductMediaJob
 
 __all__ = [
     "User",
@@ -61,4 +62,7 @@ __all__ = [
     "BannerGenerationJob",
     "StoreBannerSelection",
     "BannerAuditEvent",
+    "ProductMediaAsset",
+    "ProductMediaJob",
+    "ProductMediaAuditEvent",
 ]

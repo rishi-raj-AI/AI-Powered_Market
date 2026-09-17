@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     # remain configurable before any external media-generation service exists.
     BANNER_REGEN_MAX_REQUESTS:int=3; BANNER_REGEN_WINDOW_SECONDS:int=86400
     BANNER_JOB_MAX_ATTEMPTS:int=3; BANNER_JOB_LEASE_SECONDS:int=120; BANNER_JOB_BATCH:int=25
+    # Product-media B1 is disabled until private R2/S3 and the mandatory
+    # automated scanner are provisioned. Local is development/test only.
+    PRODUCT_MEDIA_ENABLED:bool=False; MEDIA_STORAGE_BACKEND:str="local"; MEDIA_SCAN_PROVIDER:str="disabled"; MEDIA_SCAN_REQUIRED:bool=True
+    MEDIA_S3_ENDPOINT_URL:str|None=None; MEDIA_S3_REGION:str|None=None; MEDIA_S3_QUARANTINE_BUCKET:str|None=None; MEDIA_S3_PUBLIC_BUCKET:str|None=None; MEDIA_PUBLIC_BASE_URL:str|None=None
+    MEDIA_S3_ACCESS_KEY_ID:str|None=None; MEDIA_S3_SECRET_ACCESS_KEY:str|None=None; MEDIA_SCAN_ENDPOINT_URL:str|None=None; MEDIA_SCAN_AUTH_TOKEN:str|None=None
+    MEDIA_UPLOAD_MAX_BYTES:int=8*1024*1024; MEDIA_IMAGE_MAX_WIDTH:int=4096; MEDIA_IMAGE_MAX_HEIGHT:int=4096; MEDIA_IMAGE_MAX_PIXELS:int=16_000_000; MEDIA_IMAGE_MAX_PER_LISTING:int=8
+    MEDIA_JOB_BATCH:int=25; MEDIA_JOB_MAX_ATTEMPTS:int=3; MEDIA_JOB_LEASE_SECONDS:int=120; MEDIA_RETENTION_SECONDS:int=30*24*60*60
     DEFAULT_DELIVERY_FEE:Decimal=Decimal("20.00")
     model_config=SettingsConfigDict(env_file=".env",extra="ignore")
     @field_validator("APP_ENV")
@@ -36,6 +43,18 @@ class Settings(BaseSettings):
         v=value.lower().strip()
         if v not in {"local_otp","msg91_widget"}: raise ValueError("AUTH_PROVIDER must be local_otp or msg91_widget")
         return v
+    @field_validator("MEDIA_STORAGE_BACKEND")
+    @classmethod
+    def validate_media_storage_backend(cls,value:str)->str:
+        v=value.lower().strip()
+        if v not in {"local","s3"}: raise ValueError("MEDIA_STORAGE_BACKEND must be local or s3")
+        return v
+    @field_validator("MEDIA_SCAN_PROVIDER")
+    @classmethod
+    def validate_media_scan_provider(cls,value:str)->str:
+        v=value.lower().strip()
+        if v not in {"disabled","http"}: raise ValueError("MEDIA_SCAN_PROVIDER must be disabled or http")
+        return v
     @model_validator(mode="after")
     def validate_production_safety(self)->"Settings":
         if self.APP_ENV in {"staging","production"}:
@@ -46,6 +65,13 @@ class Settings(BaseSettings):
             if self.AUTH_PROVIDER=="msg91_widget" and not self.MSG91_AUTH_KEY: raise ValueError("MSG91_AUTH_KEY is required when AUTH_PROVIDER=msg91_widget")
             if self.AUTH_PROVIDER=="local_otp" and self.SMS_PROVIDER!="msg91": raise ValueError("SMS_PROVIDER must be msg91 for direct OTP outside development/test")
             if bool(self.FCM_PROJECT_ID)!=bool(self.FCM_SERVICE_ACCOUNT_JSON_B64): raise ValueError("FCM_PROJECT_ID and FCM_SERVICE_ACCOUNT_JSON_B64 must be configured together")
+        if self.PRODUCT_MEDIA_ENABLED:
+            if self.APP_ENV in {"staging","production"} and self.MEDIA_STORAGE_BACKEND!="s3": raise ValueError("PRODUCT_MEDIA_ENABLED requires MEDIA_STORAGE_BACKEND=s3 outside development/test")
+            if self.MEDIA_STORAGE_BACKEND=="s3":
+                required=(self.MEDIA_S3_ENDPOINT_URL,self.MEDIA_S3_REGION,self.MEDIA_S3_QUARANTINE_BUCKET,self.MEDIA_S3_PUBLIC_BUCKET,self.MEDIA_PUBLIC_BASE_URL,self.MEDIA_S3_ACCESS_KEY_ID,self.MEDIA_S3_SECRET_ACCESS_KEY)
+                if not all(required): raise ValueError("S3 product-media storage requires endpoint, region, distinct buckets, public base URL and credentials")
+                if self.MEDIA_S3_QUARANTINE_BUCKET==self.MEDIA_S3_PUBLIC_BUCKET: raise ValueError("Product-media quarantine and public buckets must differ")
+            if not self.MEDIA_SCAN_REQUIRED or self.MEDIA_SCAN_PROVIDER!="http" or not self.MEDIA_SCAN_ENDPOINT_URL or not self.MEDIA_SCAN_AUTH_TOKEN: raise ValueError("Enabled product media requires a configured mandatory HTTP scanner")
         return self
     @field_validator("DEFAULT_DELIVERY_FEE")
     @classmethod
@@ -56,6 +82,11 @@ class Settings(BaseSettings):
     @classmethod
     def validate_banner_limits(cls,value:int)->int:
         if value <= 0: raise ValueError("Banner processing limits must be positive")
+        return value
+    @field_validator("MEDIA_UPLOAD_MAX_BYTES", "MEDIA_IMAGE_MAX_WIDTH", "MEDIA_IMAGE_MAX_HEIGHT", "MEDIA_IMAGE_MAX_PIXELS", "MEDIA_IMAGE_MAX_PER_LISTING", "MEDIA_JOB_BATCH", "MEDIA_JOB_MAX_ATTEMPTS", "MEDIA_JOB_LEASE_SECONDS", "MEDIA_RETENTION_SECONDS")
+    @classmethod
+    def validate_media_limits(cls,value:int)->int:
+        if value <= 0: raise ValueError("Product-media limits must be positive")
         return value
     @property
     def cors_origins(self)->list[str]: return [x.strip() for x in self.CORS_ORIGINS.split(",") if x.strip()]
