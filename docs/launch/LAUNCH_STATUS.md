@@ -6,13 +6,13 @@ Verified baseline: `origin/main` = local main = `b730bbaef995bde31062459eff5bde5
 | Field | Status |
 |---|---|
 | Active worktree / branch | `gaonone-launch-auth-foundation` / `feat/launch-auth-foundation` |
-| Active PR | Pending creation from `feat/launch-auth-foundation` |
+| Active PR | #182 — `feat(auth): add Firebase identity foundation` (`IN_PROGRESS` CI) |
 | Current phase | Phase 2A — Release Control + Backend Authentication Foundation (`READY_FOR_REVIEW`) |
 | Objective | Make staging deployment manual-only; add Firebase identity/session boundary; disable MVP SMS fail-closed |
 | Completed | Phase 1 merged as `b730bba`; release workflow and backend/auth/configuration implementation drafted |
 | In progress | Phase 2A PR and required CI |
 | Blocked | Firebase owner configuration; full local backend test runtime unavailable; no visual QA evidence |
-| Next exact action | Open Phase 2A PR for commit `4b2a1e69990e58a35d5e647ed05b4556f3fa8029` and wait for all required CI checks |
+| Next exact action | Wait for all required CI checks on PR #182; do not merge or deploy automatically |
 | CI baseline | Four required checks passed for Phase 1 head before merge |
 | P0 blockers | Firebase configuration; identity mapping acceptance; protected-main preservation; Phase 2A CI pending |
 | Owner dependencies | Firebase project/server credentials, OAuth origins, Android/iOS config/signing, domains/CORS; payment/maps decisions |

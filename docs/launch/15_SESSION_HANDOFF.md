@@ -28,7 +28,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-Open the Phase 2A PR and wait for required CI; do not merge or deploy automatically. If CI is green, conduct a review of migration safety, Firebase mock tests, manual-dispatch behavior, and SMS route gating before requesting merge.
+PR #182 is open. Wait for required CI; do not merge or deploy automatically. If CI is green, conduct a review of migration safety, Firebase mock tests, manual-dispatch behavior, and SMS route gating before requesting merge.
 
 ## Preservation contract
 
