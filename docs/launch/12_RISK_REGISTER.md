@@ -1,0 +1,19 @@
+# Risk register
+
+| ID | Risk | Severity | Likelihood | Launch blocker | Owner | Status / mitigation |
+|---|---|---:|---:|---|---|---|
+| R-001 | Main push can trigger staging deployment | P0 | Medium | Yes | Engineering/owner | OPEN: decouple CI and explicit deployment authorization |
+| R-002 | Firebase server credentials/config unavailable | P0 | Medium | Yes | Owner | OPEN: secure owner setup checklist |
+| R-003 | Web OAuth origins missing | P0 | Medium | Yes | Owner | OPEN: configure verified launch origins |
+| R-004 | Android SHA/package Firebase config missing | P0 | Medium | Yes | Owner | OPEN: configure and test release/debug boundaries |
+| R-005 | iOS Google Sign-In/config/signing incomplete | P0 | Medium | Yes | Owner | OPEN: configure and device-test |
+| R-006 | Existing-account linking creates duplicates | P0 | Medium | Yes | Engineering | OPEN: additive provider identity and explicit linking policy |
+| R-007 | OTP/dev OTP becomes exposed in production | P0 | Low | Yes | Engineering | OPEN: disable routes and add production tests |
+| R-008 | Production CORS/domain configuration incomplete | P1 | Medium | Yes | Owner | OPEN: configuration audit |
+| R-009 | Maps configuration absent | P1 | Medium | Conditional | Owner | OPEN: assess critical routes and degraded UX |
+| R-010 | Razorpay credentials absent | P1 | High | No, COD path | Owner | OPEN: keep online payment unavailable and validate COD |
+| R-011 | Weak-connectivity UX fails in field | P1 | Medium | Yes | Engineering | OPEN: resilience and Android field QA |
+| R-012 | Android build/device instability | P1 | Medium | Yes | Engineering/owner | OPEN: build and device validation |
+| R-013 | No visual QA evidence | P1 | High | Yes | Engineering | OPEN: capture critical-screen evidence |
+| R-014 | Protected main edits damaged | P0 | Low | Yes | All | CONTROLLED: never clean/reset/stash main |
+| R-015 | Risky worktrees corrupted | P1 | Medium | No | All | OPEN: preservation-only; no repair without authority |
