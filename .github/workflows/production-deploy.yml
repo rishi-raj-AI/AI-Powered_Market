@@ -1,8 +1,8 @@
 name: Staging Deploy
 
 on:
-  push:
-    branches: [main]
+  # A green main commit is a deployable candidate, not an authorization to
+  # change staging. An owner must explicitly dispatch this workflow.
   workflow_dispatch:
     inputs:
       ref:
