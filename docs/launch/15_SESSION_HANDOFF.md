@@ -16,7 +16,7 @@ All changed files are the launch-control Markdown files listed in `README.md`. N
 
 ## Validation
 
-Pending after document creation: inspect diff/status, verify Markdown links/headings, confirm changed-file scope, commit, and create a documentation-only PR. No application checks are required for a documentation-only change unless repository documentation checks exist.
+Completed: `git diff --cached --check` passed before commit; staged scope contained exactly 18 `docs/launch/*.md` files; protected main status was rechecked and remained unchanged. Commit `d63d30f40c9f16419b63eaad5dd570487d9063ba` contains the control plane. No repository documentation check was found. No application checks are required for this documentation-only change.
 
 ## Unresolved / owner input
 
