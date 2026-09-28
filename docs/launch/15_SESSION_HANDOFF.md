@@ -31,7 +31,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-Complete Phase 2B only: web Google popup → Firebase ID token → `/auth/firebase/exchange` → GaonOne token; Flutter Google/Firebase credential → Firebase ID token → same exchange. Require a visible fail-closed configuration state, local token storage only after exchange, provider logout that cannot block local logout, and no email/role/ownership trust in clients. Then run focused review and all four CI gates, open a PR, and stop before merge or deployment.
+Phase 2B implementation is committed as `79dcb50717794f1c943df3c99017c90b30388139` and PR #183 is open. Local focused validation passed: Flutter analysis and auth tests, web production build, focused multi-browser Playwright, production environment validation with a non-secret fixture, and diff checks. Wait for all four required CI gates on the final PR head. Investigate failures narrowly if any; if green, update this control record and stop for review. Do not merge or deploy Phase 2B.
 
 ## Preservation contract
 
