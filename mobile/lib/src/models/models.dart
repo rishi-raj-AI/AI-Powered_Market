@@ -1,9 +1,9 @@
 class UserModel {
   final String id;
-  final String phone;
+  final String? phone;
   final String? fullName;
   final String role;
-  UserModel({required this.id, required this.phone, this.fullName, required this.role});
+  UserModel({required this.id, this.phone, this.fullName, required this.role});
   factory UserModel.fromJson(Map<String, dynamic> j) => UserModel(id: j['id'], phone: j['phone'], fullName: j['full_name'], role: j['role']);
 }
 

@@ -1,4 +1,4 @@
-from app.models.user import User, UserRole
+from app.models.user import ExternalIdentity, User, UserRole
 from app.models.geography import Address, ServiceArea, Village
 from app.models.commerce import Category, Merchant, MerchantStatus, Product, Store, StoreProduct
 from app.models.integrations import (
@@ -32,6 +32,7 @@ from app.models.product_media import ProductMediaAsset, ProductMediaAuditEvent, 
 __all__ = [
     "User",
     "UserRole",
+    "ExternalIdentity",
     "Village",
     "ServiceArea",
     "Address",

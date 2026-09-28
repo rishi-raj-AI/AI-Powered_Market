@@ -9,6 +9,7 @@
 | AUTH-005 | 2026-09-28 | Require MSG91 config only when SMS auth + MSG91 are selected | Correct conditional configuration | Validation and CI must change | Yes |
 | AUTH-006 | 2026-09-28 | SMS routes cannot remain callable when SMS requirements are disabled | Prevent authentication bypass | Explicit route gating/removal required | No while SMS disabled |
 | AUTH-007 | 2026-09-28 | Development OTP must be impossible in production | Fail closed | Production tests required | No |
+| AUTH-008 | 2026-09-28 | Firebase first login creates a new customer account by immutable provider UID; no automatic email linking | Email is mutable and unsafe for account takeover | Existing phone accounts need a future explicit, authenticated linking flow | Yes with a superseding linking decision |
 | RELEASE-001 | 2026-09-28 | Deployment must be separate from merge; automatic staging-on-main is a P0 discrepancy | Explicit release authorization policy | Remediate workflow before normal launch merges | Yes after verified replacement |
 | MEDIA-001 | 2026-09-28 | Defer Product-media B2+ during launch sprint | Not proven launch-blocking | Preserve isolated worktree | Yes |
 | MEDIA-002 | 2026-09-28 | Do not extend legacy `/media/images` merchant UI for StoreProduct media | Conflicts with listing-owned media design | Keep legacy surface out of B2 scope | No without superseding media decision |

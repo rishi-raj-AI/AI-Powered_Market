@@ -74,8 +74,15 @@ def main() -> int:
         fail('DEV_OTP must be empty in production', errors)
 
     auth_provider = env.get('AUTH_PROVIDER', '').strip().lower()
-    if auth_provider not in {'local_otp', 'msg91_widget'}:
-        fail('AUTH_PROVIDER must be local_otp or msg91_widget', errors)
+    if auth_provider not in {'firebase', 'local_otp', 'msg91_widget'}:
+        fail('AUTH_PROVIDER must be firebase, local_otp or msg91_widget', errors)
+    if auth_provider == 'firebase':
+        project_id = env.get('FIREBASE_PROJECT_ID', '').strip()
+        service_account = env.get('FIREBASE_SERVICE_ACCOUNT_JSON_B64', '').strip()
+        if not project_id or project_id.startswith('REPLACE_'):
+            fail('FIREBASE_PROJECT_ID is required for Firebase authentication', errors)
+        if not service_account or service_account.startswith('REPLACE_'):
+            fail('FIREBASE_SERVICE_ACCOUNT_JSON_B64 is required for Firebase authentication', errors)
     if auth_provider == 'msg91_widget':
         # Backward-compatible during rollout: the application accepts the old
         # MSG91_WIDGET_AUTH_KEY name, but new deployments should use MSG91_AUTH_KEY.
@@ -86,15 +93,19 @@ def main() -> int:
     sms_provider = env.get('SMS_PROVIDER', 'none').strip().lower()
     if sms_provider not in {'none', 'msg91'}:
         fail('SMS_PROVIDER must be none or msg91', errors)
-    if sms_provider == 'msg91':
+    sms_enabled_raw = env.get('SMS_AUTH_ENABLED', 'true').strip().lower()
+    if sms_enabled_raw not in {'true', 'false', '1', '0', 'yes', 'no'}:
+        fail('SMS_AUTH_ENABLED must be true or false', errors)
+    sms_enabled = sms_enabled_raw in {'true', '1', 'yes'}
+    if sms_enabled and sms_provider != 'msg91':
+        fail('SMS_PROVIDER must be msg91 when SMS_AUTH_ENABLED=true', errors)
+    if sms_enabled and sms_provider == 'msg91':
         auth_key = env.get('MSG91_AUTH_KEY', '').strip()
         template_id = env.get('MSG91_TEMPLATE_ID', '').strip()
         if not auth_key or auth_key.startswith('REPLACE_'):
             fail('MSG91_AUTH_KEY is required when SMS_PROVIDER=msg91', errors)
         if not template_id or template_id.startswith('REPLACE_'):
             fail('MSG91_TEMPLATE_ID is required when SMS_PROVIDER=msg91', errors)
-    if auth_provider == 'local_otp' and sms_provider != 'msg91':
-        fail('SMS_PROVIDER must be msg91 when AUTH_PROVIDER=local_otp', errors)
 
     email = env.get('ACME_EMAIL', '')
     if '@' not in email or email.endswith('@example.com'):

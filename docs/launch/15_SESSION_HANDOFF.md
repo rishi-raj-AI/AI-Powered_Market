@@ -2,30 +2,34 @@
 
 ## Objective
 
-Phase 1 launch-control documentation from the verified Phase 0 audit.
+Phase 2A: separate release authorization from `main` validation, establish Firebase-to-GaonOne identity/session exchange, and fail-close SMS for the launch configuration.
 
 ## Completed
 
-- Created isolated worktree `/Users/rishiraj/Documents/Personal_Projects/AI-Powered_Market/gaonone-launch-control` on `docs/launch-control` from `7d8f5cb7c718cd0d376ed1d3094679038fdedf6c`.
-- Created `docs/launch/` control-plane documents only; no application, workflow, deployment, migration, or protected-main files changed.
-- Recorded Firebase/SMS architecture, launch gates, static UI audit, journeys, risks, deferred work, and decisions.
+- Merged Phase 1 PR #181 with merge commit `b730bbaef995bde31062459eff5bde54666cfc7c`; all four required checks passed before merge.
+- Safely fast-forwarded protected local main to that SHA; its exact seven known owner modifications remain intact.
+- Created isolated `/Users/rishiraj/Documents/Personal_Projects/AI-Powered_Market/gaonone-launch-auth-foundation` on `feat/launch-auth-foundation` from the merged main.
+- Changed the staging workflow to `workflow_dispatch` only; no deployment ran.
+- Added the additive `external_identities` model/migration, Firebase token verifier boundary, `/auth/firebase/exchange`, and GaonOne session issuance.
+- Set production example/CI to Firebase with `SMS_AUTH_ENABLED=false`; SMS send/verify and MSG91 widget routes return 404 when SMS is disabled. Legacy SMS code remains.
+- First Firebase login creates a customer with no phone and a UID identity record; repeat login reuses it. No automatic email matching/linking occurs.
 
 ## Changed files
 
-All changed files are the launch-control Markdown files listed in `README.md`. No migrations or tests were added.
+Changed: production env/validator, staging and production CI workflows, backend config/model/schema/auth/service, migration `0024_external_identities`, Firebase/config tests, nullable-phone web/Flutter client compatibility, and launch-control documents. No Google client sign-in flow or product UI redesign was added.
 
 ## Validation
 
-Completed: `git diff --cached --check` passed before commit; staged scope contained exactly 18 `docs/launch/*.md` files; protected main status was rechecked and remained unchanged. Commit `d63d30f40c9f16419b63eaad5dd570487d9063ba` contains the control plane. No repository documentation check was found. No application checks are required for this documentation-only change.
+Committed implementation: `4b2a1e69990e58a35d5e647ed05b4556f3fa8029` (`feat(auth): add Firebase identity foundation`). Passed: Python compilation, Ruff (`backend/app`, `backend/tests`), `git diff --check`, and production environment validation against a non-secret temporary Firebase-shaped fixture. Full pytest could not run locally because Docker is unavailable and the host Python lacks backend dependencies. Required GitHub CI remains mandatory.
 
 ## Unresolved / owner input
 
-Firebase credentials/configuration; OAuth origins; Android/iOS configuration and signing; domains/CORS; release-control remediation; visual QA; maps and Razorpay launch decisions.
+Firebase project/server credentials; OAuth origins; Android/iOS configuration and signing; domains/CORS; explicit phone-account linking design; visual QA; maps and Razorpay launch decisions.
 
 ## Next task
 
-**Phase 2A — Release-control remediation + backend Firebase/SMS implementation preparation.** First inspect the launch-control PR head and current `origin/main`; then design and implement only on a new isolated feature worktree. Do not start that phase from this branch until this documentation PR is reviewed/merged.
+The first remediation head `5473f79` passed all four required CI gates. Final review then found that Firebase accounts intentionally have a null phone while web/Flutter client models still required a string, which would crash Flutter bootstrap and mislabel the web account. The subsequent head `8b5ffae` passed backend, Android, and production CI, but WebKit failed one existing direct-OTP E2E case because it asserted the challenge field before its mocked OTP-request response completed. The final narrow remediation uses the existing response-bound synchronization pattern in that case; it adds no production behavior. Commit/push it, then require all four CI gates on the new head. If green, conduct the final migration/Firebase/manual-dispatch/SMS-gating review and merge normally; do not deploy.
 
 ## Preservation contract
 
-Never clean/reset/stash the protected main checkout or risky existing worktrees. Preserve the product-media B2 worktree. This documentation worktree is safe to resume; do not discard uncommitted documentation until committed.
+Never clean/reset/stash the protected main checkout or risky existing worktrees. Preserve the product-media B2 worktree. This Phase 2A worktree contains uncommitted implementation until its coherent commit is made.

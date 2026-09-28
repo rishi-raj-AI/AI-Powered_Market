@@ -30,8 +30,10 @@ BASE = {
     "APP_ENV": "production",
     "APP_DEBUG": False,
     "SECRET_KEY": STRONG_SECRET,
-    "AUTH_PROVIDER": "msg91_widget",
-    "MSG91_AUTH_KEY": "configured-widget-key",
+    "AUTH_PROVIDER": "firebase",
+    "FIREBASE_PROJECT_ID": "gaonone-test",
+    "FIREBASE_SERVICE_ACCOUNT_JSON_B64": "e30=",
+    "SMS_AUTH_ENABLED": False,
     "DEV_OTP": "",
 }
 
@@ -60,17 +62,17 @@ def test_production_refuses_debug_mode() -> None:
 
 def test_msg91_sms_requires_its_credentials_in_production() -> None:
     with pytest.raises(ValidationError, match="MSG91"):
-        production_settings(SMS_PROVIDER="msg91", MSG91_AUTH_KEY=None, MSG91_TEMPLATE_ID=None)
+        production_settings(SMS_AUTH_ENABLED=True, SMS_PROVIDER="msg91", MSG91_AUTH_KEY=None, MSG91_TEMPLATE_ID=None)
 
 
-def test_msg91_widget_auth_requires_its_key_in_production() -> None:
-    with pytest.raises(ValidationError, match="MSG91_AUTH_KEY"):
-        production_settings(AUTH_PROVIDER="msg91_widget", MSG91_AUTH_KEY=None)
+def test_firebase_auth_requires_server_configuration_in_production() -> None:
+    with pytest.raises(ValidationError, match="FIREBASE"):
+        production_settings(AUTH_PROVIDER="firebase", FIREBASE_PROJECT_ID=None)
 
 
-def test_direct_otp_requires_real_sms_outside_development() -> None:
+def test_enabled_sms_requires_a_provider_outside_development() -> None:
     with pytest.raises(ValidationError, match="SMS_PROVIDER"):
-        production_settings(AUTH_PROVIDER="local_otp", SMS_PROVIDER="none")
+        production_settings(AUTH_PROVIDER="local_otp", SMS_AUTH_ENABLED=True, SMS_PROVIDER="none")
 
 
 def test_development_otp_is_rejected_outside_development() -> None:
@@ -83,10 +85,17 @@ def test_fcm_credentials_must_be_configured_together() -> None:
         production_settings(FCM_PROJECT_ID="gaonone", FCM_SERVICE_ACCOUNT_JSON_B64=None)
 
 
+def test_firebase_auth_and_fcm_cannot_target_different_projects() -> None:
+    with pytest.raises(ValidationError, match="FCM_PROJECT_ID must match"):
+        production_settings(FCM_PROJECT_ID="different-project", FCM_SERVICE_ACCOUNT_JSON_B64="e30=")
+
+
 def test_a_valid_production_configuration_is_accepted() -> None:
     settings = production_settings(
-        AUTH_PROVIDER="msg91_widget",
-        MSG91_AUTH_KEY="a-real-widget-key",
+        AUTH_PROVIDER="firebase",
+        FIREBASE_PROJECT_ID="gaonone",
+        FIREBASE_SERVICE_ACCOUNT_JSON_B64="e30=",
+        SMS_AUTH_ENABLED=False,
         CORS_ORIGINS="https://gaonone.in",
         TRUSTED_HOSTS="gaonone.in",
     )
@@ -98,6 +107,7 @@ def test_a_valid_production_configuration_is_accepted() -> None:
 def test_a_valid_direct_otp_production_configuration_is_accepted() -> None:
     settings = production_settings(
         AUTH_PROVIDER="local_otp",
+        SMS_AUTH_ENABLED=True,
         SMS_PROVIDER="msg91",
         MSG91_AUTH_KEY="configured-direct-otp-key",
         MSG91_TEMPLATE_ID="configured-direct-otp-template",
@@ -166,7 +176,7 @@ def test_rate_limiting_fails_open_only_in_development(monkeypatch) -> None:
 def test_staging_also_fails_closed(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.services.rate_limit.settings",
-        Settings(APP_ENV="staging", APP_DEBUG=False, SECRET_KEY=STRONG_SECRET, AUTH_PROVIDER="msg91_widget", MSG91_AUTH_KEY="configured-widget-key", DEV_OTP=""),
+        Settings(APP_ENV="staging", APP_DEBUG=False, SECRET_KEY=STRONG_SECRET, AUTH_PROVIDER="firebase", FIREBASE_PROJECT_ID="gaonone", FIREBASE_SERVICE_ACCOUNT_JSON_B64="e30=", SMS_AUTH_ENABLED=False, DEV_OTP=""),
     )
     limiter = _limiter(_BrokenRedis())
     with pytest.raises(RateLimitUnavailable):
@@ -220,20 +230,14 @@ def test_worker_uses_a_worker_liveness_probe_not_the_api_http_probe() -> None:
     assert "app.scripts.worker" in worker
 
 
-def test_production_otp_endpoints_are_gated_by_the_widget_provider() -> None:
-    """With the MSG91 widget in production, the local OTP endpoints are closed."""
+def test_sms_route_gate_is_explicit() -> None:
+    """Production safety does not depend on a provider-specific route branch."""
     from app.api.v1.routes import auth as auth_routes
 
-    settings = production_settings(AUTH_PROVIDER="msg91_widget", MSG91_AUTH_KEY="key")
-    assert settings.APP_ENV == "production"
-    assert settings.AUTH_PROVIDER == "msg91_widget"
-    source = auth_routes.__doc__ or ""
-    del source
     import inspect
 
     request_source = inspect.getsource(auth_routes.request_otp)
     verify_source = inspect.getsource(auth_routes.verify_otp)
     for text in (request_source, verify_source):
-        assert 'settings.APP_ENV == "production"' in text
-        assert 'settings.AUTH_PROVIDER == "msg91_widget"' in text
-        assert "HTTP_410_GONE" in text
+        assert "_sms_routes_enabled" in text
+        assert "HTTP_404_NOT_FOUND" in text

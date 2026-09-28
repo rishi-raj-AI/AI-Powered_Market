@@ -54,10 +54,10 @@ export default function AccountPage(){
     <div className="grid" style={{gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:18}}>
       <section className="panel stack">
         <div className="row"><span className="storeIcon"><UserRound size={22}/></span><div><h3 style={{margin:0}}>Account</h3><p className="muted" style={{margin:'4px 0 0'}}>Verified GaonOne user</p></div></div>
-        <div><strong>Phone</strong><p className="muted">{me?.phone||'—'}</p></div>
+        <div><strong>Phone</strong><p className="muted">{me?.phone||'Not linked'}</p></div>
         <form className="stack" onSubmit={saveProfile}><label className="field" htmlFor="account-name">Name<input id="account-name" value={fullName} onChange={event=>setFullName(event.target.value)} maxLength={120} autoComplete="name"/></label><button className="btn secondary" disabled={submitting}>{submitting?'Saving…':'Save name'}</button></form>
         <div><strong>Role</strong><p className="muted" style={{textTransform:'capitalize'}}>{me?.role||'customer'}</p></div>
-        <div className="row"><ShieldCheck size={17}/><span>{me?.is_verified?'Phone verified':'Verification pending'}</span></div>
+        <div className="row"><ShieldCheck size={17}/><span>{me?.is_verified?(me.phone?'Phone verified':'Google account verified'):'Verification pending'}</span></div>
         <div className="row"><Link className="btn secondary" href="/account/addresses">Saved addresses</Link><Link className="btn ghost" href="/account/devices">Notification devices</Link></div>
       </section>
 

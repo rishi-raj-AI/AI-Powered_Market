@@ -29,6 +29,7 @@ PRODUCTION_BASE = {
     "SECRET_KEY": STRONG_SECRET,
     "AUTH_PROVIDER": "msg91_widget",
     "MSG91_AUTH_KEY": "configured-widget-key",
+    "SMS_AUTH_ENABLED": False,
     "DEV_OTP": "",
 }
 

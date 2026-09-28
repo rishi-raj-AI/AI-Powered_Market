@@ -2,13 +2,13 @@
 
 | ID | Risk | Severity | Likelihood | Launch blocker | Owner | Status / mitigation |
 |---|---|---:|---:|---|---|---|
-| R-001 | Main push can trigger staging deployment | P0 | Medium | Yes | Engineering/owner | OPEN: decouple CI and explicit deployment authorization |
+| R-001 | Main push can trigger staging deployment | P0 | Medium | Yes | Engineering/owner | MITIGATED IN PHASE 2A PENDING CI/REVIEW: workflow is manual-dispatch only |
 | R-002 | Firebase server credentials/config unavailable | P0 | Medium | Yes | Owner | OPEN: secure owner setup checklist |
 | R-003 | Web OAuth origins missing | P0 | Medium | Yes | Owner | OPEN: configure verified launch origins |
 | R-004 | Android SHA/package Firebase config missing | P0 | Medium | Yes | Owner | OPEN: configure and test release/debug boundaries |
 | R-005 | iOS Google Sign-In/config/signing incomplete | P0 | Medium | Yes | Owner | OPEN: configure and device-test |
-| R-006 | Existing-account linking creates duplicates | P0 | Medium | Yes | Engineering | OPEN: additive provider identity and explicit linking policy |
-| R-007 | OTP/dev OTP becomes exposed in production | P0 | Low | Yes | Engineering | OPEN: disable routes and add production tests |
+| R-006 | Existing-account linking creates duplicates | P0 | Medium | Yes | Engineering | MITIGATED IN PHASE 2A PENDING CI/REVIEW: UID-only first login; no automatic email linking |
+| R-007 | OTP/dev OTP becomes exposed in production | P0 | Low | Yes | Engineering | MITIGATED IN PHASE 2A PENDING CI/REVIEW: explicit SMS route gate and production config tests |
 | R-008 | Production CORS/domain configuration incomplete | P1 | Medium | Yes | Owner | OPEN: configuration audit |
 | R-009 | Maps configuration absent | P1 | Medium | Conditional | Owner | OPEN: assess critical routes and degraded UX |
 | R-010 | Razorpay credentials absent | P1 | High | No, COD path | Owner | OPEN: keep online payment unavailable and validate COD |

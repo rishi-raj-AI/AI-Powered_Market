@@ -37,6 +37,10 @@ class WidgetTokenExchangeRequest(BaseModel):
     full_name: str | None = Field(default=None, max_length=120)
 
 
+class FirebaseTokenExchangeRequest(BaseModel):
+    id_token: str = Field(min_length=20, max_length=16384)
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
