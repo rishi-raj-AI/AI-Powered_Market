@@ -17,6 +17,21 @@ test('customer explicitly chooses a same-store alternative',async({page})=>{
   await expect(page.getByText('Chosen alternative added to cart.')).toBeVisible();
 });
 
+test('expired cart session returns to the provider-neutral sign-in flow with its storefront preserved',async({page})=>{
+  await installApiMocks(page);
+  const store={id:'store-nearby',merchant_id:'merchant-approved',village_id:'village-niphad',name:'Niphad Daily Needs',slug:'niphad-daily-needs',landmark:'Bus Stand',delivery_enabled:true,pickup_enabled:true,is_active:true,is_open_now:true};
+  const product={id:'listing-rice',store_id:store.id,product_id:'product-rice',price:'72.50',stock_quantity:2,is_available:true,product:{id:'product-rice',category_id:'category-rice',name:'Kolam Rice',unit:'1 kg'}};
+  await page.route('http://localhost:8000/api/v1/stores/store-nearby',route=>route.fulfill({json:store}));
+  await page.route('http://localhost:8000/api/v1/stores/store-nearby/products',route=>route.fulfill({json:[product]}));
+  await page.route('http://localhost:8000/api/v1/cart/items',route=>route.fulfill({status:401,json:{detail:'Not authenticated'}}));
+  await page.goto('/market/store-nearby');
+  await Promise.all([
+    page.waitForURL(/\/login\?next=%2Fmarket%2Fstore-nearby$/),
+    page.getByRole('button',{name:/Add/}).click(),
+  ]);
+  await expect(page.getByRole('button',{name:'Continue with Google'})).toBeVisible();
+});
+
 test('delivered order exposes current-stock reorder preview before cart mutation',async({page})=>{
   await installApiMocks(page);
   const order={id:'order-delivered',order_number:'GO-DELIVERED',user_id:'user-customer',store_id:'store-nearby',address_id:'address-niphad',status:'delivered',payment_method:'cod',payment_status:'paid',subtotal:'145.00',delivery_fee:'37.50',total:'182.50',created_at:'2026-08-30T10:00:00Z',updated_at:'2026-08-30T11:00:00Z'};
