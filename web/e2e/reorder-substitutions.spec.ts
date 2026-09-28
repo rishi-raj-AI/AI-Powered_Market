@@ -19,6 +19,13 @@ test('customer explicitly chooses a same-store alternative',async({page})=>{
 
 test('expired cart session returns to the provider-neutral sign-in flow with its storefront preserved',async({page})=>{
   await installApiMocks(page);
+  await page.addInitScript(()=>{
+    const removeItem=Storage.prototype.removeItem;
+    Storage.prototype.removeItem=function(key){
+      if(key==='gaonone_token')sessionStorage.setItem('gaonone_e2e_token_cleared','true');
+      return removeItem.call(this,key);
+    };
+  });
   const store={id:'store-nearby',merchant_id:'merchant-approved',village_id:'village-niphad',name:'Niphad Daily Needs',slug:'niphad-daily-needs',landmark:'Bus Stand',delivery_enabled:true,pickup_enabled:true,is_active:true,is_open_now:true};
   const product={id:'listing-rice',store_id:store.id,product_id:'product-rice',price:'72.50',stock_quantity:2,is_available:true,product:{id:'product-rice',category_id:'category-rice',name:'Kolam Rice',unit:'1 kg'}};
   await page.route('http://localhost:8000/api/v1/stores/store-nearby',route=>route.fulfill({json:store}));
@@ -29,6 +36,7 @@ test('expired cart session returns to the provider-neutral sign-in flow with its
     page.waitForURL(/\/login\?next=%2Fmarket%2Fstore-nearby$/),
     page.getByRole('button',{name:/Add/}).click(),
   ]);
+  expect(await page.evaluate(()=>sessionStorage.getItem('gaonone_e2e_token_cleared'))).toBe('true');
   await expect(page.getByRole('button',{name:'Continue with Google'})).toBeVisible();
 });
 
