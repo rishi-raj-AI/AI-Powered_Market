@@ -28,7 +28,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-PR #182 is open. Wait for required CI; do not merge or deploy automatically. If CI is green, conduct a review of migration safety, Firebase mock tests, manual-dispatch behavior, and SMS route gating before requesting merge.
+PR #182 CI at `7b265dc` failed: backend production-media configuration fixtures omitted the new explicit SMS disabled flag; the WebKit direct-OTP test had an existing request-state race. Remediation adds `SMS_AUTH_ENABLED=False` to that fixture, response-bound request synchronization without sleeps, and a concurrent Firebase first-login identity uniqueness test. Commit/push this remediation, then wait for required CI; do not merge or deploy automatically. If CI is green, conduct a review of migration safety, Firebase mock tests, manual-dispatch behavior, and SMS route gating before requesting merge.
 
 ## Preservation contract
 

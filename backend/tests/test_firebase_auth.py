@@ -1,9 +1,12 @@
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.api.v1.routes import auth as auth_routes
+from app.api.v1.routes.auth import _login_firebase_identity
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.main import app
@@ -83,6 +86,27 @@ def test_disabled_firebase_account_cannot_receive_a_new_session(monkeypatch) -> 
             user.is_active = False
             db.commit()
         assert client.post("/api/v1/auth/firebase/exchange", json={"id_token": "x" * 24}).status_code == 403
+    finally:
+        _delete_subject(subject)
+
+
+def test_concurrent_first_login_keeps_one_identity_and_one_account() -> None:
+    subject = f"firebase-{uuid4()}"
+    barrier = Barrier(2)
+
+    def exchange() -> str:
+        with SessionLocal() as db:
+            barrier.wait()
+            return _login_firebase_identity(subject, "Concurrent Asha", db).access_token
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            tokens = list(pool.map(lambda _: exchange(), range(2)))
+        assert all(tokens)
+        with SessionLocal() as db:
+            identities = list(db.scalars(select(ExternalIdentity).where(ExternalIdentity.provider == "firebase", ExternalIdentity.subject == subject)))
+            assert len(identities) == 1
+            assert db.scalar(select(User).where(User.id == identities[0].user_id)) is not None
     finally:
         _delete_subject(subject)
 
