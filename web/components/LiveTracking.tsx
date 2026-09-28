@@ -2,7 +2,7 @@
 
 import {useEffect,useState} from 'react';
 import {AlertTriangle,Clock3,MapPin,Navigation,Radio,RefreshCw} from 'lucide-react';
-import {getToken} from '@/lib/api';
+import {api} from '@/lib/api';
 import {LocationMap,MapPoint} from '@/components/LocationMap';
 
 type Point={latitude?:number|null;longitude?:number|null;label?:string|null};
@@ -10,7 +10,6 @@ type RiderLocation={latitude:number;longitude:number;accuracy_m?:number|null;hea
 type Tracking={order_id:string;order_number:string;order_status:string;delivery_id?:string|null;delivery_status?:string|null;tracking_active:boolean;store:Point;customer:Point;rider?:RiderLocation|null;rider_location_age_seconds?:number|null};
 type RouteData={available:boolean;provider:string;origin:Point;destination:Point;distance_meters?:number|null;duration_seconds?:number|null;encoded_polyline?:string|null};
 
-const API=process.env.NEXT_PUBLIC_API_URL||'http://localhost:8000/api/v1';
 const STALE_LOCATION_SECONDS=30;
 const label=(value:string)=>value.replaceAll('_',' ').replace(/\b\w/g,c=>c.toUpperCase());
 const duration=(seconds?:number|null)=>seconds==null?'—':seconds<60?'< 1 min':`${Math.max(1,Math.round(seconds/60))} min`;
@@ -23,12 +22,10 @@ export function LiveTracking({orderId}:{orderId:string}){
   const[loading,setLoading]=useState(true);
 
   async function load(){
-    const token=getToken();if(!token)return;
-    try{const response=await fetch(`${API}/orders/${orderId}/tracking`,{headers:{Authorization:`Bearer ${token}`},cache:'no-store'});if(!response.ok)throw new Error(`Tracking unavailable (${response.status})`);setData(await response.json());setError('')}catch(e:any){setError(e.message||'Tracking unavailable.')}finally{setLoading(false)}
+    try{setData(await api<Tracking>(`/orders/${orderId}/tracking`));setError('')}catch(e:any){setError(e.message||'Tracking unavailable.')}finally{setLoading(false)}
   }
   async function loadRoute(){
-    const token=getToken();if(!token)return;
-    try{const response=await fetch(`${API}/orders/${orderId}/route`,{headers:{Authorization:`Bearer ${token}`},cache:'no-store'});if(response.ok)setRoute(await response.json())}catch{}
+    try{setRoute(await api<RouteData>(`/orders/${orderId}/route`))}catch{}
   }
 
   useEffect(()=>{load();loadRoute();const gpsTimer=window.setInterval(load,5000);const routeTimer=window.setInterval(loadRoute,30000);return()=>{window.clearInterval(gpsTimer);window.clearInterval(routeTimer)}},[orderId]);
