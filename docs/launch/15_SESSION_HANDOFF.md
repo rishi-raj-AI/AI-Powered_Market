@@ -31,7 +31,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-Phase 2B implementation is committed as `79dcb50717794f1c943df3c99017c90b30388139` and PR #183 is open. Local focused validation passed: Flutter analysis and auth tests, web production build, focused multi-browser Playwright, production environment validation with a non-secret fixture, and diff checks. Wait for all four required CI gates on the final PR head. Investigate failures narrowly if any; if green, update this control record and stop for review. Do not merge or deploy Phase 2B.
+Phase 2B implementation is in PR #183. Local focused validation passed: Flutter analysis and auth tests, web production build, focused multi-browser Playwright, production environment validation with a non-secret fixture, and diff checks. All four required GitHub CI gates passed on review head `1ebafc6ac15c3ee3a0b2fb7b94fae90d6363dbc8`: backend, web, Android, and production compose/images. Stop for review. Do not merge or deploy Phase 2B.
 
 ## Preservation contract
 
