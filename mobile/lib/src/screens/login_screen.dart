@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/gaon_api.dart';
+import '../auth/firebase_google_sign_in.dart';
 
 class LoginScreen extends StatefulWidget {
   final VoidCallback onLoggedIn;
@@ -73,6 +74,23 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> signInWithGoogle() async {
+    setState(() {
+      loading = true;
+      message = null;
+    });
+    try {
+      await FirebaseGoogleSignIn.signInAndExchange();
+      if (!mounted) return;
+      widget.onLoggedIn();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => message = error.toString());
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
   void changeNumber(){setState((){otpSent=false;requestedPhone='';otpController.clear();message=null;});}
 
   @override
@@ -102,6 +120,14 @@ class _LoginScreenState extends State<LoginScreen> {
                         style: Theme.of(context).textTheme.bodyLarge,
                       ),
                       const SizedBox(height: 28),
+                      FilledButton.icon(
+                        onPressed: loading ? null : signInWithGoogle,
+                        icon: const Icon(Icons.login),
+                        label: Text(loading ? 'Please wait...' : 'Continue with Google'),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text('or use mobile number where available', textAlign: TextAlign.center),
+                      const SizedBox(height: 16),
                       TextField(
                         controller: phoneController,
                         enabled: !otpSent,

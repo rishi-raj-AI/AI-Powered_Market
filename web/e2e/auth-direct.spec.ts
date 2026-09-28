@@ -1,5 +1,11 @@
 import {expect,test} from '@playwright/test';
 
+test('Google sign-in is visible and fails closed without public Firebase configuration',async({page})=>{
+  await page.goto('/login');
+  await page.getByRole('button',{name:'Continue with Google'}).click();
+  await expect(page.getByRole('status')).toContainText('Google sign-in is not configured for this environment.');
+});
+
 test('direct OTP keeps phone context, supports resend, and completes a safe return',async({page})=>{
   let requests=0;let verifiedPhone='';
   await page.route('**/api/v1/**',async route=>{

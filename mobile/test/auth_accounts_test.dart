@@ -53,4 +53,10 @@ void main(){
     final client=MockClient((_)async=>http.Response(jsonEncode({'id':'u1','phone':null,'full_name':'Asha Patil','role':'customer'}),200));
     await http.runWithClient(()async{final user=await GaonApi.me();expect(user.phone,isNull);expect(user.fullName,'Asha Patil');},()=>client);
   });
+
+  test('Firebase exchange stores the GaonOne session token',()async{
+    SharedPreferences.setMockInitialValues({});
+    final client=MockClient((request)async{expect(request.url.path,'/api/v1/auth/firebase/exchange');expect(jsonDecode(request.body),{'id_token':'firebase-token'});return http.Response(jsonEncode({'access_token':'gaonone-token','token_type':'bearer'}),200);});
+    await http.runWithClient(()async{await GaonApi.exchangeFirebaseIdToken('firebase-token');expect(await GaonApi.hasToken(),isTrue);},()=>client);
+  });
 }

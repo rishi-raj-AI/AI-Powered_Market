@@ -1,21 +1,21 @@
 # Launch status
 
-Updated: 2026-09-28T09:12:00Z
-Verified baseline: `origin/main` = local main = `b730bbaef995bde31062459eff5bde54666cfc7c`
+Updated: 2026-09-28T09:40:00Z
+Verified baseline: `origin/main` = protected local main = `39ee1038e2c6c5818fbbbeebd251cbccf185a122`
 
 | Field | Status |
 |---|---|
-| Active worktree / branch | `gaonone-launch-auth-foundation` / `feat/launch-auth-foundation` |
-| Active PR | #182 — `feat(auth): add Firebase identity foundation` (final WebKit CI remediation in progress) |
-| Current phase | Phase 2A — Release Control + Backend Authentication Foundation (`IN_PROGRESS`) |
-| Objective | Make staging deployment manual-only; add Firebase identity/session boundary; disable MVP SMS fail-closed |
-| Completed | Phase 1 merged as `b730bba`; release workflow and backend/auth/configuration implementation drafted |
-| In progress | Phase 2A final CI remediation: WebKit OTP test now awaits the actual mocked request response before asserting the challenge UI |
+| Active worktree / branch | `gaonone-launch-google-signin` / `feat/launch-google-signin` |
+| Active PR | Not yet created |
+| Current phase | Phase 2B — Web + Flutter Google Sign-In (`IN_PROGRESS`) |
+| Objective | Integrate both clients with the merged Firebase-to-GaonOne exchange contract without changing server authorization |
+| Completed | Phase 1 merged as `b730bba`; Phase 2A merged as `39ee103`; release workflow is manual-dispatch only; Firebase identity/session/SMS foundation is on main |
+| In progress | Web Firebase Google provider and Flutter Google/Firebase adapters, public configuration validation, and client exchange tests |
 | Blocked | Firebase owner configuration; full local backend test runtime unavailable; no visual QA evidence |
-| Next exact action | Commit the narrow WebKit CI remediation, push PR #182, and wait for all required CI checks on the new head |
-| CI baseline | Four required checks passed for Phase 1 head before merge |
-| P0 blockers | Firebase configuration; identity mapping acceptance; protected-main preservation; Phase 2A CI pending on the final remediation |
+| Next exact action | Complete focused Phase 2B validation, review, and open an isolated PR; do not merge or deploy automatically |
+| CI baseline | All four required checks passed for Phase 2A final head `ecfeb54` before merge |
+| P0 blockers | Firebase owner configuration and device acceptance; protected-main preservation; Phase 2B CI pending once PR exists |
 | Owner dependencies | Firebase project/server credentials, OAuth origins, Android/iOS config/signing, domains/CORS; payment/maps decisions |
 | Deferred | Product-media B2+, R2/scanner, banner enhancement, MSG91/DLT activation, scheduled fulfilment, pickup expansion, nonessential refactors/AI/cosmetic redesign |
-| Latest decisions | AUTH-001–008, RELEASE-001, MEDIA-001–002, UX-001–002 |
-| Safe resume point | `docs/launch/15_SESSION_HANDOFF.md`; do not merge or deploy until the remediation head passes all four required gates |
+| Latest decisions | AUTH-001–009, RELEASE-001, MEDIA-001–002, UX-001–002 |
+| Safe resume point | `docs/launch/15_SESSION_HANDOFF.md`; do not merge or deploy Phase 2B automatically |
