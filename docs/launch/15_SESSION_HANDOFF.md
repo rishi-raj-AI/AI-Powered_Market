@@ -20,7 +20,7 @@ Changed: production env/validator, staging and production CI workflows, backend 
 
 ## Validation
 
-Passed: Python compilation, Ruff (`backend/app`, `backend/tests`), `git diff --check`, and production environment validation against a non-secret temporary Firebase-shaped fixture. Full pytest could not run locally because Docker is unavailable and the host Python lacks backend dependencies. Required GitHub CI remains mandatory.
+Committed implementation: `4b2a1e69990e58a35d5e647ed05b4556f3fa8029` (`feat(auth): add Firebase identity foundation`). Passed: Python compilation, Ruff (`backend/app`, `backend/tests`), `git diff --check`, and production environment validation against a non-secret temporary Firebase-shaped fixture. Full pytest could not run locally because Docker is unavailable and the host Python lacks backend dependencies. Required GitHub CI remains mandatory.
 
 ## Unresolved / owner input
 
@@ -28,7 +28,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-Inspect, commit, and open the Phase 2A PR. Wait for required CI; do not merge or deploy automatically. If CI is green, conduct a review of migration safety, Firebase mock tests, manual-dispatch behavior, and SMS route gating before requesting merge.
+Open the Phase 2A PR and wait for required CI; do not merge or deploy automatically. If CI is green, conduct a review of migration safety, Firebase mock tests, manual-dispatch behavior, and SMS route gating before requesting merge.
 
 ## Preservation contract
 
