@@ -63,6 +63,7 @@ class Settings(BaseSettings):
             if self.APP_DEBUG: raise ValueError("APP_DEBUG must be false outside development/test")
             if self.DEV_OTP: raise ValueError("DEV_OTP must be empty outside development/test")
             if self.AUTH_PROVIDER=="firebase" and (not self.FIREBASE_PROJECT_ID or not self.FIREBASE_SERVICE_ACCOUNT_JSON_B64): raise ValueError("FIREBASE_PROJECT_ID and FIREBASE_SERVICE_ACCOUNT_JSON_B64 are required when AUTH_PROVIDER=firebase")
+            if self.AUTH_PROVIDER=="firebase" and self.FCM_PROJECT_ID and self.FCM_PROJECT_ID!=self.FIREBASE_PROJECT_ID: raise ValueError("FCM_PROJECT_ID must match FIREBASE_PROJECT_ID when AUTH_PROVIDER=firebase")
             if self.SMS_AUTH_ENABLED and self.SMS_PROVIDER!="msg91": raise ValueError("SMS_PROVIDER must be msg91 when SMS_AUTH_ENABLED=true outside development/test")
             if self.SMS_AUTH_ENABLED and (not self.MSG91_AUTH_KEY or not self.MSG91_TEMPLATE_ID): raise ValueError("MSG91_AUTH_KEY and MSG91_TEMPLATE_ID are required when SMS_AUTH_ENABLED=true and SMS_PROVIDER=msg91")
             if bool(self.FCM_PROJECT_ID)!=bool(self.FCM_SERVICE_ACCOUNT_JSON_B64): raise ValueError("FCM_PROJECT_ID and FCM_SERVICE_ACCOUNT_JSON_B64 must be configured together")

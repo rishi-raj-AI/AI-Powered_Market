@@ -106,7 +106,9 @@ def test_concurrent_first_login_keeps_one_identity_and_one_account() -> None:
         with SessionLocal() as db:
             identities = list(db.scalars(select(ExternalIdentity).where(ExternalIdentity.provider == "firebase", ExternalIdentity.subject == subject)))
             assert len(identities) == 1
-            assert db.scalar(select(User).where(User.id == identities[0].user_id)) is not None
+            users = list(db.scalars(select(User).where(User.full_name == "Concurrent Asha")))
+            assert len(users) == 1
+            assert users[0].id == identities[0].user_id
     finally:
         _delete_subject(subject)
 

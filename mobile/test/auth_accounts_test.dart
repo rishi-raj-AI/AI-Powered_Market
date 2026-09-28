@@ -47,4 +47,10 @@ void main(){
     await http.runWithClient(()async{final user=await GaonApi.updateProfile('Asha Patil');expect(user.fullName,'Asha Patil');},()=>client);
     expect(payload,{'full_name':'Asha Patil'});
   });
+
+  test('profile accepts a Firebase account without a phone number',()async{
+    SharedPreferences.setMockInitialValues({'token':'token'});
+    final client=MockClient((_)async=>http.Response(jsonEncode({'id':'u1','phone':null,'full_name':'Asha Patil','role':'customer'}),200));
+    await http.runWithClient(()async{final user=await GaonApi.me();expect(user.phone,isNull);expect(user.fullName,'Asha Patil');},()=>client);
+  });
 }

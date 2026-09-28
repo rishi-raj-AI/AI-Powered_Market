@@ -85,6 +85,11 @@ def test_fcm_credentials_must_be_configured_together() -> None:
         production_settings(FCM_PROJECT_ID="gaonone", FCM_SERVICE_ACCOUNT_JSON_B64=None)
 
 
+def test_firebase_auth_and_fcm_cannot_target_different_projects() -> None:
+    with pytest.raises(ValidationError, match="FCM_PROJECT_ID must match"):
+        production_settings(FCM_PROJECT_ID="different-project", FCM_SERVICE_ACCOUNT_JSON_B64="e30=")
+
+
 def test_a_valid_production_configuration_is_accepted() -> None:
     settings = production_settings(
         AUTH_PROVIDER="firebase",

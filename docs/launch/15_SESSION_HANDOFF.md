@@ -16,7 +16,7 @@ Phase 2A: separate release authorization from `main` validation, establish Fireb
 
 ## Changed files
 
-Changed: production env/validator, staging and production CI workflows, backend config/model/schema/auth/service, migration `0024_external_identities`, Firebase/config tests, and launch-control documents. No web, Flutter, or product UI files changed.
+Changed: production env/validator, staging and production CI workflows, backend config/model/schema/auth/service, migration `0024_external_identities`, Firebase/config tests, nullable-phone web/Flutter client compatibility, and launch-control documents. No Google client sign-in flow or product UI redesign was added.
 
 ## Validation
 
@@ -28,7 +28,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-PR #182 CI at `7b265dc` failed: backend production-media configuration fixtures omitted the new explicit SMS disabled flag; the WebKit direct-OTP test had an existing request-state race. Remediation adds `SMS_AUTH_ENABLED=False` to that fixture, response-bound request synchronization without sleeps, and a concurrent Firebase first-login identity uniqueness test. Commit/push this remediation, then wait for required CI; do not merge or deploy automatically. If CI is green, conduct a review of migration safety, Firebase mock tests, manual-dispatch behavior, and SMS route gating before requesting merge.
+The first remediation head `5473f79` passed all four required CI gates. Final review then found that Firebase accounts intentionally have a null phone while web/Flutter client models still required a string, which would crash Flutter bootstrap and mislabel the web account. The pending narrow remediation makes client phone fields nullable, avoids sending a null Razorpay prefill contact, labels phone-unlinked accounts accurately, binds Firebase auth and FCM to the same configured project, and strengthens the concurrency assertion to prove that no duplicate Firebase account remains. Commit/push this remediation, then require all four CI gates on its new head. If green, conduct the final migration/Firebase/manual-dispatch/SMS-gating review and merge normally; do not deploy.
 
 ## Preservation contract
 
