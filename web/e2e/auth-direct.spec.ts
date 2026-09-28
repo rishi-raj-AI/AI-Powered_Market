@@ -42,12 +42,14 @@ test('change number resets the challenge and role-restricted next is rejected',a
   const firstOtpRequest=page.waitForResponse(response=>new URL(response.url()).pathname.endsWith('/auth/request-otp'));
   await page.getByRole('button',{name:'Send OTP'}).click();
   await firstOtpRequest;
+  await expect(page.getByText('Code requested for')).toBeVisible();
   await expect(page.getByLabel('One-time code')).toBeEnabled();
   await page.getByRole('button',{name:'Change number'}).click();
   await expect(page.getByLabel('Mobile number')).toBeEnabled();
   const secondOtpRequest=page.waitForResponse(response=>new URL(response.url()).pathname.endsWith('/auth/request-otp'));
   await page.getByRole('button',{name:'Send OTP'}).click();
   await secondOtpRequest;
+  await expect(page.getByText('Code requested for')).toBeVisible();
   await expect(page.getByLabel('One-time code')).toBeEnabled();
   await page.getByLabel('One-time code').fill('123456');
   await page.getByRole('button',{name:'Verify & continue'}).click();

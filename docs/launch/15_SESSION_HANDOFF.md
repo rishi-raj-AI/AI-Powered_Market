@@ -31,7 +31,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-Phase 2B implementation is in PR #183. Local focused validation passed: Flutter analysis and auth tests, web production build, focused multi-browser Playwright, production environment validation with a non-secret fixture, and diff checks. All four required GitHub CI gates passed on review head `1ebafc6ac15c3ee3a0b2fb7b94fae90d6363dbc8`: backend, web, Android, and production compose/images. Stop for review. Do not merge or deploy Phase 2B.
+Phase 2B implementation is in PR #183. Local focused validation passed, and all four gates passed on review head `1ebafc6`. A documentation-only final head then exposed the remaining pre-existing WebKit direct-OTP test race: it awaited the mocked response but not the rendered challenge state. The narrow remediation waits for the visible challenge text before interacting. Push it, require all four gates on the new final head, then stop for review. Do not merge or deploy Phase 2B.
 
 ## Preservation contract
 
