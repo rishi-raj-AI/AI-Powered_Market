@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'src/api/gaon_api.dart';
+import 'src/auth/firebase_google_sign_in.dart';
 import 'src/screens/login_screen.dart';
 import 'src/screens/customer_shell.dart';
 import 'src/screens/role_workspaces.dart';
@@ -65,6 +66,7 @@ class _GaonOneAppState extends State<GaonOneApp> {
   }
 
   Future<void> _logout() async {
+    await FirebaseGoogleSignIn.signOut();
     await GaonApi.logout();
     if (mounted) setState(() { loggedIn = false; role = 'customer'; loading = false; });
   }

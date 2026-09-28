@@ -83,6 +83,10 @@ def main() -> int:
             fail('FIREBASE_PROJECT_ID is required for Firebase authentication', errors)
         if not service_account or service_account.startswith('REPLACE_'):
             fail('FIREBASE_SERVICE_ACCOUNT_JSON_B64 is required for Firebase authentication', errors)
+        for key in ('NEXT_PUBLIC_FIREBASE_API_KEY', 'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN', 'NEXT_PUBLIC_FIREBASE_APP_ID'):
+            value = env.get(key, '').strip()
+            if not value or value.startswith('REPLACE_'):
+                fail(f'{key} is required for Firebase web authentication', errors)
     if auth_provider == 'msg91_widget':
         # Backward-compatible during rollout: the application accepts the old
         # MSG91_WIDGET_AUTH_KEY name, but new deployments should use MSG91_AUTH_KEY.

@@ -21,6 +21,9 @@ jobs:
           sed -i 's/REPLACE_WITH_AT_LEAST_32_RANDOM_BYTES/ci_secret_key_0123456789abcdef0123456789abcdef/g' .env.production
           sed -i 's/REPLACE_WITH_FIREBASE_PROJECT_ID/gaonone-ci/g' .env.production
           sed -i 's/REPLACE_WITH_BASE64_SERVICE_ACCOUNT_JSON/e30=/g' .env.production
+          sed -i 's/REPLACE_WITH_FIREBASE_WEB_API_KEY/ci-firebase-api-key/g' .env.production
+          sed -i 's/REPLACE_WITH_FIREBASE_WEB_AUTH_DOMAIN/gaonone-ci.firebaseapp.com/g' .env.production
+          sed -i 's/REPLACE_WITH_FIREBASE_WEB_APP_ID/1:123456789:web:ci/g' .env.production
 
       - name: Validate production environment
         run: python3 deploy/validate_env.py
@@ -32,4 +35,4 @@ jobs:
         run: docker build -f backend/Dockerfile.prod -t gaonone-api:ci backend
 
       - name: Build production web image
-        run: docker build -f web/Dockerfile.prod --build-arg NEXT_PUBLIC_API_URL=/api/v1 -t gaonone-web:ci web
+        run: docker build -f web/Dockerfile.prod --build-arg NEXT_PUBLIC_API_URL=/api/v1 --build-arg NEXT_PUBLIC_FIREBASE_API_KEY=ci-firebase-api-key --build-arg NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=gaonone-ci.firebaseapp.com --build-arg NEXT_PUBLIC_FIREBASE_PROJECT_ID=gaonone-ci --build-arg NEXT_PUBLIC_FIREBASE_APP_ID=1:123456789:web:ci -t gaonone-web:ci web

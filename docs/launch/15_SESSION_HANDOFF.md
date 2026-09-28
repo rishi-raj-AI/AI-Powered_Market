@@ -2,7 +2,7 @@
 
 ## Objective
 
-Phase 2A: separate release authorization from `main` validation, establish Firebase-to-GaonOne identity/session exchange, and fail-close SMS for the launch configuration.
+Phase 2B: integrate web and Flutter Google Sign-In with the merged Firebase-to-GaonOne session exchange contract.
 
 ## Completed
 
@@ -13,14 +13,17 @@ Phase 2A: separate release authorization from `main` validation, establish Fireb
 - Added the additive `external_identities` model/migration, Firebase token verifier boundary, `/auth/firebase/exchange`, and GaonOne session issuance.
 - Set production example/CI to Firebase with `SMS_AUTH_ENABLED=false`; SMS send/verify and MSG91 widget routes return 404 when SMS is disabled. Legacy SMS code remains.
 - First Firebase login creates a customer with no phone and a UID identity record; repeat login reuses it. No automatic email matching/linking occurs.
+- Merged Phase 2A PR #182 at `39ee1038e2c6c5818fbbbeebd251cbccf185a122` after all four required gates passed on final PR head `ecfeb54db388b1cd4a36630804c3a7f619477a17`.
+- Safely fast-forwarded protected local main to that merge SHA; all seven owner-owned Flutter/iOS modifications remained byte-for-byte intact.
+- Created isolated `/Users/rishiraj/Documents/Personal_Projects/AI-Powered_Market/gaonone-launch-google-signin` on `feat/launch-google-signin` from the merged main.
 
 ## Changed files
 
-Changed: production env/validator, staging and production CI workflows, backend config/model/schema/auth/service, migration `0024_external_identities`, Firebase/config tests, nullable-phone web/Flutter client compatibility, and launch-control documents. No Google client sign-in flow or product UI redesign was added.
+Phase 2B changes are limited to web/Flutter Google/Firebase client adapters, public configuration validation, tests, and launch-control documents. No backend authorization contract, Google profile linking, product redesign, deployment, or provider credentials are added.
 
 ## Validation
 
-Committed implementation: `4b2a1e69990e58a35d5e647ed05b4556f3fa8029` (`feat(auth): add Firebase identity foundation`). Passed: Python compilation, Ruff (`backend/app`, `backend/tests`), `git diff --check`, and production environment validation against a non-secret temporary Firebase-shaped fixture. Full pytest could not run locally because Docker is unavailable and the host Python lacks backend dependencies. Required GitHub CI remains mandatory.
+Phase 2A final head passed all four required GitHub CI gates. Phase 2B local validation must include Flutter analysis/tests, web build/E2E, production environment validation, diff review, and required GitHub CI after PR creation. Device sign-in and visual QA remain owner-dependent evidence.
 
 ## Unresolved / owner input
 
@@ -28,7 +31,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-The first remediation head `5473f79` passed all four required CI gates. Final review then found that Firebase accounts intentionally have a null phone while web/Flutter client models still required a string, which would crash Flutter bootstrap and mislabel the web account. The subsequent head `8b5ffae` passed backend, Android, and production CI, but WebKit failed one existing direct-OTP E2E case because it asserted the challenge field before its mocked OTP-request response completed. The final narrow remediation uses the existing response-bound synchronization pattern in that case; it adds no production behavior. Commit/push it, then require all four CI gates on the new head. If green, conduct the final migration/Firebase/manual-dispatch/SMS-gating review and merge normally; do not deploy.
+Phase 2B implementation is in PR #183. Local focused validation passed. The final test-only remediation head `fc067d2a8948b9a4154e73aa7e768e6029eb1065` passed all four required GitHub CI gates: backend, web/UI, Android, and production compose/images. The remediation makes the direct-OTP Playwright test await the rendered challenge state rather than only the mocked response. Stop for review. Do not merge or deploy Phase 2B.
 
 ## Preservation contract
 

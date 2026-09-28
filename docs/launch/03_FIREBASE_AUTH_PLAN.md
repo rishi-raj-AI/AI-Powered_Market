@@ -22,3 +22,10 @@ Valid, invalid, expired, malformed, revoked/disabled, and unknown-UID tokens; fi
 ## Owner configuration boundary
 
 Owner must supply Firebase project/server credentials securely, web OAuth origins, Android package/SHA configuration, iOS bundle/reversed-client configuration and signing, and launch domains. No secrets belong in Git or test fixtures.
+
+## Phase 2B client integration
+
+- Web reads only public `NEXT_PUBLIC_FIREBASE_*` identifiers at runtime, uses the Firebase Google provider to obtain an ID token, and exchanges that token at `/auth/firebase/exchange`. It must not trust Firebase profile fields for GaonOne roles or ownership.
+- Flutter uses public build-time Firebase identifiers (`GAONONE_FIREBASE_<PLATFORM>_*`) plus an optional `GAONONE_GOOGLE_SERVER_CLIENT_ID`; it uses Google Sign-In only to obtain a Firebase session and then exchanges the Firebase ID token with GaonOne.
+- Before Android/iOS device acceptance, the owner must register `in.gaonone.gaonone_mobile`, add the Android SHA fingerprints, configure iOS reversed-client URL handling/signing, enable Google as a Firebase Authentication provider, and provide the Firebase options/build identifiers. These configuration artifacts and credentials are not to be committed by an agent.
+- Both clients fail closed with a visible configuration error when required public Firebase identifiers are absent. Local GaonOne tokens are only stored after the backend exchange succeeds.
