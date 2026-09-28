@@ -24,16 +24,20 @@ Phase 3: validate and close launch-critical customer-path reliability gaps from 
 - PR #184 prevents an outdated address quote from rendering, preserves a safe provider-neutral login return after session expiry, and proves the client clears its GaonOne token before redirecting.
 - Safely fast-forwarded protected local main to `09e0e5c`; its seven owner-owned Flutter/iOS modifications remained byte-for-byte intact and no deployment ran.
 - Created isolated `/Users/rishiraj/Documents/Personal_Projects/AI-Powered_Market/gaonone-launch-customer-acceptance` on `feat/launch-customer-acceptance` from that merged main.
+- Merged Phase 3 PR #185 at `dc76d5081c58691583eddebeaf45befd9bb8b867` after all four required gates passed on final PR head `fd5afb305a764b7dc14d9f4da3f036871218ed20`.
+- PR #185 supplies one stable idempotency key for an unchanged web cart/address/payment attempt and reuses it after an uncertain network failure; backend user-scoped concurrency/idempotency behavior remains authoritative.
+- Safely fast-forwarded protected local main to `dc76d50`; its seven owner-owned Flutter/iOS modifications remained byte-for-byte intact and no deployment ran.
+- Created isolated `/Users/rishiraj/Documents/Personal_Projects/AI-Powered_Market/gaonone-launch-customer-session-resilience` on `feat/launch-customer-session-resilience` from that merged main.
 
 ## Changed files
 
 Phase 2B changes are limited to web/Flutter Google/Firebase client adapters, public configuration validation, tests, and launch-control documents. No backend authorization contract, Google profile linking, product redesign, deployment, or provider credentials are added.
 
-Phase 3 first delivered a narrow customer checkout/session reliability slice. It invalidates an older quote as soon as the selected delivery address changes, applies only the response for the current address, and proves the case across Chromium, Firefox, WebKit, and mobile Chrome. It also verifies that a rejected cart mutation clears the GaonOne session and returns to the Google-capable login page with the storefront preserved as a safe `next` destination. The current slice uses the backend's `Idempotency-Key` contract so an uncertain web checkout can retry the same logical cart/address/payment attempt safely.
+Phase 3 first delivered a narrow customer checkout/session reliability slice. It invalidates an older quote as soon as the selected delivery address changes, applies only the response for the current address, and proves the case across Chromium, Firefox, WebKit, and mobile Chrome. It also verifies that a rejected cart mutation clears the GaonOne session and returns to the Google-capable login page with the storefront preserved as a safe `next` destination. PR #185 uses the backend's `Idempotency-Key` contract so an uncertain web checkout can retry the same logical cart/address/payment attempt safely. The current slice is limited to live-tracking and route polling: it routes both through the established client API boundary so a 401 cannot leave a stale GaonOne token, and it adds a cross-browser regression proving the token-clear and safe sign-in return.
 
 ## Validation
 
-Phase 2A final head passed all four required GitHub CI gates. Phase 2B was fully validated in CI before merge. Phase 3 PR #184 passed the full required CI set before merge; its local validation passed `npm run build` and the full 260-check Playwright suite across Chromium, Firefox, WebKit, and mobile Chrome. The current idempotency slice passed `npm run build` and the full 264-check Playwright suite across the same targets. `make test-backend` remains unavailable only because the local Docker daemon is absent. Required GitHub CI remains the independent backend, Android, web/UI, and compose/image gate after PR creation. Device sign-in and visual QA remain owner-dependent evidence.
+Phase 2A final head passed all four required GitHub CI gates. Phase 2B was fully validated in CI before merge. Phase 3 PR #184 passed the full required CI set before merge; its local validation passed `npm run build` and the full 260-check Playwright suite across Chromium, Firefox, WebKit, and mobile Chrome. Phase 3 PR #185 passed all four required gates; its local validation passed `npm run build` and the full 264-check Playwright suite across the same targets. The current live-tracking slice passes `npm run build` and the full 268-check Playwright suite. `make test-backend` remains unavailable only because the local Docker daemon is absent. Required GitHub CI remains the independent backend, Android, web/UI, and compose/image gate after PR creation. Device sign-in and visual QA remain owner-dependent evidence.
 
 ## Unresolved / owner input
 
@@ -41,7 +45,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-Phase 3 remains the approved launch phase: customer-path functional and UX validation from authenticated profile through address/location, discovery, cart, authoritative quote, COD/available payment, order, tracking/proof, and support. The current checkout idempotency slice is implemented, reviewed locally, and passed the full web suite; review the client/backend retry boundary, commit, open a PR, require all four gates, then continue the customer journey audit. Do not deploy.
+Phase 3 remains the approved launch phase: customer-path functional and UX validation from authenticated profile through address/location, discovery, cart, authoritative quote, COD/available payment, order, tracking/proof, and support. The current live-tracking session-boundary slice is implemented and passed the full web suite; focused-review the expiry boundary, commit, open a PR, require all four gates, then continue the customer journey audit. Do not deploy.
 
 ## Preservation contract
 
