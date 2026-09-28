@@ -6,9 +6,9 @@ Goal: a secure, delivery-first GaonOne MVP for low-bandwidth rural/semi-urban In
 
 | Gate | Exit criteria | State |
 |---|---|---|
-| A — repository/release control | Baseline recorded, work isolated, protected edits preserved, deployment requires explicit authorization | IN_PROGRESS |
-| B — authentication | Firebase verification and identity mapping, GaonOne sessions, web/Flutter Google Sign-In, SMS disabled fail-closed | NOT_STARTED |
-| C — customer | Sign-in through support journey, authoritative quote, COD, order/tracking/proof | NOT_STARTED |
+| A — repository/release control | Baseline recorded, work isolated, protected edits preserved, deployment requires explicit authorization | DONE |
+| B — authentication | Firebase verification and identity mapping, GaonOne sessions, web/Flutter Google Sign-In, SMS disabled fail-closed | DONE — owner runtime/device configuration remains a release gate |
+| C — customer | Sign-in through support journey, authoritative quote, COD, order/tracking/proof | IN_PROGRESS |
 | D — operations | Merchant, delivery, admin/support critical paths and server authorization | NOT_STARTED |
 | E — UX | Responsive/accessibility/loading/error/empty/retry and Android visual evidence | NOT_STARTED |
 | F — release | Required checks, config audit, owner setup, explicit release authorization | NOT_STARTED |

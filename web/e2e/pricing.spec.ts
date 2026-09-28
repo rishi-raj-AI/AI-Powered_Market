@@ -54,3 +54,40 @@ test('checkout keeps the quote for the currently selected address when an older 
   await expect(page.getByText('₹25.00')).toBeVisible();
   await expect(page.getByRole('button',{name:'Place order'})).toBeEnabled();
 });
+
+test('checkout reuses its idempotency key after an uncertain network failure',async({page})=>{
+  await installApiMocks(page);
+  const order={id:'order-idempotent',order_number:'GO260928COD01',user_id:'user-customer',store_id:'store-nearby',address_id:address.id,status:'placed',payment_method:'cod',payment_status:'pending',subtotal:'145.00',delivery_fee:'37.50',total:'182.50',created_at:'2026-09-28T16:00:00Z',updated_at:'2026-09-28T16:00:00Z'};
+  const keys:string[]=[];
+  let attempts=0;
+  let releaseFirst!:()=>void;
+  let firstStarted!:()=>void;
+  const firstRequest=new Promise<void>(resolve=>{firstStarted=resolve});
+  const firstGate=new Promise<void>(resolve=>{releaseFirst=resolve});
+  await page.route('http://localhost:8000/api/v1/cart',route=>route.fulfill({json:cart}));
+  await page.route('http://localhost:8000/api/v1/addresses/me',route=>route.fulfill({json:[address]}));
+  await page.route('http://localhost:8000/api/v1/cart/quote**',route=>route.fulfill({json:{store_id:'store-nearby',address_id:address.id,subtotal:'145.00',delivery_fee:'37.50',total:'182.50',serviceable:true,inventory_valid:true,store_open:true,checkout_ready:true,blockers:[]}}));
+  await page.route('http://localhost:8000/api/v1/orders/checkout',async route=>{
+    keys.push(route.request().headers()['idempotency-key']||'');
+    expect(route.request().postDataJSON()).toEqual({address_id:address.id,payment_method:'cod'});
+    attempts+=1;
+    if(attempts===1){firstStarted();await firstGate;await route.abort('connectionreset');return}
+    await route.fulfill({status:201,json:order});
+  });
+  await page.route('http://localhost:8000/api/v1/orders/me',route=>route.fulfill({json:[order]}));
+
+  await page.goto('/checkout');
+  const place=page.getByRole('button',{name:'Place order'});
+  await expect(place).toBeEnabled();
+  await place.click();
+  await firstRequest;
+  await expect(page.getByRole('button',{name:'Placing order…'})).toBeDisabled();
+  releaseFirst();
+  await expect(place).toBeEnabled();
+  await place.click();
+  await page.waitForURL(/\/orders\?placed=GO260928COD01$/);
+  await expect(page.getByText('Order GO260928COD01 placed successfully.')).toBeVisible();
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).not.toBe('');
+  expect(keys[1]).toBe(keys[0]);
+});

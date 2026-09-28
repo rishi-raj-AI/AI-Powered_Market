@@ -4,9 +4,9 @@ Verified 2026-09-28 UTC.
 
 | Item | Verified state |
 |---|---|
-| Local main / origin/main | Both `78983ba1327d6d2e2584dbc2d2fc9e87f51bab30` |
-| Baseline CI | `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` passed for Phase 2B final head `d8cb6fa` before merge |
-| Open PR | No launch PR is open; Phase 3 customer-path work is isolated on `feat/launch-customer-journey` |
+| Local main / origin/main | Both `09e0e5cfa15f02226fa1d841d06db908706c16ac` |
+| Baseline CI | `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` passed for Phase 3 PR #184 final head `3f749a6` before merge |
+| Open PR | No launch PR is open; the next Phase 3 customer-path slice is isolated on `feat/launch-customer-acceptance` |
 | Main checkout | Protected owner Flutter/iOS modifications exist; do not reset, clean, stash, or alter them |
 | Product media B2 | Isolated `gaonone-product-media-intake` worktree; deferred |
 | Auth | Firebase verifies external identity; GaonOne issues sessions and owns roles/permissions. Web and Flutter exchange Firebase Google ID tokens for GaonOne sessions. |
@@ -18,4 +18,4 @@ Verified 2026-09-28 UTC.
 
 Existing web and Flutter cover customer, merchant, delivery, admin, and support surfaces. Static inspection found reusable web UI primitives, location/landmark handling, status/error UI, and some retry/connectivity support. This is not visual or device validation.
 
-Owner Firebase credentials/OAuth origins and Android/iOS configuration/signing are release/runtime dependencies, not prerequisites for safely merging source work. Existing risky worktrees (`gaonone-real-otp-accounts`, `gaonone-web-foundation-primitives`) and the protected main checkout are preservation-only until separately authorized.
+Owner Firebase credentials/OAuth origins and Android/iOS configuration/signing are release/runtime dependencies, not prerequisites for safely merging source work. The Phase 3 checkout/session slice merged at `09e0e5c`; the current isolated slice ensures the web client uses the backend's order idempotency contract after an uncertain network result. Existing risky worktrees (`gaonone-real-otp-accounts`, `gaonone-web-foundation-primitives`) and the protected main checkout are preservation-only until separately authorized.

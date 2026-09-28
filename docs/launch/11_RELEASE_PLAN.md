@@ -4,9 +4,9 @@
 
 Merge validates source; it does not authorize staging or production deployment. A designated release action must select an exact green SHA after explicit owner authorization.
 
-## P0 discrepancy
+## Prior P0 discrepancy
 
-The repository source contains a staging workflow triggered by `main` pushes. That contradicts the target manual/explicit-release policy. Phase 2A must separate CI validation from deployment authorization and test the change without deployment.
+The repository source previously contained a staging workflow triggered by `main` pushes. That contradicted the target manual/explicit-release policy. Phase 2A remediated it to manual dispatch only; PRs #182–#184 merged without deployment.
 
 ## Candidate release checklist
 
