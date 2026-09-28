@@ -28,7 +28,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-The first remediation head `5473f79` passed all four required CI gates. Final review then found that Firebase accounts intentionally have a null phone while web/Flutter client models still required a string, which would crash Flutter bootstrap and mislabel the web account. The pending narrow remediation makes client phone fields nullable, avoids sending a null Razorpay prefill contact, labels phone-unlinked accounts accurately, binds Firebase auth and FCM to the same configured project, and strengthens the concurrency assertion to prove that no duplicate Firebase account remains. Commit/push this remediation, then require all four CI gates on its new head. If green, conduct the final migration/Firebase/manual-dispatch/SMS-gating review and merge normally; do not deploy.
+The first remediation head `5473f79` passed all four required CI gates. Final review then found that Firebase accounts intentionally have a null phone while web/Flutter client models still required a string, which would crash Flutter bootstrap and mislabel the web account. The subsequent head `8b5ffae` passed backend, Android, and production CI, but WebKit failed one existing direct-OTP E2E case because it asserted the challenge field before its mocked OTP-request response completed. The final narrow remediation uses the existing response-bound synchronization pattern in that case; it adds no production behavior. Commit/push it, then require all four CI gates on the new head. If green, conduct the final migration/Firebase/manual-dispatch/SMS-gating review and merge normally; do not deploy.
 
 ## Preservation contract
 
