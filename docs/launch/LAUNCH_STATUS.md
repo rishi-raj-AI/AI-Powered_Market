@@ -1,19 +1,19 @@
 # Launch status
 
-Updated: 2026-09-28T15:53:22Z
-Verified baseline: `origin/main` = protected local main = `78983ba1327d6d2e2584dbc2d2fc9e87f51bab30`
+Updated: 2026-09-28T16:21:33Z
+Verified baseline: `origin/main` = protected local main = `09e0e5cfa15f02226fa1d841d06db908706c16ac`
 
 | Field | Status |
 |---|---|
-| Active worktree / branch | `gaonone-launch-customer-journey` / `feat/launch-customer-journey` |
-| Active PR | None — Phase 3 customer journey work has started from merged main |
+| Active worktree / branch | `gaonone-launch-customer-acceptance` / `feat/launch-customer-acceptance` |
+| Active PR | None — the first Phase 3 customer checkout/session slice merged as PR #184 |
 | Current phase | Phase 3 — customer-path functional and UX validation (`IN_PROGRESS`) |
 | Objective | Validate and close launch-critical customer-path gaps from authenticated profile through support, without deployment or broad redesign |
-| Completed | Phase 1 merged as `b730bba`; Phase 2A merged as `39ee103`; Phase 2B merged as `78983ba`; release workflow is manual-dispatch only; Firebase identity/session/SMS and both Google clients are on main |
-| In progress | Customer journey audit found and fixed stale checkout-quote rendering across address changes; provider-neutral session restoration is covered by the full local browser suite (260 passing checks) |
+| Completed | Phase 1 merged as `b730bba`; Phase 2A merged as `39ee103`; Phase 2B merged as `78983ba`; Phase 3 checkout/session reliability merged as `09e0e5c`; release workflow is manual-dispatch only; Firebase identity/session/SMS and both Google clients are on main |
+| In progress | Customer-path audit closed the web checkout retry gap: it now supplies and reuses a GaonOne idempotency key after an uncertain network outcome; the full local browser suite passes 264 checks |
 | Blocked | Docker is unavailable for local backend integration tests; owner Firebase configuration, device acceptance, and visual evidence remain release dependencies; none block this source/test PR |
-| Next exact action | Commit the customer checkout/session reliability slice, open a PR, and require all four CI gates; do not deploy |
-| CI baseline | All four required checks passed for Phase 2A final head `ecfeb54`; all four passed for Phase 2B final head `d8cb6fa` before merge |
+| Next exact action | Review and commit the checkout idempotency recovery slice, open a PR, and require all four CI gates; do not deploy |
+| CI baseline | All four required checks passed for Phase 2A final head `ecfeb54`; Phase 2B final head `d8cb6fa`; and Phase 3 PR #184 final head `3f749a6` before merge |
 | P0 blockers | Firebase owner configuration and device acceptance; protected-main preservation |
 | Owner dependencies | Firebase project/server credentials, OAuth origins, Android/iOS config/signing, domains/CORS; payment/maps decisions |
 | Deferred | Product-media B2+, R2/scanner, banner enhancement, MSG91/DLT activation, scheduled fulfilment, pickup expansion, nonessential refactors/AI/cosmetic redesign |

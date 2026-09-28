@@ -2,11 +2,11 @@
 
 | Surface | Required evidence | State |
 |---|---|---|
-| Backend auth | Unit/integration tests for token verification, mapping, sessions, disabled SMS, production fail-closed config | NOT_STARTED |
+| Backend auth | Unit/integration tests for token verification, mapping, sessions, disabled SMS, production fail-closed config | PARTIAL — merged Phase 2A coverage passed the required CI gates; retain release/device acceptance work |
 | Authorization | Customer/merchant/delivery/admin negative and ownership tests | PARTIAL — existing coverage; revalidate after auth |
-| Web | Build, Playwright critical paths, accessibility and responsive visual QA | IN_PROGRESS — `npm run build` and all 260 local Playwright checks pass; Google session restoration and stale customer-quote response ordering are covered; visual QA remains pending |
+| Web | Build, Playwright critical paths, accessibility and responsive visual QA | IN_PROGRESS — `npm run build` and all 264 local Playwright checks pass; Google session restoration, stale customer-quote response ordering, and idempotent checkout retry are covered; visual QA remains pending |
 | Flutter | Analyze, unit/widget tests, debug Android build and Android visual QA | PARTIAL — baseline CI passed; Firebase and visual work pending |
-| Customer/operations | End-to-end actor journeys, state transitions, quote/payment boundaries | IN_PROGRESS — address/discovery/cart/quote/COD/order/tracking/proof/support tests mapped; stale quote rendering now has a cross-browser regression test |
+| Customer/operations | End-to-end actor journeys, state transitions, quote/payment boundaries | IN_PROGRESS — address/discovery/cart/quote/COD/order/tracking/proof/support tests are mapped; cross-browser regressions cover stale quote rendering, expired session handling, and retrying an uncertain checkout with a stable idempotency key |
 | Release | Compose/images, production config audit, owner config checklist, explicit release approval | BLOCKED |
 
 Repository commands: `make test-backend`, `make test-web`, `make test-e2e`, and `make mobile-check`; CI also runs Android analysis/tests/build and production compose/image validation. Do not use arbitrary sleeps to stabilize async tests.
