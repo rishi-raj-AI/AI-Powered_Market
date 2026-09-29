@@ -92,6 +92,69 @@ test('checkout keeps the quote for the currently selected address when an older 
   await expect(page.getByRole('button',{name:'Place order'})).toBeEnabled();
 });
 
+test('checkout serializes a pending address save',async({page})=>{
+  await installApiMocks(page);
+  await page.addInitScript(()=>{
+    const fetch=window.fetch.bind(window);
+    (window as typeof window&{addressSaveServiceabilityRequests:number}).addressSaveServiceabilityRequests=0;
+    window.fetch=(input,init)=>{
+      const url=typeof input==='string'?input:input instanceof Request?input.url:String(input);
+      if(url.includes('/api/v1/location/serviceability'))(window as typeof window&{addressSaveServiceabilityRequests:number}).addressSaveServiceabilityRequests+=1;
+      return fetch(input,init);
+    };
+  });
+  const savedAddress={...address,id:'address-saved',landmark:'Temple gate'};
+  let currentAddresses:typeof address[]=[];
+  let createAttempts=0;
+  let refreshFailures=0;
+  let addressCreated=false;
+  let releaseCreate!:()=>void;
+  let createStarted!:()=>void;
+  const createRequest=new Promise<void>(resolve=>{createStarted=resolve});
+  const createGate=new Promise<void>(resolve=>{releaseCreate=resolve});
+  await page.route('http://localhost:8000/api/v1/cart',route=>route.fulfill({json:cart}));
+  await page.route('http://localhost:8000/api/v1/payments/config',route=>{
+    if(addressCreated){refreshFailures+=1;return route.fulfill({status:503,json:{detail:'Address list refresh failed'}})}
+    return route.fulfill({json:{enabled:false,provider:'razorpay',currency:'INR'}});
+  });
+  await page.route('http://localhost:8000/api/v1/addresses/me',async route=>{
+    if(route.request().method()==='GET')return route.fulfill({json:currentAddresses});
+    if(route.request().method()==='POST'){
+      createAttempts+=1;
+      createStarted();
+      await createGate;
+      currentAddresses=[savedAddress];
+      addressCreated=true;
+      await route.fulfill({status:201,json:savedAddress});
+      return;
+    }
+    await route.fulfill({status:405});
+  });
+  await page.route('http://localhost:8000/api/v1/cart/quote**',route=>route.fulfill({json:{store_id:'store-nearby',address_id:savedAddress.id,subtotal:'145.00',delivery_fee:'37.50',total:'182.50',serviceable:true,inventory_valid:true,store_open:true,checkout_ready:true,blockers:[]}}));
+
+  await page.goto('/checkout');
+  const addAddress=page.getByRole('button',{name:'+ Add address'});
+  await addAddress.click();
+  await page.locator('#checkout-village').selectOption('village-niphad');
+  await page.locator('#checkout-landmark').fill('Temple gate');
+  const form=page.locator('form.formInset');
+  const save=page.getByRole('button',{name:'Save address'});
+  await save.click();
+  await createRequest;
+  await expect(form).toHaveAttribute('aria-busy','true');
+  await expect(page.getByRole('button',{name:'Saving address…'})).toBeDisabled();
+  await expect(addAddress).toBeDisabled();
+  const secondSubmitWasPrevented=await form.evaluate(element=>!element.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+  expect(secondSubmitWasPrevented).toBe(true);
+  expect(await page.evaluate(()=>((window as typeof window&{addressSaveServiceabilityRequests:number}).addressSaveServiceabilityRequests))).toBe(1);
+  expect(createAttempts).toBe(1);
+  releaseCreate();
+  await expect(addAddress).toBeEnabled();
+  await expect(page.getByText('Temple gate')).toBeVisible();
+  expect(refreshFailures).toBe(1);
+  expect(createAttempts).toBe(1);
+});
+
 test('checkout reuses its idempotency key after an uncertain network failure',async({page})=>{
   await installApiMocks(page);
   const order={id:'order-idempotent',order_number:'GO260928COD01',user_id:'user-customer',store_id:'store-nearby',address_id:address.id,status:'placed',payment_method:'cod',payment_status:'pending',subtotal:'145.00',delivery_fee:'37.50',total:'182.50',created_at:'2026-09-28T16:00:00Z',updated_at:'2026-09-28T16:00:00Z'};

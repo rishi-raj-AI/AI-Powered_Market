@@ -4,9 +4,9 @@ Verified 2026-09-29 UTC.
 
 | Item | Verified state |
 |---|---|
-| Local main / origin/main | Both `dff5dc6be9f46277bdeff5aaaa6ecdc1c9a207ba` |
-| Baseline CI | `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` passed for Phase 3 PR #188 final head `e83e88b` before merge |
-| Open PR | Phase 3 PR #189 is open from `feat/launch-cart-state-resilience`; it awaits the required CI gate set |
+| Local main / origin/main | Both `522861c019d71dc78d214149d322d2c6cf2ca245` |
+| Baseline CI | `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` passed for Phase 3 PR #189 final head `e96327f` before merge |
+| Open PR | Phase 3 PR #190 is open from `feat/launch-address-save-resilience`; it awaits the required CI gate set |
 | Main checkout | Protected owner Flutter/iOS modifications exist; do not reset, clean, stash, or alter them |
 | Product media B2 | Isolated `gaonone-product-media-intake` worktree; deferred |
 | Auth | Firebase verifies external identity; GaonOne issues sessions and owns roles/permissions. Web and Flutter exchange Firebase Google ID tokens for GaonOne sessions. |
@@ -18,4 +18,4 @@ Verified 2026-09-29 UTC.
 
 Existing web and Flutter cover customer, merchant, delivery, admin, and support surfaces. Static inspection found reusable web UI primitives, location/landmark handling, status/error UI, and some retry/connectivity support. This is not visual or device validation.
 
-Owner Firebase credentials/OAuth origins and Android/iOS configuration/signing are release/runtime dependencies, not prerequisites for safely merging source work. The Phase 3 checkout/session slice merged at `09e0e5c`, checkout idempotency at `dc76d50`, live-tracking session boundary at `2432dc6`, account-session safe return at `5fffca1`, and location-state resilience at `dff5dc6`; the current isolated slice serializes client cart mutations so delayed, conflicting responses cannot replace an authoritative cart result. Existing risky worktrees (`gaonone-real-otp-accounts`, `gaonone-web-foundation-primitives`) and the protected main checkout are preservation-only until separately authorized.
+Owner Firebase credentials/OAuth origins and Android/iOS configuration/signing are release/runtime dependencies, not prerequisites for safely merging source work. The Phase 3 checkout/session slice merged at `09e0e5c`, checkout idempotency at `dc76d50`, live-tracking session boundary at `2432dc6`, account-session safe return at `5fffca1`, location-state resilience at `dff5dc6`, and cart-state resilience at `522861c`; the current isolated slice prevents concurrent duplicate address saves, preserves the returned address after a post-save refresh failure, and retains the server serviceability and ownership checks. Existing risky worktrees (`gaonone-real-otp-accounts`, `gaonone-web-foundation-primitives`) and the protected main checkout are preservation-only until separately authorized.

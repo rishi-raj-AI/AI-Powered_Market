@@ -12,7 +12,7 @@
 | R-008 | Production CORS/domain configuration incomplete | P1 | Medium | Yes | Owner | OPEN: configuration audit |
 | R-009 | Maps configuration absent | P1 | Medium | Conditional | Owner | OPEN: assess critical routes and degraded UX |
 | R-010 | Razorpay credentials absent | P1 | High | No, COD path | Owner | OPEN: keep online payment unavailable and validate COD |
-| R-011 | Weak-connectivity UX fails in field | P1 | Medium | Yes | Engineering | PARTIAL: web now rejects stale location/discovery responses and serializes conflicting cart mutations; Android field QA remains |
+| R-011 | Weak-connectivity UX fails in field | P1 | Medium | Yes | Engineering | PARTIAL: web rejects stale location/discovery responses, serializes conflicting cart mutations, prevents overlapping address-save submits, and preserves a returned address after refresh failure; Android field QA and durable retry behavior remain |
 | R-012 | Android build/device instability | P1 | Medium | Yes | Engineering/owner | OPEN: build and device validation |
 | R-013 | No visual QA evidence | P1 | High | Yes | Engineering | OPEN: capture critical-screen evidence |
 | R-014 | Protected main edits damaged | P0 | Low | Yes | All | CONTROLLED: never clean/reset/stash main |
