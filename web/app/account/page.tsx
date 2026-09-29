@@ -4,7 +4,7 @@ import {FormEvent,useEffect,useState} from 'react';
 import {useRouter} from 'next/navigation';
 import {BriefcaseBusiness,CheckCircle2,ShieldCheck,UserRound} from 'lucide-react';
 import Link from 'next/link';
-import {ApiError,gaonApi,Merchant,User} from '@/lib/api';
+import {ApiError,gaonApi,getToken,Merchant,User} from '@/lib/api';
 import {Nav} from '@/components/Nav';
 
 export default function AccountPage(){
@@ -20,13 +20,20 @@ export default function AccountPage(){
 
   useEffect(()=>{
     (async()=>{
+      const startedWithToken=Boolean(getToken());
       try{
         const user=await gaonApi.me();setMe(user);setFullName(user.full_name||'');
         if(user.role==='merchant'){
           try{setMerchant(await gaonApi.merchant())}catch(e){if(!(e instanceof ApiError&&e.status===404))throw e}
         }
       }catch(e:any){
-        if(e instanceof ApiError&&e.status===401){router.replace('/login');return}
+        if(e instanceof ApiError&&e.status===401){
+          // A stale GaonOne session is already cleared and redirected by the
+          // shared API boundary, which preserves this page as a safe return.
+          // Only a visitor who arrived without a session needs this fallback.
+          if(!startedWithToken)router.replace('/login');
+          return;
+        }
         setMessage(e.message||'Unable to load account.');
       }finally{setLoading(false)}
     })();
