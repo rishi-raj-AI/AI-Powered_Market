@@ -59,7 +59,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-Phase 3 remains the approved launch phase: customer-path functional and UX validation from authenticated profile through address/location, discovery, cart, authoritative quote, COD/available payment, order, tracking/proof, and support. The current cart-state resilience slice is implemented and locally validated; focused-review its client mutation lock and authoritative-result boundary, commit, open a PR, require all four gates, and only then merge and continue the customer journey audit. Do not deploy.
+Phase 3 remains the approved launch phase: customer-path functional and UX validation from authenticated profile through address/location, discovery, cart, authoritative quote, COD/available payment, order, tracking/proof, and support. PR #189 contains the current cart-state resilience slice; require all four gates on its final head, focused-review its client mutation lock and authoritative-result boundary, and only then merge and continue the customer journey audit. Do not deploy.
 
 ## Preservation contract
 
