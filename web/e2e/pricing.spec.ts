@@ -4,6 +4,43 @@ import {installApiMocks} from './helpers';
 const cart={id:'cart-quote',store_id:'store-nearby',subtotal:'145.00',items:[{id:'cart-item',store_product_id:'listing-rice',quantity:2,store_product:{id:'listing-rice',store_id:'store-nearby',product_id:'product-rice',price:'72.50',stock_quantity:8,is_available:true,product:{id:'product-rice',category_id:'category-rice',name:'Kolam Rice',unit:'1 kg'}}}]};
 const address={id:'address-niphad',village_id:'village-niphad',label:'Home',landmark:'Niphad Main Road',latitude:20.0778,longitude:74.1118,is_default:true};
 
+test('cart serializes mutations while an authoritative update is pending',async({page})=>{
+  await installApiMocks(page);
+  const flour={id:'cart-item-flour',store_product_id:'listing-flour',quantity:1,store_product:{id:'listing-flour',store_id:'store-nearby',product_id:'product-flour',price:'32.50',stock_quantity:6,is_available:true,product:{id:'product-flour',category_id:'category-flour',name:'Fresh Flour',unit:'1 kg'}}};
+  const initial={...cart,subtotal:'105.00',items:[{...cart.items[0],quantity:1},flour]};
+  const afterRice={...initial,subtotal:'177.50',items:[{...initial.items[0],quantity:2},flour]};
+  let releaseRice!:()=>void;
+  let riceUpdateRequested!:()=>void;
+  const riceResponse=new Promise<void>(resolve=>{releaseRice=resolve});
+  const riceRequest=new Promise<void>(resolve=>{riceUpdateRequested=resolve});
+  await page.route('http://localhost:8000/api/v1/cart',route=>route.fulfill({json:initial}));
+  await page.route('http://localhost:8000/api/v1/cart/items',async route=>{
+    const payload=route.request().postDataJSON() as {store_product_id:string;quantity:number};
+    if(payload.store_product_id==='listing-rice'){
+      riceUpdateRequested();
+      await riceResponse;
+      await route.fulfill({json:afterRice});
+      return;
+    }
+    await route.fulfill({json:initial});
+  });
+
+  await page.goto('/cart');
+  const riceIncrease=page.getByRole('button',{name:'Increase Kolam Rice quantity'});
+  const flourIncrease=page.getByRole('button',{name:'Increase Fresh Flour quantity'});
+  await riceIncrease.click();
+  await riceRequest;
+  await expect(page.locator('main')).toHaveAttribute('aria-busy','true');
+  await expect(riceIncrease).toBeDisabled();
+  await expect(flourIncrease).toBeDisabled();
+  await expect(page.getByRole('button',{name:'Clear cart'})).toBeDisabled();
+  await expect(page.getByRole('button',{name:'Updating cart…'})).toBeDisabled();
+  releaseRice();
+  await expect(page.locator('main')).toHaveAttribute('aria-busy','false');
+  await expect(page.getByLabel('Kolam Rice quantity',{exact:true})).toHaveText('2');
+  await expect(page.getByLabel('Fresh Flour quantity',{exact:true})).toHaveText('1');
+});
+
 test('cart and checkout never invent a client-side delivery fee',async({page})=>{
   await installApiMocks(page);
   await page.route('http://localhost:8000/api/v1/cart',route=>route.fulfill({json:cart}));
