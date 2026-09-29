@@ -21,6 +21,29 @@ test('customer account exposes merchant onboarding without role confusion',async
   await expect(page.getByText('Status: pending')).toBeVisible();
 });
 
+test('expired account session clears GaonOne state and preserves the safe account return',async({page})=>{
+  await page.addInitScript(()=>{
+    const removeItem=Storage.prototype.removeItem;
+    Storage.prototype.removeItem=function(key){
+      if(key==='gaonone_token')sessionStorage.setItem('gaonone_e2e_token_cleared','true');
+      return removeItem.call(this,key);
+    };
+  });
+  await page.route('http://localhost:8000/api/v1/users/me',route=>route.fulfill({status:401,json:{detail:'Not authenticated'}}));
+  await page.goto('/account');
+  await page.waitForURL(/\/login\?next=%2Faccount$/);
+  await expect(page.getByRole('button',{name:'Continue with Google'})).toBeVisible();
+  expect(await page.evaluate(()=>sessionStorage.getItem('gaonone_e2e_token_cleared'))).toBe('true');
+});
+
+test('account without a GaonOne session falls back to provider-neutral sign-in',async({page})=>{
+  await page.addInitScript(()=>localStorage.removeItem('gaonone_token'));
+  await page.route('http://localhost:8000/api/v1/users/me',route=>route.fulfill({status:401,json:{detail:'Not authenticated'}}));
+  await page.goto('/account');
+  await page.waitForURL(/\/login$/);
+  await expect(page.getByRole('button',{name:'Continue with Google'})).toBeVisible();
+});
+
 test('@a11y customer account has no serious accessibility violations',async({page})=>{
   await page.goto('/account');
   const results=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze();
