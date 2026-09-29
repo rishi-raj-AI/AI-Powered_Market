@@ -106,11 +106,17 @@ test('checkout serializes a pending address save',async({page})=>{
   const savedAddress={...address,id:'address-saved',landmark:'Temple gate'};
   let currentAddresses:typeof address[]=[];
   let createAttempts=0;
+  let refreshFailures=0;
+  let addressCreated=false;
   let releaseCreate!:()=>void;
   let createStarted!:()=>void;
   const createRequest=new Promise<void>(resolve=>{createStarted=resolve});
   const createGate=new Promise<void>(resolve=>{releaseCreate=resolve});
   await page.route('http://localhost:8000/api/v1/cart',route=>route.fulfill({json:cart}));
+  await page.route('http://localhost:8000/api/v1/payments/config',route=>{
+    if(addressCreated){refreshFailures+=1;return route.fulfill({status:503,json:{detail:'Address list refresh failed'}})}
+    return route.fulfill({json:{enabled:false,provider:'razorpay',currency:'INR'}});
+  });
   await page.route('http://localhost:8000/api/v1/addresses/me',async route=>{
     if(route.request().method()==='GET')return route.fulfill({json:currentAddresses});
     if(route.request().method()==='POST'){
@@ -118,6 +124,7 @@ test('checkout serializes a pending address save',async({page})=>{
       createStarted();
       await createGate;
       currentAddresses=[savedAddress];
+      addressCreated=true;
       await route.fulfill({status:201,json:savedAddress});
       return;
     }
@@ -144,6 +151,7 @@ test('checkout serializes a pending address save',async({page})=>{
   releaseCreate();
   await expect(addAddress).toBeEnabled();
   await expect(page.getByText('Temple gate')).toBeVisible();
+  expect(refreshFailures).toBe(1);
   expect(createAttempts).toBe(1);
 });
 
