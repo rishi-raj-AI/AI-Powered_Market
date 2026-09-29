@@ -63,7 +63,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-Phase 3 remains the approved launch phase: customer-path functional and UX validation from authenticated profile through address/location, discovery, cart, authoritative quote, COD/available payment, order, tracking/proof, and support. The current address-save slice is locally validated; open its PR, require all four gates on its final head, focused-review the in-flight lock, serviceability boundary, and duplicate-submission proof, and only then merge and continue the customer journey audit. Do not deploy.
+Phase 3 remains the approved launch phase: customer-path functional and UX validation from authenticated profile through address/location, discovery, cart, authoritative quote, COD/available payment, order, tracking/proof, and support. PR #190 contains the address-save slice; require all four gates on its final head, focused-review the in-flight lock, serviceability boundary, and duplicate-submission proof, and only then merge and continue the customer journey audit. Do not deploy.
 
 ## Preservation contract
 
