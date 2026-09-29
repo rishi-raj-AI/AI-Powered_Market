@@ -47,6 +47,7 @@ test('market preserves location context and searches nearby live inventory',asyn
 test('market applies a location selected without leaving the current page',async({page})=>{
   await installApiMocks(page);
   await page.goto('/market');
+  await expect(page.getByRole('button',{name:'Logout'})).toBeVisible();
   const search=page.getByLabel('Search location');
   await search.fill('Niphad');
   await page.getByRole('button',{name:/Niphad.*Maharashtra/i}).click();
@@ -75,6 +76,7 @@ test('market location autocomplete ignores an older response after input changes
     await route.fulfill({json:[{place_id:'latest',text:'Latest Niphad locality, Maharashtra',main_text:'Latest Niphad locality',secondary_text:'Maharashtra'}]});
   });
   await page.goto('/market');
+  await expect(page.getByRole('button',{name:'Logout'})).toBeVisible();
   const search=page.getByLabel('Search location');
   await search.fill('Nip');
   await olderRequest;
@@ -100,6 +102,7 @@ test('market keeps newly typed intent when an older selected place resolves late
     placeFinished();
   });
   await page.goto('/market');
+  await expect(page.getByRole('button',{name:'Logout'})).toBeVisible();
   const search=page.getByLabel('Search location');
   await search.fill('Niphad');
   await page.getByRole('button',{name:/Niphad.*Maharashtra/i}).click();
@@ -130,6 +133,7 @@ test('customer address autocomplete ignores an older response after input change
     await route.fulfill({json:[{place_id:'latest',text:'Latest Niphad delivery locality, Maharashtra',main_text:'Latest Niphad delivery locality',secondary_text:'Maharashtra'}]});
   });
   await page.goto('/checkout');
+  await expect(page.getByRole('button',{name:'Logout'})).toBeVisible();
   await page.getByRole('button',{name:/Add address/i}).click();
   const search=page.getByLabel('Search delivery location');
   await search.fill('Nip');
@@ -162,6 +166,7 @@ test('market keeps the latest nearby discovery when an older search resolves lat
     await route.fulfill({json:result('Fresh Flour','fresh-flour')});
   });
   await page.goto('/market?lat=20.0778&lng=74.1118&location=Niphad%20Local&serviceable=1&service_area=Niphad%20Local');
+  await expect(page.getByRole('button',{name:'Logout'})).toBeVisible();
   const search=page.getByPlaceholder(/Search products, categories or stores nearby/i);
   await search.fill('Rice');
   await riceRequest;

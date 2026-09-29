@@ -33,7 +33,9 @@ test('expired account session clears GaonOne state and preserves the safe accoun
   await page.goto('/account');
   await page.waitForURL(/\/login\?next=%2Faccount$/);
   await expect(page.getByRole('button',{name:'Continue with Google'})).toBeVisible();
-  expect(await page.evaluate(()=>sessionStorage.getItem('gaonone_e2e_token_cleared'))).toBe('true');
+  await expect.poll(async()=>{
+    try{return await page.evaluate(()=>sessionStorage.getItem('gaonone_e2e_token_cleared'))}catch{return null}
+  }).toBe('true');
 });
 
 test('account without a GaonOne session falls back to provider-neutral sign-in',async({page})=>{
