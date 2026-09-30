@@ -5,6 +5,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import ensure_capability, get_current_user, get_db, require_capability
@@ -36,6 +37,9 @@ class TicketCreate(BaseModel):
     store_id: uuid.UUID | None = None
     order_id: uuid.UUID | None = None
     delivery_id: uuid.UUID | None = None
+    # Optional for backwards compatibility with existing clients. New clients
+    # send it so an uncertain request can be safely retried.
+    idempotency_key: uuid.UUID | None = None
 
 
 class TicketUpdate(BaseModel):
@@ -238,6 +242,55 @@ def _owned_ticket(db: Session, ticket_id: uuid.UUID, user: User) -> SupportTicke
     return ticket
 
 
+def _existing_ticket_replay(
+    db: Session, *, user_id: uuid.UUID, idempotency_key: uuid.UUID | None
+) -> SupportTicket | None:
+    if idempotency_key is None:
+        return None
+    return db.scalar(
+        select(SupportTicket).where(
+            SupportTicket.user_id == user_id,
+            SupportTicket.idempotency_key == idempotency_key,
+        )
+    )
+
+
+def _ticket_replay_matches(
+    ticket: SupportTicket,
+    *,
+    payload: TicketCreate,
+    order_id: uuid.UUID | None,
+    delivery_id: uuid.UUID | None,
+    store_id: uuid.UUID | None,
+) -> bool:
+    return (
+        ticket.subject == payload.subject.strip()
+        and ticket.description == payload.description.strip()
+        and ticket.order_id == order_id
+        and ticket.delivery_id == delivery_id
+        and ticket.store_id == store_id
+    )
+
+
+def _replayed_ticket_or_conflict(
+    ticket: SupportTicket,
+    *,
+    payload: TicketCreate,
+    order_id: uuid.UUID | None,
+    delivery_id: uuid.UUID | None,
+    store_id: uuid.UUID | None,
+) -> dict:
+    if not _ticket_replay_matches(
+        ticket,
+        payload=payload,
+        order_id=order_id,
+        delivery_id=delivery_id,
+        store_id=store_id,
+    ):
+        raise HTTPException(status_code=409, detail="Idempotency key payload mismatch")
+    return _public_read(ticket)
+
+
 def _locked_ticket(db: Session, ticket_id: uuid.UUID) -> SupportTicket:
     ticket = db.scalar(
         select(SupportTicket).where(SupportTicket.id == ticket_id).with_for_update()
@@ -327,13 +380,29 @@ def create_ticket(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    user_id = user.id
     order, delivery, store = _validate_references(db, payload, user)
+    order_id = order.id if order else None
+    delivery_id = delivery.id if delivery else None
+    store_id = store.id if store else None
+    existing = _existing_ticket_replay(
+        db, user_id=user_id, idempotency_key=payload.idempotency_key
+    )
+    if existing is not None:
+        return _replayed_ticket_or_conflict(
+            existing,
+            payload=payload,
+            order_id=order_id,
+            delivery_id=delivery_id,
+            store_id=store_id,
+        )
     triage = triage_ticket(payload.subject, payload.description)
     ticket = SupportTicket(
-        user_id=user.id,
-        store_id=store.id if store else None,
-        order_id=order.id if order else None,
-        delivery_id=delivery.id if delivery else None,
+        user_id=user_id,
+        store_id=store_id,
+        order_id=order_id,
+        delivery_id=delivery_id,
+        idempotency_key=payload.idempotency_key,
         requester_type=user.role.value,
         subject=payload.subject.strip(),
         description=payload.description.strip(),
@@ -343,7 +412,24 @@ def create_ticket(
         suggested_action=triage["suggested_action"],
     )
     db.add(ticket)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        # The unique key closes the concurrent read-then-insert window. Once
+        # the competing transaction commits, replay its authoritative result.
+        db.rollback()
+        existing = _existing_ticket_replay(
+            db, user_id=user_id, idempotency_key=payload.idempotency_key
+        )
+        if existing is None:
+            raise
+        return _replayed_ticket_or_conflict(
+            existing,
+            payload=payload,
+            order_id=order_id,
+            delivery_id=delivery_id,
+            store_id=store_id,
+        )
     if user.role == UserRole.ADMIN:
         record_admin_action(
             db, request=request, actor=user, action="support.ticket_created",

@@ -21,6 +21,9 @@ from app.db.base import Base
 
 class SupportTicket(Base):
     __tablename__ = "support_tickets"
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key", name="uq_support_tickets_user_idempotency"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -29,6 +32,8 @@ class SupportTicket(Base):
     store_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("stores.id", ondelete="SET NULL"), index=True)
     requester_type: Mapped[str | None] = mapped_column(String(20), index=True)
     assigned_admin_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    # Legacy tickets predate this client retry contract, so their key remains NULL.
+    idempotency_key: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     subject: Mapped[str] = mapped_column(String(180), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     category: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
