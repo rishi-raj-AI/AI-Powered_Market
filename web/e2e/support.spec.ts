@@ -15,12 +15,44 @@ test('customer creates and sees an ownership-checked support ticket',async({page
   await page.goto('/support?order_id=order-1');await initialListStarted;await page.getByLabel('What happened?').fill('Refund is missing');await page.getByRole('button',{name:'Create ticket'}).click();await expect(page.getByText('Order support').first()).toBeVisible();releaseInitialList();await initialListFinished;await expect(page.getByText('Order support').first()).toBeVisible();
 });
 
+test('customer serializes an uncertain ticket creation and keeps the confirmed ticket after a refresh failure',async({page})=>{
+  await installApiMocks(page,customer);let attempts=0;let created=false;let refreshFailures=0;const keys:string[]=[];let releaseFirst!:()=>void;let firstStarted!:()=>void;
+  const firstGate=new Promise<void>(resolve=>{releaseFirst=resolve});const firstRequest=new Promise<void>(resolve=>{firstStarted=resolve});
+  await page.route('http://localhost:8000/api/v1/support/tickets/me',route=>{if(created){refreshFailures+=1;return route.fulfill({status:503,json:{detail:'Ticket list refresh failed'}})}return route.fulfill({json:[]})});
+  await page.route('http://localhost:8000/api/v1/support/tickets',async route=>{if(route.request().method()!=='POST')return route.fallback();attempts+=1;keys.push(route.request().postDataJSON().idempotency_key);if(attempts===1){firstStarted();await firstGate;await route.abort('connectionreset');return}created=true;await route.fulfill({status:201,json:ticket})});
+  await page.route('http://localhost:8000/api/v1/support/tickets/ticket-1',route=>route.fulfill({json:ticket}));
+  await page.route('http://localhost:8000/api/v1/support/tickets/ticket-1/messages**',route=>route.fulfill({json:[]}));
+  await page.goto('/support?order_id=order-1');await page.getByLabel('What happened?').fill('Refund is missing');
+  const form=page.getByRole('form',{name:'New support ticket'});const create=page.getByRole('button',{name:'Create ticket'});
+  await create.click();await firstRequest;
+  await expect(form).toHaveAttribute('aria-busy','true');await expect(page.getByRole('button',{name:'Creating ticket…'})).toBeDisabled();
+  const secondSubmitWasPrevented=await form.evaluate(element=>!element.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+  expect(secondSubmitWasPrevented).toBe(true);expect(attempts).toBe(1);
+  releaseFirst();await expect(create).toBeEnabled();await create.click();
+  await expect(page.getByText('Order support').first()).toBeVisible();await expect(page.getByText(/Tickets unavailable. Ticket list refresh failed/)).toBeVisible();
+  expect(attempts).toBe(2);expect(keys[0]).not.toBe('');expect(keys[1]).toBe(keys[0]);expect(refreshFailures).toBe(1);
+});
+
 test('customer retries an uncertain reply with the same idempotency key',async({page})=>{
   await installApiMocks(page,customer);let attempts=0;const keys:string[]=[];
   await page.route('http://localhost:8000/api/v1/support/tickets/me',route=>route.fulfill({json:[ticket]}));
   await page.route('http://localhost:8000/api/v1/support/tickets/ticket-1',route=>route.fulfill({json:ticket}));
   await page.route('http://localhost:8000/api/v1/support/tickets/ticket-1/messages**',route=>{if(route.request().method()==='GET')return route.fulfill({json:[]});attempts+=1;keys.push(route.request().postDataJSON().idempotency_key);if(attempts===1)return route.fulfill({status:503,json:{detail:'Delivery uncertain. Retry safely.'}});return route.fulfill({status:201,json:{id:'message-1',author_type:'customer',body:'Here are the details',created_at:'2026-09-03T10:01:00Z'}})});
   await page.goto('/support');await page.getByRole('button',{name:/Order support/}).click();await page.getByLabel('Reply').fill('Here are the details');await page.getByRole('button',{name:'Send reply'}).click();await expect(page.getByText('Delivery uncertain. Retry safely.')).toBeVisible();await page.getByRole('button',{name:'Send reply'}).click();await expect(page.getByText('Here are the details')).toBeVisible();expect(keys).toHaveLength(2);expect(keys[0]).toBe(keys[1]);
+});
+
+test('customer cannot start a second support reply while the first is pending',async({page})=>{
+  await installApiMocks(page,customer);let attempts=0;let releaseSend!:()=>void;let sendStarted!:()=>void;
+  const sendGate=new Promise<void>(resolve=>{releaseSend=resolve});const sendRequest=new Promise<void>(resolve=>{sendStarted=resolve});
+  await page.route('http://localhost:8000/api/v1/support/tickets/me',route=>route.fulfill({json:[ticket]}));
+  await page.route('http://localhost:8000/api/v1/support/tickets/ticket-1',route=>route.fulfill({json:ticket}));
+  await page.route('http://localhost:8000/api/v1/support/tickets/ticket-1/messages**',async route=>{if(route.request().method()==='GET')return route.fulfill({json:[]});attempts+=1;sendStarted();await sendGate;return route.fulfill({status:201,json:{id:'message-serialized',author_type:'customer',body:'Here are the details',created_at:'2026-09-03T10:01:00Z'}})});
+  await page.goto('/support');await page.getByRole('button',{name:/Order support/}).click();await page.getByLabel('Reply').fill('Here are the details');
+  const form=page.getByRole('form',{name:'Customer response form'});await page.getByRole('button',{name:'Send reply'}).click();await sendRequest;
+  await expect(form).toHaveAttribute('aria-busy','true');await expect(page.getByRole('button',{name:'Sending…'})).toBeDisabled();
+  const secondSubmitWasPrevented=await form.evaluate(element=>!element.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+  expect(secondSubmitWasPrevented).toBe(true);expect(attempts).toBe(1);releaseSend();
+  await expect(page.getByText('Here are the details')).toBeVisible();expect(attempts).toBe(1);
 });
 
 test('latest selected customer ticket wins delayed transcript responses',async({page})=>{

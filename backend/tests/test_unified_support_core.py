@@ -172,6 +172,88 @@ def test_non_admin_missing_and_unauthorized_references_share_one_404_contract() 
         }
 
 
+def test_ticket_creation_replays_the_same_key_and_rejects_a_changed_payload() -> None:
+    with session() as db:
+        requester = make_user(db, prefix="7")
+        db.commit()
+        requester_phone, requester_id = requester.phone, requester.id
+    token = _token(requester_phone)
+    key = uuid4()
+    payload = {
+        "subject": "Order support",
+        "description": "Please review this delivery issue",
+        "idempotency_key": str(key),
+    }
+
+    first = client.post("/api/v1/support/tickets", headers=_auth(token), json=payload)
+    replay = client.post("/api/v1/support/tickets", headers=_auth(token), json=payload)
+    assert first.status_code == replay.status_code == 201
+    assert first.json()["id"] == replay.json()["id"]
+
+    mismatch = client.post(
+        "/api/v1/support/tickets",
+        headers=_auth(token),
+        json={**payload, "description": "A different support request"},
+    )
+    assert mismatch.status_code == 409
+    assert mismatch.json() == {"detail": "Idempotency key payload mismatch"}
+    with session() as db:
+        assert db.scalar(
+            select(func.count())
+            .select_from(SupportTicket)
+            .where(
+                SupportTicket.user_id == requester_id,
+                SupportTicket.idempotency_key == key,
+            )
+        ) == 1
+
+
+def test_concurrent_ticket_creation_with_the_same_key_creates_one_case(monkeypatch) -> None:
+    with session() as db:
+        requester = make_user(db, prefix="7")
+        db.commit()
+        requester_phone, requester_id = requester.phone, requester.id
+    token = _token(requester_phone)
+    key = uuid4()
+    payload = {
+        "subject": "Order support",
+        "description": "Please review this delivery issue",
+        "idempotency_key": str(key),
+    }
+    barrier = Barrier(2)
+    original_triage = support_routes.triage_ticket
+
+    def synchronized_triage(*args, **kwargs):
+        # Both requests have already missed the replay lookup when they reach
+        # triage. Releasing them together exercises the database uniqueness
+        # recovery path instead of allowing a sequential replay to pass.
+        barrier.wait(timeout=5)
+        return original_triage(*args, **kwargs)
+
+    monkeypatch.setattr(support_routes, "triage_ticket", synchronized_triage)
+
+    def create() -> tuple[int, str]:
+        worker_client = TestClient(app)
+        response = worker_client.post(
+            "/api/v1/support/tickets", headers=_auth(token), json=payload
+        )
+        return response.status_code, response.json()["id"]
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: create(), range(2)))
+    assert [status for status, _ in results] == [201, 201]
+    assert len({ticket_id for _, ticket_id in results}) == 1
+    with session() as db:
+        assert db.scalar(
+            select(func.count())
+            .select_from(SupportTicket)
+            .where(
+                SupportTicket.user_id == requester_id,
+                SupportTicket.idempotency_key == key,
+            )
+        ) == 1
+
+
 def test_public_messages_are_idempotent_and_internal_notes_never_leak_or_notify() -> None:
     with session() as db:
         requester = make_user(db, prefix="7")
