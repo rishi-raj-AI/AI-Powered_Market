@@ -6,7 +6,7 @@ Verified 2026-09-30 UTC.
 |---|---|
 | Local main / origin/main | Both `8f37a04c1b2dcb8c1f3e0dc66c2873b70eb54d89` |
 | Baseline CI | `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` passed for Phase 3 PR #194 final head `5b728ded95280ffde94606974fa814a888b19214` before merge |
-| Open PR | None — the priority Next.js security update is active locally on `chore/next-security-update`; required CI must be evaluated only after a PR is opened on its final branch head |
+| Open PR | #195 — priority Next.js security update on `chore/next-security-update`; all four required CI gates must be evaluated only on its final branch head |
 | Main checkout | Protected owner Flutter/iOS modifications exist; do not reset, clean, stash, or alter them |
 | Product media B2 | Isolated `gaonone-product-media-intake` worktree; deferred |
 | Auth | Firebase verifies external identity; GaonOne issues sessions and owns roles/permissions. Web and Flutter exchange Firebase Google ID tokens for GaonOne sessions. |

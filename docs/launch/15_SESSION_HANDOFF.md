@@ -68,6 +68,7 @@ Phase 3: validate and close launch-critical customer-path reliability gaps from 
 - Safely fast-forwarded protected local main to `8f37a04`; all seven owner-owned Flutter/iOS modifications remained byte-for-byte intact, no unexplained local modifications appeared, and no deployment ran.
 - Created isolated `/Users/rishiraj/Documents/Personal_Projects/AI-Powered_Market/gaonone-launch-checkout-submit-guard` on `feat/launch-checkout-submit-guard` from verified new `origin/main`. Its current narrow client slice holds a synchronous checkout token through checkout, initial intent, and the Razorpay lifecycle so a forced duplicate event cannot start another order/payment flow; it has a 28-check focused cross-browser regression but must wait behind the priority security update.
 - A fresh production dependency audit found direct `next` `16.3.3` affected by critical GHSA-vcvr-r3jv-pc5j. Source has no `next/og` or `ImageResponse` use, but the advisory's available patch is still required; its separate worktree is `/Users/rishiraj/Documents/Personal_Projects/AI-Powered_Market/gaonone-next-security-update` on `chore/next-security-update` from `8f37a04`.
+- Opened priority security PR #195 for the direct `next` `16.3.3` to `16.3.8` package/lockfile patch. Its required CI must be evaluated only on its exact final branch head before merge; no deployment is authorized.
 
 ## Changed files
 
@@ -91,7 +92,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-First complete the priority Next.js security patch: commit it, open its dedicated PR, and evaluate all four required CI gates on its exact final head before merge. It must remain the direct `16.3.3` to `16.3.8` package/lockfile update with no application, provider, role, configuration, or deployment change. After merge, rebase the isolated checkout-submit-guard worktree onto that new `origin/main`, revalidate its tokenized duplicate-submit boundary, and continue Phase 3. Do not deploy.
+First complete priority security PR #195: evaluate all four required CI gates and focused review on its exact final head before merge. It must remain the direct `16.3.3` to `16.3.8` package/lockfile update with no application, provider, role, configuration, or deployment change. After merge, create a fresh isolated checkout-submit-guard worktree from new `origin/main`, preserve the existing pre-security guard worktree untouched, revalidate the tokenized duplicate-submit boundary, and continue Phase 3. Do not deploy.
 
 ## Preservation contract
 
