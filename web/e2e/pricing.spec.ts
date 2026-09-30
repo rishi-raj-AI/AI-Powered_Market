@@ -191,3 +191,28 @@ test('checkout reuses its idempotency key after an uncertain network failure',as
   expect(keys[0]).not.toBe('');
   expect(keys[1]).toBe(keys[0]);
 });
+
+test('checkout recovers a new UPI order when its first payment intent is unavailable',async({page})=>{
+  await installApiMocks(page);
+  const upiOrder={id:'order-upi-unavailable',order_number:'GO260930UPI01',user_id:'user-customer',store_id:'store-nearby',address_id:address.id,status:'placed',payment_method:'upi',payment_status:'pending',subtotal:'145.00',delivery_fee:'37.50',total:'182.50',created_at:'2026-09-30T17:00:00Z',updated_at:'2026-09-30T17:00:00Z'};
+  let checkoutAttempts=0;let intentAttempts=0;
+  await page.route('http://localhost:8000/api/v1/cart',route=>route.fulfill({json:cart}));
+  await page.route('http://localhost:8000/api/v1/addresses/me',route=>route.fulfill({json:[address]}));
+  await page.route('http://localhost:8000/api/v1/payments/config',route=>route.fulfill({json:{enabled:true,provider:'razorpay',key_id:'test-public-key',currency:'INR'}}));
+  await page.route('http://localhost:8000/api/v1/cart/quote**',route=>route.fulfill({json:{store_id:'store-nearby',address_id:address.id,subtotal:'145.00',delivery_fee:'37.50',total:'182.50',serviceable:true,inventory_valid:true,store_open:true,checkout_ready:true,blockers:[]}}));
+  await page.route('http://localhost:8000/api/v1/orders/checkout',route=>{checkoutAttempts+=1;expect(route.request().postDataJSON()).toEqual({address_id:address.id,payment_method:'upi'});return route.fulfill({status:201,json:upiOrder})});
+  await page.route(`http://localhost:8000/api/v1/payments/orders/${upiOrder.id}/intent`,route=>{intentAttempts+=1;return route.fulfill({status:503,json:{detail:'Payment provider is not configured'}})});
+  await page.route('http://localhost:8000/api/v1/orders/me',route=>route.fulfill({json:[upiOrder]}));
+
+  await page.goto('/checkout');
+  await page.getByRole('radio',{name:/UPI \/ online payment/}).check();
+  const place=page.getByRole('button',{name:'Place order & pay'});
+  await expect(place).toBeEnabled();
+  await place.click();
+  await page.waitForURL(/\/orders\?payment=pending&order=order-upi-unavailable$/);
+  await expect(page.getByText('Your order is saved. Complete payment below when ready.')).toBeVisible();
+  await expect(page.getByText('Payment provider is not configured')).toHaveCount(0);
+  await expect(page.getByText('Payment: Pending')).toBeVisible();
+  await expect(page.getByRole('button',{name:'Pay now'})).toBeEnabled();
+  expect(checkoutAttempts).toBe(1);expect(intentAttempts).toBe(1);
+});
