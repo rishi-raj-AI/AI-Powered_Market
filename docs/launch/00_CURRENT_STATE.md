@@ -6,7 +6,7 @@ Verified 2026-09-30 UTC.
 |---|---|
 | Local main / origin/main | Both `524b1d1ce2c95c2f3067e8691677dbd79b8b1f06` |
 | Baseline CI | `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` passed for Phase 3 PR #192 final head `1be6de76d8fd08c5fa658e47462a3e9f934ded6c` before merge |
-| Open PR | None — the current Phase 3 payment-availability recovery slice is on `feat/launch-payment-availability` and has not opened a PR |
+| Open PR | #193 — Phase 3 payment-availability recovery on `feat/launch-payment-availability`; required CI must be evaluated only on its final branch head |
 | Main checkout | Protected owner Flutter/iOS modifications exist; do not reset, clean, stash, or alter them |
 | Product media B2 | Isolated `gaonone-product-media-intake` worktree; deferred |
 | Auth | Firebase verifies external identity; GaonOne issues sessions and owns roles/permissions. Web and Flutter exchange Firebase Google ID tokens for GaonOne sessions. |

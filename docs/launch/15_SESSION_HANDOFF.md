@@ -58,6 +58,7 @@ Phase 3: validate and close launch-critical customer-path reliability gaps from 
 - Merged Phase 3 PR #192 at `524b1d1ce2c95c2f3067e8691677dbd79b8b1f06` after all four required gates passed on final PR head `1be6de76d8fd08c5fa658e47462a3e9f934ded6c`.
 - Safely fast-forwarded protected local main to `524b1d1`; all seven owner-owned Flutter/iOS modifications remained byte-for-byte intact, no unexplained local modifications appeared, and no deployment ran.
 - Created isolated `/Users/rishiraj/Documents/Personal_Projects/AI-Powered_Market/gaonone-launch-payment-availability` on `feat/launch-payment-availability` from verified new `origin/main`.
+- Opened Phase 3 PR #193 for the narrow pending-UPI payment-availability recovery slice; its required gates must be evaluated only on its final branch head.
 
 ## Changed files
 
@@ -81,7 +82,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-Phase 3 remains the approved launch phase: customer-path functional and UX validation from authenticated profile through address/location, discovery, cart, authoritative quote, COD/available payment, order, tracking/proof, and support. The current payment-availability recovery slice must receive focused review and its own PR, then all four gates must pass on its exact final head before merge. Review that it only maps the intent `503` client boundary, retains payment-pending state and safe retry, suppresses provider configuration detail, and preserves server payment/ownership/role authority. Do not deploy.
+Phase 3 remains the approved launch phase: customer-path functional and UX validation from authenticated profile through address/location, discovery, cart, authoritative quote, COD/available payment, order, tracking/proof, and support. PR #193 must receive all four gates on its exact final head and focused review before merge. Review that it only maps the intent `503` client boundary, retains payment-pending state and safe retry, suppresses provider configuration detail, and preserves server payment/ownership/role authority. Do not deploy.
 
 ## Preservation contract
 
