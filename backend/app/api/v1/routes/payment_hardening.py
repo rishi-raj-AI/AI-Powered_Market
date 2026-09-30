@@ -1,5 +1,6 @@
 import hashlib
 import json
+from uuid import UUID
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -23,6 +24,47 @@ from app.services.refunds import (
 from app.services.settlements import ensure_settlement_entry
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
+
+
+def _lock_payment_context(
+    db: Session,
+    *,
+    attempt_id: UUID | None = None,
+    provider_order_id: str | None = None,
+    user_id: UUID | None = None,
+) -> tuple[PaymentAttempt | None, Order | None, bool]:
+    """Lock a payment's commercial order before its provider attempt.
+
+    Intent creation already locks the order while it looks up or records an
+    attempt. Verification and webhook processing must take the same order of
+    locks, otherwise an intent retry and a provider result can deadlock by each
+    holding one side. Resolve the identifiers as columns first so this lookup
+    does not leave a stale ORM entity in the session identity map.
+    """
+    identity_stmt = select(PaymentAttempt.id, PaymentAttempt.order_id)
+    if attempt_id is not None:
+        identity_stmt = identity_stmt.where(PaymentAttempt.id == attempt_id)
+    elif provider_order_id is not None:
+        identity_stmt = identity_stmt.where(PaymentAttempt.provider_order_id == provider_order_id)
+    else:
+        raise ValueError("A payment attempt identifier is required")
+    identity = db.execute(identity_stmt).one_or_none()
+    if identity is None:
+        return None, None, False
+
+    order_stmt = select(Order).where(Order.id == identity.order_id)
+    if user_id is not None:
+        order_stmt = order_stmt.where(Order.user_id == user_id)
+    order = db.scalar(order_stmt.with_for_update())
+    if order is None:
+        return None, None, True
+
+    attempt = db.scalar(
+        select(PaymentAttempt)
+        .where(PaymentAttempt.id == identity.id, PaymentAttempt.order_id == order.id)
+        .with_for_update()
+    )
+    return attempt, order, True
 
 
 def _apply_paid(db: Session, attempt: PaymentAttempt, order: Order, provider_payment_id: str | None) -> None:
@@ -78,11 +120,14 @@ def hardened_verify_payment(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> PaymentVerifyResponse:
-    attempt = db.scalar(select(PaymentAttempt).where(PaymentAttempt.id == payload.payment_attempt_id).with_for_update())
-    if attempt is None:
+    attempt, order, attempt_exists = _lock_payment_context(
+        db,
+        attempt_id=payload.payment_attempt_id,
+        user_id=user.id,
+    )
+    if not attempt_exists:
         raise HTTPException(status_code=404, detail="Payment attempt not found")
-    order = db.scalar(select(Order).where(Order.id == attempt.order_id).with_for_update())
-    if order is None or order.user_id != user.id:
+    if attempt is None or order is None:
         raise HTTPException(status_code=404, detail="Order not found")
     if not attempt.provider_order_id:
         raise HTTPException(status_code=409, detail="Payment attempt has no provider order")
@@ -150,11 +195,8 @@ def _process_event(db: Session, payload: dict) -> None:
     provider_order_id = str(payment_entity.get("order_id") or order_entity.get("id") or "") or None
     if not provider_order_id:
         return
-    attempt = db.scalar(select(PaymentAttempt).where(PaymentAttempt.provider_order_id == provider_order_id).with_for_update())
-    if attempt is None:
-        return
-    order = db.scalar(select(Order).where(Order.id == attempt.order_id).with_for_update())
-    if order is None:
+    attempt, order, _ = _lock_payment_context(db, provider_order_id=provider_order_id)
+    if attempt is None or order is None:
         return
     if event in {"order.paid", "payment.captured"}:
         _apply_paid(db, attempt, order, provider_payment_id)

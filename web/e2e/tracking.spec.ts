@@ -15,6 +15,17 @@ async function mockTracking(page:Page,{delivered=false,stale=false,expired=false
   await page.route(`http://localhost:8000/api/v1/orders/${order.id}/route`,r=>r.fulfill({json:delivered?{...route,available:false,provider:'none'}:route}));
 }
 
+test('customer cannot start a second payment intent while the first is pending',async({page})=>{
+  const upiOrder={...order,status:'placed',payment_method:'upi',payment_status:'pending'};let attempts=0;let releaseIntent!:()=>void;let intentStarted!:()=>void;
+  const intentGate=new Promise<void>(resolve=>{releaseIntent=resolve});const firstIntent=new Promise<void>(resolve=>{intentStarted=resolve});
+  await installApiMocks(page,customer);await page.route('http://localhost:8000/api/v1/orders/me',route=>route.fulfill({json:[upiOrder]}));
+  await page.route(`http://localhost:8000/api/v1/payments/orders/${order.id}/intent`,async route=>{attempts+=1;intentStarted();await intentGate;await route.abort('connectionreset')});
+  await page.goto('/orders');await page.getByRole('button',{name:'Pay now'}).click();await firstIntent;
+  const opening=page.getByRole('button',{name:'Opening…'});await expect(opening).toBeDisabled();
+  await opening.evaluate(button=>{button.removeAttribute('disabled');button.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}))});
+  expect(attempts).toBe(1);releaseIntent();await expect(page.getByRole('button',{name:'Pay now'})).toBeEnabled();
+});
+
 test('customer sees live rider route estimate, distance and GPS freshness',async({page})=>{await mockTracking(page);await page.goto('/orders');await page.getByRole('button',{name:'Toggle order detail'}).click();await expect(page.getByText('Live delivery')).toBeVisible();await expect(page.getByText('Live route estimate 7 min')).toBeVisible();await expect(page.getByText('1.8 km remaining')).toBeVisible();await expect(page.getByText('Rider location received 4s ago')).toBeVisible();await expect(page.getByText(/GPS accuracy ≈ 7 m/)).toBeVisible();await expect(page.getByRole('link',{name:'Open rider location'})).toBeVisible()});
 test('stale rider GPS pauses ETA and warns customer',async({page})=>{await mockTracking(page,{stale:true});await page.goto('/orders');await page.getByRole('button',{name:'Toggle order detail'}).click();await expect(page.getByText('ETA paused until a fresh rider location arrives.')).toBeVisible();await expect(page.getByText(/Rider location may be delayed/)).toBeVisible();await expect(page.getByText('Live route estimate 7 min')).toHaveCount(0)});
 test('delivered order stops exposing rider location for privacy',async({page})=>{await mockTracking(page,{delivered:true});await page.goto('/orders');await page.getByRole('button',{name:'Toggle order detail'}).click();await expect(page.getByText('Delivery completed. Live rider sharing has stopped for privacy.')).toBeVisible();await expect(page.getByRole('link',{name:'Open rider location'})).toHaveCount(0)});

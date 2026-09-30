@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronUp,
@@ -53,6 +53,7 @@ export default function Orders() {
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState("");
+  const paymentInFlight = useRef<string | null>(null);
   async function load() {
     try {
       setOrders(await gaonApi.orders());
@@ -117,6 +118,12 @@ export default function Orders() {
     }
   }
   async function pay(o: Order) {
+    if (paymentInFlight.current === o.id) return;
+    paymentInFlight.current = o.id;
+    const clearPayment = () => {
+      if (paymentInFlight.current === o.id) paymentInFlight.current = null;
+      setBusy((current) => (current === o.id ? "" : current));
+    };
     setBusy(o.id);
     setError("");
     try {
@@ -124,21 +131,21 @@ export default function Orders() {
       await openRazorpayCheckout({
         intent,
         orderNumber: o.order_number,
-        onDismiss: () => setBusy(""),
+        onDismiss: clearPayment,
         onSuccess: async (payload) => {
           try {
             await gaonApi.verifyPayment(payload);
             setMsg(`Payment verified for ${o.order_number}.`);
-            setBusy("");
             await load();
           } catch (e: any) {
-            setBusy("");
             setError(e.message || "Payment verification failed.");
+          } finally {
+            clearPayment();
           }
         },
       });
     } catch (e: any) {
-      setBusy("");
+      clearPayment();
       setError(e.message);
     }
   }
