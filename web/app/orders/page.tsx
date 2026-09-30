@@ -9,7 +9,7 @@ import {
   Truck,
   WalletCards,
 } from "lucide-react";
-import { gaonApi, Order, OrderDetail, PaymentRefund } from "@/lib/api";
+import { ApiError, gaonApi, Order, OrderDetail, PaymentRefund } from "@/lib/api";
 import { openRazorpayCheckout } from "@/lib/razorpay";
 import { LiveTracking } from "@/components/LiveTracking";
 import { Nav } from "@/components/Nav";
@@ -44,6 +44,11 @@ function refundLine(refund: PaymentRefund) {
   if (refund.status === "processing")
     return "Refund sent to your bank. It can take a few working days to appear.";
   return "Refund requested. It will reach your original payment method shortly.";
+}
+function paymentIntentError(error: unknown) {
+  if (error instanceof ApiError && error.status === 503)
+    return "Online payment is unavailable right now. Your order is still saved and payment is pending. Please try again later.";
+  return error instanceof Error ? error.message : "Unable to start online payment.";
 }
 export default function Orders() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -144,9 +149,9 @@ export default function Orders() {
           }
         },
       });
-    } catch (e: any) {
+    } catch (e: unknown) {
       clearPayment();
-      setError(e.message);
+      setError(paymentIntentError(e));
     }
   }
   return (
