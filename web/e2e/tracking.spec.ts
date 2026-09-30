@@ -26,6 +26,18 @@ test('customer cannot start a second payment intent while the first is pending',
   expect(attempts).toBe(1);releaseIntent();await expect(page.getByRole('button',{name:'Pay now'})).toBeEnabled();
 });
 
+test('customer keeps a pending UPI order recoverable when online payment is unavailable',async({page})=>{
+  const upiOrder={...order,status:'placed',payment_method:'upi',payment_status:'pending'};let attempts=0;let secondIntentStarted!:()=>void;let releaseSecondIntent!:()=>void;
+  const secondIntent=new Promise<void>(resolve=>{secondIntentStarted=resolve});const secondIntentGate=new Promise<void>(resolve=>{releaseSecondIntent=resolve});
+  await installApiMocks(page,customer);await page.route('http://localhost:8000/api/v1/orders/me',route=>route.fulfill({json:[upiOrder]}));
+  await page.route(`http://localhost:8000/api/v1/payments/orders/${order.id}/intent`,async route=>{attempts+=1;if(attempts===2){secondIntentStarted();await secondIntentGate}await route.fulfill({status:503,json:{detail:'Payment provider is not configured'}})});
+  await page.goto('/orders');
+  const pay=page.getByRole('button',{name:'Pay now'});await expect(pay).toBeEnabled();await pay.click();
+  await expect(page.getByText('Online payment is unavailable right now. Your order is still saved and payment is pending. Please try again later.')).toBeVisible();
+  await expect(page.getByText('Payment provider is not configured')).toHaveCount(0);await expect(pay).toBeEnabled();await expect(page.getByText('Payment: Pending')).toBeVisible();expect(attempts).toBe(1);
+  await pay.click();await secondIntent;const opening=page.getByRole('button',{name:'Opening…'});await expect(opening).toBeDisabled();releaseSecondIntent();await expect(pay).toBeEnabled();expect(attempts).toBe(2);
+});
+
 test('customer sees live rider route estimate, distance and GPS freshness',async({page})=>{await mockTracking(page);await page.goto('/orders');await page.getByRole('button',{name:'Toggle order detail'}).click();await expect(page.getByText('Live delivery')).toBeVisible();await expect(page.getByText('Live route estimate 7 min')).toBeVisible();await expect(page.getByText('1.8 km remaining')).toBeVisible();await expect(page.getByText('Rider location received 4s ago')).toBeVisible();await expect(page.getByText(/GPS accuracy ≈ 7 m/)).toBeVisible();await expect(page.getByRole('link',{name:'Open rider location'})).toBeVisible()});
 test('stale rider GPS pauses ETA and warns customer',async({page})=>{await mockTracking(page,{stale:true});await page.goto('/orders');await page.getByRole('button',{name:'Toggle order detail'}).click();await expect(page.getByText('ETA paused until a fresh rider location arrives.')).toBeVisible();await expect(page.getByText(/Rider location may be delayed/)).toBeVisible();await expect(page.getByText('Live route estimate 7 min')).toHaveCount(0)});
 test('delivered order stops exposing rider location for privacy',async({page})=>{await mockTracking(page,{delivered:true});await page.goto('/orders');await page.getByRole('button',{name:'Toggle order detail'}).click();await expect(page.getByText('Delivery completed. Live rider sharing has stopped for privacy.')).toBeVisible();await expect(page.getByRole('link',{name:'Open rider location'})).toHaveCount(0)});
