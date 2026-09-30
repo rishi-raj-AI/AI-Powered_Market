@@ -48,8 +48,15 @@ def create_payment_intent(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> PaymentIntentResponse:
-    order = db.get(Order, order_id)
-    if order is None or order.user_id != user.id:
+    # Keep one live provider order per commercial order. The lock spans the
+    # existing-attempt lookup and provider call so concurrent customer retries
+    # cannot both observe an empty attempt set and open two provider orders.
+    order = db.scalar(
+        select(Order)
+        .where(Order.id == order_id, Order.user_id == user.id)
+        .with_for_update()
+    )
+    if order is None:
         raise HTTPException(status_code=404, detail="Order not found")
     if order.payment_method != PaymentMethod.UPI:
         raise HTTPException(status_code=409, detail="This order is not configured for online payment")
