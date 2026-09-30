@@ -17,3 +17,4 @@
 | R-013 | No visual QA evidence | P1 | High | Yes | Engineering | OPEN: capture critical-screen evidence |
 | R-014 | Protected main edits damaged | P0 | Low | Yes | All | CONTROLLED: never clean/reset/stash main |
 | R-015 | Risky worktrees corrupted | P1 | Medium | No | All | OPEN: preservation-only; no repair without authority |
+| R-016 | Pinned Next.js framework version has a critical ImageResponse dependency advisory | P0 | Medium | Yes | Engineering | IN PROGRESS: production audit identified direct `next` `16.3.3` as GHSA-vcvr-r3jv-pc5j-affected; no source imports `next/og` or `ImageResponse`, and the minimal `16.3.8` patch resolves the production audit to zero findings pending required CI |
