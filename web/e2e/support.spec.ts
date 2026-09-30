@@ -22,7 +22,7 @@ test('customer serializes an uncertain ticket creation and keeps the confirmed t
   await page.route('http://localhost:8000/api/v1/support/tickets',async route=>{if(route.request().method()!=='POST')return route.fallback();attempts+=1;keys.push(route.request().postDataJSON().idempotency_key);if(attempts===1){firstStarted();await firstGate;return route.fulfill({status:503,json:{detail:'Ticket creation response unavailable. Retry safely.'}})}created=true;await route.fulfill({status:201,json:ticket})});
   await page.route('http://localhost:8000/api/v1/support/tickets/ticket-1',route=>route.fulfill({json:ticket}));
   await page.route('http://localhost:8000/api/v1/support/tickets/ticket-1/messages**',route=>route.fulfill({json:[]}));
-  await page.goto('/support?order_id=order-1');await page.getByLabel('What happened?').fill('Refund is missing');
+  await page.goto('/support?order_id=order-1');await expect(page.getByText('No support tickets yet.')).toBeVisible();await page.getByLabel('What happened?').fill('Refund is missing');
   const form=page.getByRole('form',{name:'New support ticket'});const create=page.getByRole('button',{name:'Create ticket'});
   await create.click();await firstRequest;
   await expect(form).toHaveAttribute('aria-busy','true');await expect(page.getByRole('button',{name:'Creating ticket…'})).toBeDisabled();
