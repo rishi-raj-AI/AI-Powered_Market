@@ -53,6 +53,7 @@ Phase 3: validate and close launch-critical customer-path reliability gaps from 
 - Safely fast-forwarded protected local main to `98955ae`; its seven owner-owned Flutter/iOS modifications remained byte-for-byte intact, no extra local modifications appeared, and no deployment ran.
 - Created isolated `/Users/rishiraj/Documents/Personal_Projects/AI-Powered_Market/gaonone-launch-customer-order-resilience` on `feat/launch-customer-order-resilience` from verified `origin/main`; its Git metadata is hosted by the clean transport clone because the protected checkout's host-managed ref reads were intermittently unavailable.
 - Opened Phase 3 PR #192 for payment-intent resilience. Its required gates must be evaluated only after this final lock-order remediation and project-control update are pushed.
+- The superseded initial #192 head failed backend CI only because its concurrent intent test mocked provider creation without setting the configured public key that the replay path requires; the fixture now sets that key, matching the real provider precondition without changing payment behavior.
 
 ## Changed files
 

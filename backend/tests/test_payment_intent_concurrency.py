@@ -68,6 +68,7 @@ def test_concurrent_payment_intents_reuse_one_provider_order(monkeypatch) -> Non
             if order_lock_attempts == 2:
                 second_order_lock_attempted.set()
 
+    monkeypatch.setattr(payment_routes.settings, "RAZORPAY_KEY_ID", "rzp_test_payment_intent")
     monkeypatch.setattr(payment_routes, "create_razorpay_order", create_provider_order)
     sqlalchemy_event.listen(engine, "before_cursor_execute", observe_order_lock)
 
