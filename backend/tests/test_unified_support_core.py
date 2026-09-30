@@ -208,7 +208,7 @@ def test_ticket_creation_replays_the_same_key_and_rejects_a_changed_payload() ->
         ) == 1
 
 
-def test_concurrent_ticket_creation_with_the_same_key_creates_one_case() -> None:
+def test_concurrent_ticket_creation_with_the_same_key_creates_one_case(monkeypatch) -> None:
     with session() as db:
         requester = make_user(db, prefix="7")
         db.commit()
@@ -221,10 +221,19 @@ def test_concurrent_ticket_creation_with_the_same_key_creates_one_case() -> None
         "idempotency_key": str(key),
     }
     barrier = Barrier(2)
+    original_triage = support_routes.triage_ticket
+
+    def synchronized_triage(*args, **kwargs):
+        # Both requests have already missed the replay lookup when they reach
+        # triage. Releasing them together exercises the database uniqueness
+        # recovery path instead of allowing a sequential replay to pass.
+        barrier.wait(timeout=5)
+        return original_triage(*args, **kwargs)
+
+    monkeypatch.setattr(support_routes, "triage_ticket", synchronized_triage)
 
     def create() -> tuple[int, str]:
         worker_client = TestClient(app)
-        barrier.wait()
         response = worker_client.post(
             "/api/v1/support/tickets", headers=_auth(token), json=payload
         )
