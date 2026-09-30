@@ -11,7 +11,7 @@
 | R-007 | OTP/dev OTP becomes exposed in production | P0 | Low | Yes | Engineering | MITIGATED: explicit SMS route gate and production config tests |
 | R-008 | Production CORS/domain configuration incomplete | P1 | Medium | Yes | Owner | OPEN: configuration audit |
 | R-009 | Maps configuration absent | P1 | Medium | Conditional | Owner | OPEN: assess critical routes and degraded UX |
-| R-010 | Razorpay credentials absent | P1 | High | No, COD path | Owner | OPEN: COD remains the launch path; source recovery makes an already-pending UPI order provider-neutral and retry-safe while credentials are absent; owner provisioning and launch decision remain required |
+| R-010 | Razorpay credentials absent | P1 | High | No, COD path | Owner | OPEN: COD remains the launch path; source recovery makes both an existing pending UPI order and a newly created UPI order whose initial intent is unavailable provider-neutral and retry-safe while credentials are absent; owner provisioning and launch decision remain required |
 | R-011 | Weak-connectivity UX fails in field | P1 | Medium | Yes | Engineering | PARTIAL: web rejects stale location/discovery responses, serializes conflicting cart/address/support/payment-intent actions, replays a same-key support ticket safely, and preserves confirmed address/ticket state after list refresh failure; payment intent, verification, and webhook now use one Order→PaymentAttempt lock order; Android field QA and durable retry behavior across a full client restart remain |
 | R-012 | Android build/device instability | P1 | Medium | Yes | Engineering/owner | OPEN: build and device validation |
 | R-013 | No visual QA evidence | P1 | High | Yes | Engineering | OPEN: capture critical-screen evidence |
