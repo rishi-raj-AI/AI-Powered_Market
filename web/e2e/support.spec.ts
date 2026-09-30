@@ -19,7 +19,7 @@ test('customer serializes an uncertain ticket creation and keeps the confirmed t
   await installApiMocks(page,customer);let attempts=0;let created=false;let refreshFailures=0;const keys:string[]=[];let releaseFirst!:()=>void;let firstStarted!:()=>void;
   const firstGate=new Promise<void>(resolve=>{releaseFirst=resolve});const firstRequest=new Promise<void>(resolve=>{firstStarted=resolve});
   await page.route('http://localhost:8000/api/v1/support/tickets/me',route=>{if(created){refreshFailures+=1;return route.fulfill({status:503,json:{detail:'Ticket list refresh failed'}})}return route.fulfill({json:[]})});
-  await page.route('http://localhost:8000/api/v1/support/tickets',async route=>{if(route.request().method()!=='POST')return route.fallback();attempts+=1;keys.push(route.request().postDataJSON().idempotency_key);if(attempts===1){firstStarted();await firstGate;await route.abort('connectionreset');return}created=true;await route.fulfill({status:201,json:ticket})});
+  await page.route('http://localhost:8000/api/v1/support/tickets',async route=>{if(route.request().method()!=='POST')return route.fallback();attempts+=1;keys.push(route.request().postDataJSON().idempotency_key);if(attempts===1){firstStarted();await firstGate;return route.fulfill({status:503,json:{detail:'Ticket creation response unavailable. Retry safely.'}})}created=true;await route.fulfill({status:201,json:ticket})});
   await page.route('http://localhost:8000/api/v1/support/tickets/ticket-1',route=>route.fulfill({json:ticket}));
   await page.route('http://localhost:8000/api/v1/support/tickets/ticket-1/messages**',route=>route.fulfill({json:[]}));
   await page.goto('/support?order_id=order-1');await page.getByLabel('What happened?').fill('Refund is missing');
