@@ -6,7 +6,7 @@ Verified 2026-09-29 UTC.
 |---|---|
 | Local main / origin/main | Both `d5b3d3ccd33c62e0f047325d6f59ce62755600a4` |
 | Baseline CI | `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` passed for Phase 3 PR #190 final head `0e76a99` before merge |
-| Open PR | None; the next isolated Phase 3 support-ticket resilience slice is locally validated on `feat/launch-support-ticket-resilience` |
+| Open PR | Phase 3 PR #191 is open from `feat/launch-support-ticket-resilience`; it awaits the required four-gate CI run on its final documentation head |
 | Main checkout | Protected owner Flutter/iOS modifications exist; do not reset, clean, stash, or alter them |
 | Product media B2 | Isolated `gaonone-product-media-intake` worktree; deferred |
 | Auth | Firebase verifies external identity; GaonOne issues sessions and owns roles/permissions. Web and Flutter exchange Firebase Google ID tokens for GaonOne sessions. |
