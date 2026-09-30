@@ -63,6 +63,7 @@ Phase 3: validate and close launch-critical customer-path reliability gaps from 
 - Safely fast-forwarded protected local main to `5df82a2`; all seven owner-owned Flutter/iOS modifications remained byte-for-byte intact, no unexplained local modifications appeared, and no deployment ran.
 - Created isolated `/Users/rishiraj/Documents/Personal_Projects/AI-Powered_Market/gaonone-launch-checkout-payment-availability` on `feat/launch-checkout-payment-availability` from verified new `origin/main`.
 - The active narrow slice covers only a newly created UPI order whose first payment-intent request returns HTTP `503`: it routes to the existing provider-neutral pending-order page without altering checkout failures, non-`503` intent errors, payment verification, backend ownership, payment state, roles, or provider configuration.
+- Opened Phase 3 PR #194 for that initial checkout-payment recovery slice; all four required gates must be evaluated only on its final branch head.
 
 ## Changed files
 
@@ -86,7 +87,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-Phase 3 remains the approved launch phase: customer-path functional and UX validation from authenticated profile through address/location, discovery, cart, authoritative quote, COD/available payment, order, tracking/proof, and support. Finish focused review of the active checkout recovery slice, then commit it, open a PR, and evaluate all four gates on its exact final head before merge. Review that it maps only the post-create initial intent `503` client boundary, retains payment-pending state and safe retry, suppresses provider configuration detail, and preserves server payment/ownership/role authority. Do not deploy.
+Phase 3 remains the approved launch phase: customer-path functional and UX validation from authenticated profile through address/location, discovery, cart, authoritative quote, COD/available payment, order, tracking/proof, and support. PR #194 must receive all four gates on its exact final head and focused review before merge. Review that it maps only the post-create initial intent `503` client boundary, retains payment-pending state and safe retry, suppresses provider configuration detail, and preserves server payment/ownership/role authority. Do not deploy.
 
 ## Preservation contract
 
