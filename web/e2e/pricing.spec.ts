@@ -216,3 +216,54 @@ test('checkout recovers a new UPI order when its first payment intent is unavail
   await expect(page.getByRole('button',{name:'Pay now'})).toBeEnabled();
   expect(checkoutAttempts).toBe(1);expect(intentAttempts).toBe(1);
 });
+
+test('checkout ignores a forced duplicate UPI submission while the first order is pending',async({page})=>{
+  await installApiMocks(page);
+  const upiOrder={id:'order-checkout-guard',order_number:'GO260930UPI02',user_id:'user-customer',store_id:'store-nearby',address_id:address.id,status:'placed',payment_method:'upi',payment_status:'pending',subtotal:'145.00',delivery_fee:'37.50',total:'182.50',created_at:'2026-09-30T17:40:00Z',updated_at:'2026-09-30T17:40:00Z'};
+  let checkoutAttempts=0;let intentAttempts=0;let releaseCheckout!:()=>void;let checkoutStarted!:()=>void;
+  const checkoutGate=new Promise<void>(resolve=>{releaseCheckout=resolve});const firstCheckout=new Promise<void>(resolve=>{checkoutStarted=resolve});
+  await page.route('http://localhost:8000/api/v1/cart',route=>route.fulfill({json:cart}));
+  await page.route('http://localhost:8000/api/v1/addresses/me',route=>route.fulfill({json:[address]}));
+  await page.route('http://localhost:8000/api/v1/payments/config',route=>route.fulfill({json:{enabled:true,provider:'razorpay',key_id:'test-public-key',currency:'INR'}}));
+  await page.route('http://localhost:8000/api/v1/cart/quote**',route=>route.fulfill({json:{
+    store_id:'store-nearby',address_id:address.id,subtotal:'145.00',delivery_fee:'37.50',total:'182.50',serviceable:true,inventory_valid:true,store_open:true,checkout_ready:true,blockers:[]
+  }}));
+  await page.route('http://localhost:8000/api/v1/orders/checkout',async route=>{checkoutAttempts+=1;expect(route.request().postDataJSON()).toEqual({address_id:address.id,payment_method:'upi'});if(checkoutAttempts===1){checkoutStarted();await checkoutGate}return route.fulfill({status:201,json:upiOrder})});
+  await page.route(`http://localhost:8000/api/v1/payments/orders/${upiOrder.id}/intent`,route=>{intentAttempts+=1;return route.fulfill({status:503,json:{detail:'Payment provider is not configured'}})});
+  await page.route('http://localhost:8000/api/v1/orders/me',route=>route.fulfill({json:[upiOrder]}));
+
+  await page.goto('/checkout');
+  await page.getByRole('radio',{name:/UPI \/ online payment/}).check();
+  const place=page.getByRole('button',{name:'Place order & pay'});
+  await expect(place).toBeEnabled();
+  await page.evaluate(()=>{
+    const testWindow=window as typeof window&{__gaononeCheckoutFetches?:number;__gaononeForcedCheckoutDuplicate?:number};
+    const originalFetch=window.fetch.bind(window);
+    testWindow.__gaononeCheckoutFetches=0;
+    testWindow.__gaononeForcedCheckoutDuplicate=0;
+    window.fetch=(async(input,init)=>{
+      const url=typeof input==='string'?input:input instanceof Request?input.url:input.toString();
+      if(url.endsWith('/orders/checkout')){
+        testWindow.__gaononeCheckoutFetches=(testWindow.__gaononeCheckoutFetches||0)+1;
+        if(testWindow.__gaononeForcedCheckoutDuplicate===0){
+          testWindow.__gaononeForcedCheckoutDuplicate=1;
+          const button=Array.from(document.querySelectorAll('button')).find(candidate=>candidate.textContent?.trim()==='Place order & pay');
+          if(!(button instanceof HTMLButtonElement))throw new Error('checkout button was unavailable for the forced duplicate event');
+          button.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+        }
+      }
+      return originalFetch(input,init);
+    }) as typeof window.fetch;
+  });
+  try{
+    await place.click();
+    await firstCheckout;
+    await expect(page.getByRole('button',{name:'Opening secure payment…'})).toBeDisabled();
+    expect(await page.evaluate(()=>({checkoutFetches:(window as typeof window&{__gaononeCheckoutFetches?:number}).__gaononeCheckoutFetches,forcedDuplicate:(window as typeof window&{__gaononeForcedCheckoutDuplicate?:number}).__gaononeForcedCheckoutDuplicate}))).toEqual({checkoutFetches:1,forcedDuplicate:1});
+    expect(checkoutAttempts).toBe(1);
+  }finally{releaseCheckout()}
+  await page.waitForURL(/\/orders\?payment=pending&order=order-checkout-guard$/);
+  await expect(page.getByText('Your order is saved. Complete payment below when ready.')).toBeVisible();
+  await expect(page.getByText('Payment provider is not configured')).toHaveCount(0);
+  expect(checkoutAttempts).toBe(1);expect(intentAttempts).toBe(1);
+});
