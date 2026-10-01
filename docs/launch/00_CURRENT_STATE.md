@@ -6,7 +6,7 @@ Verified 2026-10-01 UTC.
 |---|---|
 | Local main / origin/main | Both `2b5b1244fb8df147ef0f1ef40ada5adde33453f8` |
 | Baseline CI | `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` passed for security PR #196 final head `9ba269ac2a936da0c2d1876a0fa7754700440166` before merge |
-| Open PR | None — the isolated checkout duplicate-submit guard is under focused review on `feat/launch-checkout-submit-guard-secured`; required CI must be evaluated only after a PR is opened on its final branch head |
+| Open PR | #197 — isolated checkout duplicate-submit guard on `feat/launch-checkout-submit-guard-secured`; all four required CI gates must be evaluated only on its final branch head |
 | Main checkout | Protected owner Flutter/iOS modifications exist; do not reset, clean, stash, or alter them |
 | Product media B2 | Isolated `gaonone-product-media-intake` worktree; deferred |
 | Auth | Firebase verifies external identity; GaonOne issues sessions and owns roles/permissions. Web and Flutter exchange Firebase Google ID tokens for GaonOne sessions. |
