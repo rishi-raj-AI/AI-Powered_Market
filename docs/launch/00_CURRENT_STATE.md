@@ -6,7 +6,7 @@ Verified 2026-10-02 UTC.
 |---|---|
 | Local main / origin/main | Both `99f10eb2883dff026276774d001f95a48dab7785` |
 | Baseline CI | `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` passed for merchant-availability PR #199 final head `811faac0b0c28f86edbfc376c6edd371e0d835a3` before merge |
-| Open PR | None — the isolated delivery-task privacy follow-up is under focused implementation on `fix/delivery-task-privacy`; open a PR only after review and project-control update |
+| Open PR | [#200](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/200) — isolated delivery-task privacy remediation on `fix/delivery-task-privacy`; evaluate all four required gates only on its final head before any merge |
 | Main checkout | Protected owner Flutter/iOS modifications exist; do not reset, clean, stash, or alter them |
 | Product media B2 | Isolated `gaonone-product-media-intake` worktree; deferred |
 | Auth | Firebase verifies external identity; GaonOne issues sessions and owns roles/permissions. Web and Flutter exchange Firebase Google ID tokens for GaonOne sessions. |

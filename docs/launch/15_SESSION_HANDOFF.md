@@ -98,6 +98,7 @@ Phase 3: validate and close launch-critical customer-path reliability gaps from 
 - Gate D audit found a P1 delivery-task privacy defect: `/delivery/tasks/me` is documented as assigned-to-caller rider detail, but normal and super admins with `rider.read` can enumerate up to 200 arbitrary delivery rows containing recipient name/phone, house details, landmark/directions, exact coordinates, and store phone. No supported admin client calls this endpoint; existing admin dispatch and operations endpoints are purpose-specific and more data-minimized.
 - The selected narrow remedy makes the full-detail endpoint delivery-role-only and always filters it by the caller's assignment. It retains admin access to coarse task offers and scoped active/failed delivery operations. Add normal- and super-admin `403` regressions while preserving assigned-rider full-detail coverage. No migration, client change, payment, identity, role-model, or deployment change.
 - The branch implements that remedy and the regression also proves a normal operational admin retains the coarse offer board. Python compilation, focused Ruff, and `git diff --check` pass locally. `pytest tests/test_rider_task_privacy.py -q` cannot collect because this host lacks `psycopg`; Docker is unavailable, so required GitHub CI remains the database-backed authority.
+- Opened Gate D PR [#200](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/200) for the isolated delivery-task privacy slice. Its exact final branch head, not an earlier implementation commit, must pass `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` before merge; no deployment is authorized.
 
 ## Changed files
 
@@ -125,7 +126,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-Implement and review the delivery-task privacy remediation, commit and open its isolated PR, then evaluate all four required CI gates only on its exact final head. If it is green with no unresolved P0/P1 regression, merge using the repository's normal strategy, safely fast-forward protected main while preserving all seven owner-owned changes, and continue only with another evidence-backed Gate D phase. Preserve all prior checkout-guard worktrees. Do not deploy.
+Evaluate all four required CI gates only on PR #200's exact final head. If it is green with no unresolved P0/P1 regression, merge using the repository's normal strategy, safely fast-forward protected main while preserving all seven owner-owned changes, and continue only with another evidence-backed Gate D phase. Preserve all prior checkout-guard worktrees. Do not deploy.
 
 ## Preservation contract
 
