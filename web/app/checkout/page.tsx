@@ -112,11 +112,11 @@ export default function Checkout(){
      const confirmation={orderId:o.id,orderNumber:o.order_number,payload};
      try{
       const result=await gaonApi.verifyPayment(payload);
-      clearCheckout();
       finishPaymentConfirmation(confirmation,result.payment_status);
-     }catch(e:unknown){
       clearCheckout();
+     }catch(e:unknown){
       await reconcilePaymentConfirmation(confirmation,e);
+      clearCheckout();
      }
     },
    });

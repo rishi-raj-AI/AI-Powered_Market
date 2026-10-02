@@ -257,7 +257,15 @@ test("checkout retries confirmation without reopening checkout or creating anoth
   let checkoutCalls = 0;
   let intentCalls = 0;
   let paid = false;
+  let releaseReconciliation!: () => void;
+  let reconciliationStarted!: () => void;
   const verificationPayloads: unknown[] = [];
+  const reconciliationGate = new Promise<void>((resolve) => {
+    releaseReconciliation = resolve;
+  });
+  const reconciliationRequest = new Promise<void>((resolve) => {
+    reconciliationStarted = resolve;
+  });
   await installRazorpaySuccess(page);
   await installApiMocks(page, customer);
   await page.route("http://localhost:8000/api/v1/cart", (route) =>
@@ -305,14 +313,18 @@ test("checkout retries confirmation without reopening checkout or creating anoth
   );
   await page.route(
     `http://localhost:8000/api/v1/orders/${pendingOrder.id}`,
-    (route) =>
-      route.fulfill({
-        json: {
-          ...pendingOrder,
-          payment_status: paid ? "paid" : "pending",
-          items: [],
-        },
-      }),
+    (route) => {
+      reconciliationStarted();
+      return reconciliationGate.then(() =>
+        route.fulfill({
+          json: {
+            ...pendingOrder,
+            payment_status: paid ? "paid" : "pending",
+            items: [],
+          },
+        }),
+      );
+    },
   );
   await page.route("http://localhost:8000/api/v1/orders/me", (route) =>
     route.fulfill({
@@ -346,6 +358,21 @@ test("checkout retries confirmation without reopening checkout or creating anoth
   const place = page.getByRole("button", { name: "Place order & pay" });
   await expect(place).toBeEnabled();
   await place.click();
+  await reconciliationRequest;
+  const opening = page.getByRole("button", {
+    name: "Opening secure payment…",
+  });
+  await expect(opening).toBeDisabled();
+  await opening.evaluate((button) => {
+    button.removeAttribute("disabled");
+    button.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+    button.setAttribute("disabled", "");
+  });
+  expect(checkoutCalls).toBe(1);
+  expect(intentCalls).toBe(1);
+  releaseReconciliation();
   await expect(
     page.getByText(
       "Payment confirmation is pending. Retry confirmation instead of paying again.",
