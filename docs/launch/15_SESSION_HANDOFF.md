@@ -91,6 +91,7 @@ Phase 3: validate and close launch-critical customer-path reliability gaps from 
 - Created fresh isolated `/Users/rishiraj/Documents/Personal_Projects/AI-Powered_Market/gaonone-launch-phase3-reliability-followup` on `feat/launch-phase3-reliability-followup` from `6825f8`; do not reuse the prior payment, product-media, auth, web-foundation, or protected-main worktrees.
 - Gate D audit found a P1 merchant-availability integrity defect: suspension bulk-wrote every `Store.is_active=False` and reapproval bulk-wrote every flag true, reopening an intentionally paused store. The selected narrow remedy keeps `Merchant.status` as the platform eligibility switch, preserves the merchant-owned `Store.is_active` choice, and makes the admin active-store count require both an active store and an approved merchant. It has no migration, historical backfill, automatic reopen, payment, identity, role, client-config, or deployment change.
 - The focused regression creates a live and deliberately paused store for the same merchant, proves their stored flags survive suspend/reapprove, proves public visibility is suppressed while suspended and restored only for the live store, and proves the admin count changes by exactly one then returns. Python compilation, focused Ruff, and `git diff --check` pass locally; this host lacks `psycopg` and a Docker daemon, so the database-backed regression remains for required CI.
+- Opened Gate D PR #199 for the isolated merchant-availability preservation slice. Required CI must be evaluated only on its final branch head; no deployment is authorized.
 
 ## Changed files
 
@@ -118,7 +119,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-Finish focused review of the merchant-availability remediation, commit and open its isolated PR, and evaluate all four required CI gates only on that PR's exact final head. If it is green with no unresolved P0/P1 regression, merge using the repository's normal strategy, safely fast-forward protected main while preserving all seven owner-owned changes, and continue only with another evidence-backed Gate D phase. Preserve all prior checkout-guard worktrees. Do not deploy.
+Evaluate all four required CI gates for PR #199 only on its exact final head, then complete focused final review. If it is green with no unresolved P0/P1 regression, merge using the repository's normal strategy, safely fast-forward protected main while preserving all seven owner-owned changes, and continue only with another evidence-backed Gate D phase. Preserve all prior checkout-guard worktrees. Do not deploy.
 
 ## Preservation contract
 
