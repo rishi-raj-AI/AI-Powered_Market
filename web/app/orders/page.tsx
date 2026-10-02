@@ -9,7 +9,18 @@ import {
   Truck,
   WalletCards,
 } from "lucide-react";
-import { ApiError, gaonApi, Order, OrderDetail, PaymentRefund } from "@/lib/api";
+import {
+  ApiError,
+  gaonApi,
+  Order,
+  OrderDetail,
+  PaymentRefund,
+  PaymentVerifyResult,
+} from "@/lib/api";
+import {
+  canRetryPaymentConfirmation,
+  PaymentConfirmation,
+} from "@/lib/payment-confirmation";
 import { openRazorpayCheckout } from "@/lib/razorpay";
 import { LiveTracking } from "@/components/LiveTracking";
 import { Nav } from "@/components/Nav";
@@ -58,13 +69,21 @@ export default function Orders() {
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState("");
+  const [paymentConfirmation, setPaymentConfirmation] =
+    useState<PaymentConfirmation | null>(null);
   const paymentInFlight = useRef<string | null>(null);
-  async function load() {
+  const confirmationPendingInFlight = useRef<string | null>(null);
+  const confirmationRetryInFlight = useRef(false);
+  async function load(silent = false): Promise<Order[] | null> {
     try {
-      setOrders(await gaonApi.orders());
+      const nextOrders = await gaonApi.orders();
+      setOrders(nextOrders);
       setError("");
+      return nextOrders;
     } catch (e: any) {
-      setError(e.status === 401 ? "Please login to view orders" : e.message);
+      if (!silent)
+        setError(e.status === 401 ? "Please login to view orders" : e.message);
+      return null;
     }
   }
   useEffect(() => {
@@ -80,6 +99,72 @@ export default function Orders() {
     else if (params.get("payment") === "pending")
       setMsg("Your order is saved. Complete payment below when ready.");
   }, []);
+  function clearPaymentConfirmation(confirmation: PaymentConfirmation) {
+    if (confirmationPendingInFlight.current === confirmation.orderId)
+      confirmationPendingInFlight.current = null;
+    setPaymentConfirmation((current) =>
+      current?.orderId === confirmation.orderId ? null : current,
+    );
+  }
+  function applyVerificationResult(result: PaymentVerifyResult) {
+    setOrders((current) =>
+      current.map((order) =>
+        order.id === result.order_id
+          ? { ...order, payment_status: result.payment_status }
+          : order,
+      ),
+    );
+  }
+  async function reconcilePaymentConfirmation(
+    confirmation: PaymentConfirmation,
+    failure: unknown,
+  ) {
+    const latest = await load(true);
+    const current = latest?.find((order) => order.id === confirmation.orderId);
+    if (current?.payment_status === "paid") {
+      clearPaymentConfirmation(confirmation);
+      setMsg(`Payment verified for ${confirmation.orderNumber}.`);
+      return;
+    }
+    if (
+      canRetryPaymentConfirmation(failure) &&
+      (!current || current.payment_status === "pending")
+    ) {
+      confirmationPendingInFlight.current = confirmation.orderId;
+      setPaymentConfirmation(confirmation);
+      setError("");
+      return;
+    }
+    clearPaymentConfirmation(confirmation);
+    setError(
+      "Payment confirmation could not be completed. The latest order status is shown below.",
+    );
+  }
+  async function retryPaymentConfirmation() {
+    const confirmation = paymentConfirmation;
+    if (!confirmation || confirmationRetryInFlight.current) return;
+    confirmationRetryInFlight.current = true;
+    setBusy(confirmation.orderId);
+    setError("");
+    try {
+      const result = await gaonApi.verifyPayment(confirmation.payload);
+      clearPaymentConfirmation(confirmation);
+      setMsg(
+        result.payment_status === "paid"
+          ? `Payment verified for ${confirmation.orderNumber}.`
+          : "Payment confirmation received. The latest order status is shown below.",
+      );
+      await load(true);
+      applyVerificationResult(result);
+    } catch (e: unknown) {
+      await reconcilePaymentConfirmation(confirmation, e);
+    } finally {
+      confirmationRetryInFlight.current = false;
+      setBusy((current) =>
+        current === confirmation.orderId ? "" : current,
+      );
+    }
+  }
   async function toggle(id: string) {
     if (open === id) {
       setOpen("");
@@ -123,7 +208,11 @@ export default function Orders() {
     }
   }
   async function pay(o: Order) {
-    if (paymentInFlight.current === o.id) return;
+    if (
+      paymentInFlight.current === o.id ||
+      confirmationPendingInFlight.current === o.id
+    )
+      return;
     paymentInFlight.current = o.id;
     const clearPayment = () => {
       if (paymentInFlight.current === o.id) paymentInFlight.current = null;
@@ -133,17 +222,32 @@ export default function Orders() {
     setError("");
     try {
       const intent = await gaonApi.paymentIntent(o.id);
+      let paymentCallbackReceived = false;
       await openRazorpayCheckout({
         intent,
         orderNumber: o.order_number,
-        onDismiss: clearPayment,
+        onDismiss: () => {
+          if (!paymentCallbackReceived) clearPayment();
+        },
         onSuccess: async (payload) => {
+          paymentCallbackReceived = true;
+          const confirmation = {
+            orderId: o.id,
+            orderNumber: o.order_number,
+            payload,
+          };
           try {
-            await gaonApi.verifyPayment(payload);
-            setMsg(`Payment verified for ${o.order_number}.`);
-            await load();
-          } catch (e: any) {
-            setError(e.message || "Payment verification failed.");
+            const result = await gaonApi.verifyPayment(payload);
+            clearPaymentConfirmation(confirmation);
+            setMsg(
+              result.payment_status === "paid"
+                ? `Payment verified for ${o.order_number}.`
+                : "Payment confirmation received. The latest order status is shown below.",
+            );
+            await load(true);
+            applyVerificationResult(result);
+          } catch (e: unknown) {
+            await reconcilePaymentConfirmation(confirmation, e);
           } finally {
             clearPayment();
           }
@@ -166,7 +270,7 @@ export default function Orders() {
               Follow every order from placement to doorstep.
             </p>
           </div>
-          <button className="btn secondary" onClick={load}>
+          <button className="btn secondary" onClick={() => void load()}>
             <RefreshCw size={16} /> Refresh
           </button>
         </div>
@@ -181,6 +285,7 @@ export default function Orders() {
               o.payment_status === "pending" &&
               o.status !== "cancelled" &&
               o.status !== "returned";
+            const confirmationPending = paymentConfirmation?.orderId === o.id;
             return (
               <div className="panel orderPanel" key={o.id}>
                 <div className="row space orderSummary">
@@ -206,11 +311,15 @@ export default function Orders() {
                     {canPay && (
                       <button
                         className="btn"
-                        disabled={busy === o.id}
+                        disabled={busy === o.id || confirmationPending}
                         onClick={() => pay(o)}
                       >
                         <WalletCards size={16} />{" "}
-                        {busy === o.id ? "Opening…" : "Pay now"}
+                        {confirmationPending
+                          ? "Confirmation pending"
+                          : busy === o.id
+                            ? "Opening…"
+                            : "Pay now"}
                       </button>
                     )}
                     {o.status === "placed" && (
@@ -231,6 +340,21 @@ export default function Orders() {
                     </button>
                   </div>
                 </div>
+                {confirmationPending && (
+                  <div className="notice" role="status">
+                    Payment confirmation is pending. Retry confirmation instead
+                    of paying again.
+                    <button
+                      className="btn secondary"
+                      disabled={busy === o.id}
+                      onClick={retryPaymentConfirmation}
+                    >
+                      {busy === o.id
+                        ? "Retrying confirmation…"
+                        : "Retry confirmation"}
+                    </button>
+                  </div>
+                )}
                 {o.status !== "cancelled" && o.status !== "returned" && (
                   <div
                     className="timeline"
