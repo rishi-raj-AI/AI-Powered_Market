@@ -122,42 +122,80 @@ def test_a_rider_cannot_release_a_job_after_pickup() -> None:
 # ------------------------------ P2-4: platform decisions vs merchant decisions
 
 
-def test_reapproving_a_merchant_does_not_reopen_a_paused_store() -> None:
+def test_suspension_hides_public_stores_without_overwriting_merchant_choices() -> None:
+    """A platform suspension must not turn a deliberately paused store back on."""
     with session() as db:
-        store = make_store(db, is_active=True)
-        merchant = db.get(Merchant, store.merchant_id)
-        # The merchant deliberately paused this storefront.
-        store.is_active = False
+        live_store = make_store(db, is_active=True)
+        merchant = db.get(Merchant, live_store.merchant_id)
+        paused_store = Store(
+            merchant_id=merchant.id,
+            village_id=live_store.village_id,
+            service_area_id=live_store.service_area_id,
+            name=f"Paused {live_store.name}",
+            slug=f"{live_store.slug}-paused",
+            landmark=live_store.landmark,
+            latitude=live_store.latitude,
+            longitude=live_store.longitude,
+            delivery_enabled=True,
+            pickup_enabled=True,
+            is_active=False,
+        )
+        db.add(paused_store)
         db.commit()
-        merchant_id, store_id = merchant.id, store.id
-
-    response = client.patch(
-        f"/api/v1/merchants/{merchant_id}/approve", headers=auth(token_for("+919000000001"))
-    )
-    assert response.status_code == 200, response.text
-
-    with session() as db:
-        assert db.get(Store, store_id).is_active is False
-
-
-def test_suspension_still_takes_every_store_offline() -> None:
-    with session() as db:
-        store = make_store(db, is_active=True)
-        db.commit()
-        merchant_id, store_id = store.merchant_id, store.id
-
+        merchant_id = merchant.id
+        live_store_id = live_store.id
+        live_store_name = live_store.name
+        paused_store_id = paused_store.id
     admin = auth(token_for("+919000000001"))
-    assert client.patch(
+
+    def public_store_ids() -> set[str]:
+        response = client.get("/api/v1/stores", params={"q": live_store_name})
+        assert response.status_code == 200, response.text
+        return {store["id"] for store in response.json()}
+
+    assert client.get(f"/api/v1/stores/{live_store_id}").status_code == 200
+    assert client.get(f"/api/v1/stores/{paused_store_id}").status_code == 404
+    public_before = public_store_ids()
+    assert str(live_store_id) in public_before
+    assert str(paused_store_id) not in public_before
+    overview_before = client.get("/api/v1/admin/overview", headers=admin)
+    assert overview_before.status_code == 200, overview_before.text
+    active_count_before = overview_before.json()["active_stores"]
+
+    suspended = client.patch(
         f"/api/v1/merchants/{merchant_id}/status", headers=admin, json={"status": "suspended"}
-    ).status_code == 200
+    )
+    assert suspended.status_code == 200, suspended.text
 
     with session() as db:
-        assert db.get(Store, store_id).is_active is False
+        assert db.get(Merchant, merchant_id).status.value == "suspended"
+        assert db.get(Store, live_store_id).is_active is True
+        assert db.get(Store, paused_store_id).is_active is False
 
-    # And lifting the suspension restores what suspension switched off.
-    assert client.patch(f"/api/v1/merchants/{merchant_id}/approve", headers=admin).status_code == 200
+    assert client.get(f"/api/v1/stores/{live_store_id}").status_code == 404
+    public_while_suspended = public_store_ids()
+    assert str(live_store_id) not in public_while_suspended
+    assert str(paused_store_id) not in public_while_suspended
+    overview_while_suspended = client.get("/api/v1/admin/overview", headers=admin)
+    assert overview_while_suspended.status_code == 200, overview_while_suspended.text
+    assert overview_while_suspended.json()["active_stores"] == active_count_before - 1
+
+    reapproved = client.patch(f"/api/v1/merchants/{merchant_id}/approve", headers=admin)
+    assert reapproved.status_code == 200, reapproved.text
+
     with session() as db:
-        assert db.get(Store, store_id).is_active is True
+        assert db.get(Merchant, merchant_id).status.value == "approved"
+        assert db.get(Store, live_store_id).is_active is True
+        assert db.get(Store, paused_store_id).is_active is False
+
+    assert client.get(f"/api/v1/stores/{live_store_id}").status_code == 200
+    assert client.get(f"/api/v1/stores/{paused_store_id}").status_code == 404
+    public_after = public_store_ids()
+    assert str(live_store_id) in public_after
+    assert str(paused_store_id) not in public_after
+    overview_after = client.get("/api/v1/admin/overview", headers=admin)
+    assert overview_after.status_code == 200, overview_after.text
+    assert overview_after.json()["active_stores"] == active_count_before
 
 
 # ------------------------------------------------ P2-8: uploads must be images

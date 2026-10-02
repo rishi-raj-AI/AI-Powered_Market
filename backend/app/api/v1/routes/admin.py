@@ -277,7 +277,12 @@ def admin_overview(
 ) -> dict:
     user_count = db.scalar(select(func.count()).select_from(User)) or 0
     village_count = db.scalar(select(func.count()).select_from(Village).where(Village.is_active.is_(True))) or 0
-    active_store_count = db.scalar(select(func.count()).select_from(Store).where(Store.is_active.is_(True))) or 0
+    active_store_count = db.scalar(
+        select(func.count())
+        .select_from(Store)
+        .join(Merchant, Store.merchant_id == Merchant.id)
+        .where(Store.is_active.is_(True), Merchant.status == MerchantStatus.APPROVED)
+    ) or 0
     pending_merchants = db.scalar(select(func.count()).select_from(Merchant).where(Merchant.status == MerchantStatus.PENDING)) or 0
     approved_merchants = db.scalar(select(func.count()).select_from(Merchant).where(Merchant.status == MerchantStatus.APPROVED)) or 0
     suspended_merchants = db.scalar(select(func.count()).select_from(Merchant).where(Merchant.status == MerchantStatus.SUSPENDED)) or 0

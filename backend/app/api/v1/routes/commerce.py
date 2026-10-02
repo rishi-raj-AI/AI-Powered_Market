@@ -2,7 +2,7 @@ import math
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
@@ -93,17 +93,14 @@ def _public_store_stmt():
 def _set_merchant_status(db: Session, merchant: Merchant, target: MerchantStatus) -> None:
     """Apply a platform decision without overwriting the merchant's own.
 
-    Suspension is a platform decision that must take every storefront offline.
-    Approval only removes that block: it does not reactivate a store the
-    merchant deliberately paused, which the previous blanket update did.
+    Merchant status is the platform availability switch. Public reads,
+    purchase paths, and store/catalog mutations already require an approved
+    merchant, so suspension fails closed without changing the merchant-owned
+    ``Store.is_active`` choice. Reapproval therefore restores only stores that
+    were live before the platform action; stores the merchant paused remain
+    paused.
     """
-    previous = merchant.status
     merchant.status = target
-    if target == MerchantStatus.SUSPENDED:
-        db.execute(update(Store).where(Store.merchant_id == merchant.id).values(is_active=False))
-    elif target == MerchantStatus.APPROVED and previous == MerchantStatus.SUSPENDED:
-        # Reverse only what suspension switched off.
-        db.execute(update(Store).where(Store.merchant_id == merchant.id).values(is_active=True))
 
 
 @router.post("/merchants/apply", response_model=MerchantRead, status_code=status.HTTP_201_CREATED)
