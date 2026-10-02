@@ -6,7 +6,7 @@ Verified 2026-10-02 UTC.
 |---|---|
 | Local main / origin/main | Both `30d420ce15d3a52796559604cfb03b254d669b5a` |
 | Baseline CI | `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` passed for checkout duplicate-submit PR #197 final head `572169b5c690ce1482d67a5efdc5d138973b0b68` before merge |
-| Open PR | None — the isolated signed-payment-confirmation recovery slice is ready for focused review on `feat/launch-phase3-reliability-next`; required CI must be evaluated only after a PR is opened on its final branch head |
+| Open PR | [#198](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/198) — isolated signed-payment-confirmation recovery on `feat/launch-phase3-reliability-next`; required CI must be evaluated only after this project-control update establishes the final branch head |
 | Main checkout | Protected owner Flutter/iOS modifications exist; do not reset, clean, stash, or alter them |
 | Product media B2 | Isolated `gaonone-product-media-intake` worktree; deferred |
 | Auth | Firebase verifies external identity; GaonOne issues sessions and owns roles/permissions. Web and Flutter exchange Firebase Google ID tokens for GaonOne sessions. |

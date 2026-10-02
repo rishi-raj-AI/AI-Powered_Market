@@ -85,6 +85,7 @@ Phase 3: validate and close launch-critical customer-path reliability gaps from 
 - The web checkout and Orders pages now keep only that signed callback in page memory, reconcile against GaonOne's authoritative order state, and show a neutral confirmation-pending control only while the server still reports payment pending. Retry submits the identical callback to `/payments/verify`; it never opens Razorpay, creates another intent, marks payment paid client-side, persists the callback, changes backend payment/provider/auth/role/ownership behavior, or deploys.
 - Terminal verification responses clear the retry state and render the latest server status. A provider-dismiss callback after a signed success callback cannot interrupt verification/recovery. Synchronous refs prevent forced disabled Pay-now, checkout, or retry events from starting another request before React commits control state.
 - Local validation passed `npm run build -- --webpack` and the 72-check focused cross-browser suite spanning Chromium, Firefox, WebKit, and mobile Chrome. The tests prove exact-payload retry, no second intent/checkout opening, serialized retry, terminal-state clearing, suppressed raw operational detail, and the callback/dismiss ordering. Required GitHub CI remains authoritative after the PR's final head is opened.
+- Opened Phase 3 PR #198 for the signed-payment-confirmation recovery slice from source head `14c0247103c55811dca6217ae0549c05d446d554`. This project-control update establishes the final CI head; no deployment is authorized.
 
 ## Changed files
 
@@ -112,7 +113,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-Complete focused review of the signed-payment-confirmation slice, commit and open its PR, then evaluate all four required CI gates only on its exact final head. If it is green with no unresolved P0/P1 regression, merge using the repository's normal strategy, safely fast-forward protected main while preserving all seven owner-owned changes, and continue only with another evidence-backed phase. Preserve both prior checkout-guard worktrees. Do not deploy.
+Evaluate all four required CI gates for PR #198 only on its exact final head, then complete focused final review. If it is green with no unresolved P0/P1 regression, merge using the repository's normal strategy, safely fast-forward protected main while preserving all seven owner-owned changes, and continue only with another evidence-backed phase. Preserve both prior checkout-guard worktrees. Do not deploy.
 
 ## Preservation contract
 
