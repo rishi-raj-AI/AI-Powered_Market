@@ -133,6 +133,34 @@ def test_a_rider_cannot_see_another_riders_assigned_delivery() -> None:
     assert all(task["order_number"] != order_number for task in other)
 
 
+def test_admins_cannot_read_full_rider_task_detail() -> None:
+    """Operations access must not turn the rider-self endpoint into a PII feed."""
+    with session() as db:
+        rider = make_user(db, role=UserRole.DELIVERY, prefix="9")
+        normal_admin = make_user(db, role=UserRole.ADMIN, prefix="9")
+        super_admin = make_user(db, role=UserRole.ADMIN, prefix="9")
+        super_admin.is_super_admin = True
+        _order, delivery = _ready_unassigned_order(db)
+        _assign(db, delivery, rider)
+        db.commit()
+        normal_admin_phone = normal_admin.phone
+        super_admin_phone = super_admin.phone
+
+    for admin_phone in (normal_admin_phone, super_admin_phone):
+        response = client.get(
+            "/api/v1/delivery/tasks/me", headers=auth(token_for(admin_phone))
+        )
+        assert response.status_code == 403, response.text
+        for field in IDENTIFYING_FIELDS:
+            assert field not in response.text
+
+    # Normal operational admins retain the deliberately coarse dispatch board.
+    offers = client.get(
+        "/api/v1/delivery/tasks/available", headers=auth(token_for(normal_admin_phone))
+    )
+    assert offers.status_code == 200, offers.text
+
+
 def test_assigned_delivery_is_no_longer_offered_to_everyone() -> None:
     with session() as db:
         rider = make_user(db, role=UserRole.DELIVERY, prefix="9")

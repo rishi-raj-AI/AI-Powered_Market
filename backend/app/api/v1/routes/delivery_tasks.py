@@ -153,13 +153,14 @@ def available_tasks(
 def my_tasks(
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles(UserRole.DELIVERY, UserRole.ADMIN)),
+    user: User = Depends(require_roles(UserRole.DELIVERY)),
 ):
-    """Deliveries assigned to the caller, with the detail needed to deliver."""
-    if user.role == UserRole.ADMIN:
-        ensure_capability(user, Capability.RIDER_READ)
-    stmt = select(Delivery).order_by(Delivery.updated_at.desc()).limit(limit)
-    if user.role != UserRole.ADMIN:
-        stmt = stmt.where(Delivery.delivery_partner_id == user.id)
+    """Deliveries assigned to the authenticated partner, with delivery detail."""
+    stmt = (
+        select(Delivery)
+        .where(Delivery.delivery_partner_id == user.id)
+        .order_by(Delivery.updated_at.desc())
+        .limit(limit)
+    )
     deliveries = db.scalars(stmt).all()
     return [task for delivery in deliveries if (task := _task(db, delivery)) is not None]
