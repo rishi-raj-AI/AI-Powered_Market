@@ -6,7 +6,7 @@ Verified 2026-10-03 UTC.
 |---|---|
 | Local main / origin/main | Both `26e35b0439ce903c67b676ba699add6231799e11` |
 | Baseline CI | `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` passed for delivery-task privacy PR #200 final head `57b3571f0141914cba29c1897fd5f273aac608a2` before merge |
-| Open PR | [#201](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/201) is green on final head `31d0d38` but held behind the isolated P0 UPI fulfilment gate on `fix/upi-fulfilment-gate`; do not merge it first |
+| Open PR | [#202](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/202) — isolated P0 UPI fulfilment gate; evaluate all four required gates on its final head before merge. [#201](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/201) remains green on `31d0d38` but held until #202 merges, then must be rebased and revalidated. |
 | Main checkout | Protected owner Flutter/iOS modifications exist; do not reset, clean, stash, or alter them |
 | Product media B2 | Isolated `gaonone-product-media-intake` worktree; deferred |
 | Auth | Firebase verifies external identity; GaonOne issues sessions and owns roles/permissions. Web and Flutter exchange Firebase Google ID tokens for GaonOne sessions. |
