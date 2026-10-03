@@ -161,12 +161,21 @@ class _DeliveryWorkspaceState extends State<DeliveryWorkspace> {
   String? _sharingDeliveryId;
   DateTime? _lastLocationSentAt;
   String? _locationMessage;
+  String? _issuingProofDeliveryId;
+  String? _completionDialogDeliveryId;
+  String? _completingDeliveryId;
+  String? _handoffMessage;
 
   bool get sharing => _locationSubscription != null;
   @override void initState() { super.initState(); load(); }
   @override void dispose() { _locationSubscription?.cancel(); super.dispose(); }
 
-  void snack(String message) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message))); }
+  void snack(String message) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(SnackBar(content: Text(message)));
+  }
 
   Future<void> load() async {
     try {
@@ -181,12 +190,103 @@ class _DeliveryWorkspaceState extends State<DeliveryWorkspace> {
 
   Future<void> claim(String id) async { try { await GaonApi.claimDelivery(id); await load(); } catch (e) { snack('$e'); } }
 
-  Future<void> update(DeliveryTaskModel task, String status) async {
+  Future<void> markPickedUp(DeliveryTaskModel task) async {
     try {
-      await GaonApi.updateDelivery(task.id, status);
-      if (status == 'delivered' && _sharingDeliveryId == task.id) await stopLocationSharing(message: 'Delivery completed. Live location sharing stopped.');
+      await GaonApi.markDeliveryPickedUp(task.id);
       await load();
     } catch (e) { snack('$e'); }
+  }
+
+  bool _isCod(DeliveryTaskModel task) => task.paymentMethod.toLowerCase() == 'cod';
+  bool _taskActionBusy(DeliveryTaskModel task) => _issuingProofDeliveryId == task.id || _completionDialogDeliveryId == task.id || _completingDeliveryId == task.id;
+
+  Future<void> sendDeliveryProofChallenge(DeliveryTaskModel task) async {
+    if (_issuingProofDeliveryId != null || _completionDialogDeliveryId != null || _completingDeliveryId != null) return;
+    setState(() => _issuingProofDeliveryId = task.id);
+    try {
+      await GaonApi.requestDeliveryProofChallenge(task.id);
+      if (mounted) setState(() => _handoffMessage = 'A six-digit handoff code was sent to the customer.');
+    } catch (e) {
+      snack('$e');
+    } finally {
+      if (mounted) setState(() => _issuingProofDeliveryId = null);
+    }
+  }
+
+  Future<void> verifyAndCompleteDelivery(DeliveryTaskModel task) async {
+    if (_completionDialogDeliveryId != null || _completingDeliveryId != null) return;
+    setState(() => _completionDialogDeliveryId = task.id);
+    var enteredCode = '';
+    var cashCollected = !_isCod(task);
+    var submitting = false;
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Complete delivery'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Ask the customer for the six-digit delivery code sent to them after handoff.'),
+                const SizedBox(height: 12),
+                TextField(
+                  keyboardType: TextInputType.number,
+                  maxLength: 6,
+                  decoration: const InputDecoration(labelText: 'Customer code'),
+                  onChanged: (value) => setDialogState(() => enteredCode = value.trim()),
+                ),
+                if (_isCod(task)) ...[
+                  const SizedBox(height: 8),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: cashCollected,
+                    onChanged: submitting ? null : (value) => setDialogState(() => cashCollected = value ?? false),
+                    title: Text('I collected ₹${task.total} in cash'),
+                    subtitle: const Text('Cash collection is required before completion.'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: submitting ? null : () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: submitting || enteredCode.length != 6 || !cashCollected ? null : () async {
+                if (_completingDeliveryId != null) return;
+                setDialogState(() => submitting = true);
+                setState(() => _completingDeliveryId = task.id);
+                try {
+                  await GaonApi.verifyDeliveryProof(task.id, otp: enteredCode);
+                  if (_isCod(task)) await GaonApi.recordDeliveryCodCollection(task.id, task.total);
+                  await GaonApi.completeDelivery(task.id);
+                  if (dialogContext.mounted) Navigator.pop(dialogContext);
+                  if (_sharingDeliveryId == task.id) await stopLocationSharing(message: 'Delivery completed. Live location sharing stopped.');
+                  await load();
+                  if (mounted) snack('Delivery completed.');
+                } catch (e) {
+                  await load();
+                  if (!mounted) return;
+                  if (dialogContext.mounted) Navigator.pop(dialogContext);
+                  final detail = e is ApiException ? e.message : 'Check your connection and try again.';
+                  snack('Could not confirm delivery: $detail. Check the task status before another attempt.');
+                } finally {
+                  if (mounted) setState(() => _completingDeliveryId = null);
+                  if (dialogContext.mounted) setDialogState(() => submitting = false);
+                }
+              },
+              child: Text(_isCod(task) ? 'Confirm cash & complete' : 'Complete delivery'),
+            ),
+          ],
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _completionDialogDeliveryId = null);
+    }
   }
 
   Future<void> startLocationSharing(DeliveryTaskModel task) async {
@@ -237,6 +337,7 @@ class _DeliveryWorkspaceState extends State<DeliveryWorkspace> {
   Widget card(DeliveryTaskModel task, bool canClaim) {
     final isThisSharing = sharing && _sharingDeliveryId == task.id;
     final canShare = !canClaim && (task.status == 'assigned' || task.status == 'picked_up');
+    final taskActionBusy = _taskActionBusy(task);
     return Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [Expanded(child: Text(task.orderNumber, style: const TextStyle(fontWeight: FontWeight.w800))), Chip(label: Text(task.status.replaceAll('_', ' ')))]),
       Text('₹${task.total} • ${task.paymentMethod.toUpperCase()} • ${task.paymentStatus}'),
@@ -245,11 +346,16 @@ class _DeliveryWorkspaceState extends State<DeliveryWorkspace> {
       if (task.recipientPhone != null) SelectableText('Customer: ${task.recipientPhone}'),
       if (task.customerDirections?.isNotEmpty == true) Text('Directions: ${task.customerDirections}'),
       const SizedBox(height: 10),
+      if (!canClaim && task.status == 'picked_up' && _handoffMessage != null) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text(_handoffMessage!)),
       if (!canClaim && task.customerLatitude != null && task.customerLongitude != null) Padding(padding: const EdgeInsets.only(bottom: 10), child: OutlinedButton.icon(onPressed: () => openNavigation(task), icon: const Icon(Icons.navigation_outlined), label: const Text('Navigate to customer'))),
-      if (canShare) Padding(padding: const EdgeInsets.only(bottom: 10), child: OutlinedButton.icon(onPressed: () => isThisSharing ? stopLocationSharing() : startLocationSharing(task), icon: Icon(isThisSharing ? Icons.location_off : Icons.my_location), label: Text(isThisSharing ? 'Stop live location' : 'Share live location'))),
+      if (canShare) Padding(padding: const EdgeInsets.only(bottom: 10), child: OutlinedButton.icon(onPressed: taskActionBusy ? null : () => isThisSharing ? stopLocationSharing() : startLocationSharing(task), icon: Icon(isThisSharing ? Icons.location_off : Icons.my_location), label: Text(isThisSharing ? 'Stop live location' : 'Share live location'))),
       if (canClaim) FilledButton.icon(onPressed: () => claim(task.id), icon: const Icon(Icons.delivery_dining), label: const Text('Claim delivery'))
-      else if (task.status == 'assigned') FilledButton(onPressed: () => update(task, 'picked_up'), child: const Text('Mark picked up'))
-      else if (task.status == 'picked_up') FilledButton(onPressed: () => update(task, 'delivered'), child: const Text('Mark delivered')),
+      else if (task.status == 'assigned') FilledButton(onPressed: () => markPickedUp(task), child: const Text('Mark picked up'))
+      else if (task.status == 'picked_up') ...[
+        OutlinedButton.icon(onPressed: taskActionBusy ? null : () => sendDeliveryProofChallenge(task), icon: const Icon(Icons.sms_outlined), label: Text(_issuingProofDeliveryId == task.id ? 'Sending delivery code…' : 'Send delivery code')),
+        const SizedBox(height: 8),
+        FilledButton(onPressed: taskActionBusy ? null : () => verifyAndCompleteDelivery(task), child: Text(_completingDeliveryId == task.id ? 'Completing delivery…' : 'Verify handoff & complete')),
+      ],
     ])));
   }
 
