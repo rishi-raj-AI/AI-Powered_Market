@@ -2,8 +2,8 @@
 
 `Sign in → assigned work → pickup/store context → delivery landmark/directions → allowed transitions → tracking/proof → completion or incident`
 
-Current static state: web and Flutter contain delivery task, location-sharing, offline, incident and proof surfaces. The backend’s delivery vocabulary and auditable transitions remain authoritative.
+Current static state: web and Flutter contain delivery-task and location-sharing surfaces. PR #201 adds the existing server-authoritative customer-code proof and guarded completion workflow, but is held green until the active backend prerequisite prevents unpaid UPI orders from entering physical fulfilment. COD remains exact-collection-gated; rider release/failure controls and durable offline reconciliation remain separate follow-ups.
 
-Acceptance: a partner sees only authorized tasks and minimum necessary customer data; GPS permissions and degraded connectivity are clear; pickup/delivery/proof/incident transitions are centrally enforced and auditable; COD instructions are clear. Test Android field conditions before launch.
+Acceptance: a partner sees only authorized tasks and minimum necessary customer data; GPS permissions and degraded connectivity are clear; an online order must be paid before it is ready, dispatched, picked up, or completed; the customer receives a handoff code, the server verifies it before completion, and COD collection uses the server-supplied exact total. Pickup/delivery/proof/incident transitions remain centrally enforced and auditable. Test Android field conditions before launch.
 
 Privacy invariant: full household contact, address, directions, and exact delivery coordinates are rider-self-service data only. `/delivery/tasks/me` must return them only to the assigned delivery partner; admins use purpose-specific, PII-minimized operations endpoints.

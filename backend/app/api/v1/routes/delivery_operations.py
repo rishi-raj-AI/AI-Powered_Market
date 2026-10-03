@@ -39,6 +39,7 @@ from app.services.notifications import enqueue_notification
 from app.services.order_transitions import (
     can_transition_delivery,
     can_transition_order,
+    payment_allows_fulfillment,
     transition_delivery,
     transition_order,
 )
@@ -506,6 +507,8 @@ def complete_delivery(
         raise HTTPException(status_code=409, detail=f"Delivery cannot be completed from {delivery.status.value}")
     if not can_transition_order(order.status, OrderStatus.DELIVERED):
         raise HTTPException(status_code=409, detail=f"Order cannot be delivered from {order.status.value}")
+    if not payment_allows_fulfillment(order):
+        raise HTTPException(status_code=409, detail="Online payment must be confirmed before delivery completion")
     proof = db.scalar(select(DeliveryProof).where(DeliveryProof.delivery_id == delivery.id).with_for_update())
     if proof is None or proof.verified_at is None:
         raise HTTPException(status_code=409, detail="Verified proof of delivery is required")

@@ -18,7 +18,7 @@ from app.schemas.dispatch import (
     RiderPresenceUpdate,
 )
 from app.services.notifications import enqueue_notification
-from app.services.order_transitions import transition_delivery
+from app.services.order_transitions import payment_allows_fulfillment, transition_delivery
 from app.services.spatial import nearest_eligible_rider
 from app.services.governance_audit import record_admin_action
 
@@ -67,7 +67,11 @@ def auto_assign_delivery(
     order = db.scalar(select(Order).where(Order.id == delivery.order_id).with_for_update())
     if order is None:
         raise HTTPException(status_code=409, detail="Delivery order is missing")
-    if delivery.status != DeliveryStatus.UNASSIGNED or order.status != OrderStatus.READY:
+    if (
+        delivery.status != DeliveryStatus.UNASSIGNED
+        or order.status != OrderStatus.READY
+        or not payment_allows_fulfillment(order)
+    ):
         raise HTTPException(status_code=409, detail="Delivery is no longer available for dispatch")
 
     store = db.get(Store, order.store_id)

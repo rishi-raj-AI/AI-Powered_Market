@@ -10,14 +10,22 @@ details and exact coordinates for every open order.
 import math
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ensure_capability, get_db, require_roles
 from app.core.capabilities import Capability
 from app.models.commerce import Store
 from app.models.geography import Address, Village
-from app.models.orders import Delivery, DeliveryStatus, Order, OrderItem, OrderStatus
+from app.models.orders import (
+    Delivery,
+    DeliveryStatus,
+    Order,
+    OrderItem,
+    OrderStatus,
+    PaymentMethod,
+    PaymentStatus,
+)
 from app.models.user import User, UserRole
 from app.schemas.orders import DeliveryTaskOfferRead, DeliveryTaskRead
 
@@ -142,6 +150,10 @@ def available_tasks(
         .where(
             Delivery.status == DeliveryStatus.UNASSIGNED,
             Order.status == OrderStatus.READY,
+            or_(
+                Order.payment_method == PaymentMethod.COD,
+                Order.payment_status == PaymentStatus.PAID,
+            ),
         )
         .order_by(Delivery.updated_at)
         .limit(limit)
