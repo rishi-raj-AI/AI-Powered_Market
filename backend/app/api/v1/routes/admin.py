@@ -15,7 +15,7 @@ from app.models.governance import AdministrativeAuditEvent
 from app.models.orders import Delivery, DeliveryStatus, Order, OrderStatus, PaymentStatus
 from app.models.user import User, UserRole
 from app.services.notifications import enqueue_notification
-from app.services.order_transitions import transition_delivery
+from app.services.order_transitions import payment_allows_fulfillment, transition_delivery
 from app.services.delivery_performance import summarize_delivery_performance
 from app.services.governance_audit import record_admin_action
 
@@ -201,7 +201,12 @@ def admin_assign_delivery(
     if delivery is None:
         raise HTTPException(status_code=404, detail="Delivery not found")
     order = db.scalar(select(Order).where(Order.id == delivery.order_id).with_for_update())
-    if delivery.status != DeliveryStatus.UNASSIGNED or order is None or order.status != OrderStatus.READY:
+    if (
+        delivery.status != DeliveryStatus.UNASSIGNED
+        or order is None
+        or order.status != OrderStatus.READY
+        or not payment_allows_fulfillment(order)
+    ):
         raise HTTPException(status_code=409, detail="Delivery is no longer available for assignment")
     rider = db.get(User, payload.rider_id)
     if rider is None or rider.role != UserRole.DELIVERY or not rider.is_active or not rider.is_verified:

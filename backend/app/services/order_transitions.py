@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 
-from app.models.orders import Delivery, DeliveryStatus, Order, OrderStatus
+from app.models.orders import Delivery, DeliveryStatus, Order, OrderStatus, PaymentMethod, PaymentStatus
 
 ORDER_TRANSITIONS: Mapping[OrderStatus, frozenset[OrderStatus]] = {
     OrderStatus.PLACED: frozenset({OrderStatus.ACCEPTED, OrderStatus.CANCELLED}),
@@ -40,6 +40,16 @@ def can_transition_order(current: OrderStatus, target: OrderStatus) -> bool:
 
 def can_transition_delivery(current: DeliveryStatus, target: DeliveryStatus) -> bool:
     return target in DELIVERY_TRANSITIONS.get(current, frozenset())
+
+
+def payment_allows_fulfillment(order: Order) -> bool:
+    """Whether an order may enter or continue physical delivery.
+
+    COD has no online payment to confirm and is settled only after its exact
+    server-recorded collection. Every non-COD order must have a confirmed
+    payment before the merchant/rider workflow can release goods.
+    """
+    return order.payment_method == PaymentMethod.COD or order.payment_status == PaymentStatus.PAID
 
 
 def transition_order(order: Order, target: OrderStatus) -> None:

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ensure_capability, get_current_user, get_db, require_roles
@@ -18,6 +18,8 @@ from app.models.orders import (
     Order,
     OrderItem,
     OrderStatus,
+    PaymentMethod,
+    PaymentStatus,
 )
 from app.models.user import User, UserRole
 from app.schemas.orders import (
@@ -37,6 +39,7 @@ from app.services.pricing import order_total, resolve_delivery_fee
 from app.services.order_transitions import (
     can_transition_delivery,
     can_transition_order,
+    payment_allows_fulfillment,
     transition_delivery,
     transition_order,
 )
@@ -426,6 +429,11 @@ def update_order_status(
             status_code=409,
             detail=f"Invalid transition from {order.status.value} to {payload.status.value}",
         )
+    if payload.status == OrderStatus.READY and not payment_allows_fulfillment(order):
+        raise HTTPException(
+            status_code=409,
+            detail="Online payment must be confirmed before an order can be ready for delivery",
+        )
 
     if payload.status == OrderStatus.CANCELLED:
         if user.role == UserRole.ADMIN:
@@ -475,6 +483,10 @@ def available_deliveries(
         .where(
             Delivery.status == DeliveryStatus.UNASSIGNED,
             Order.status == OrderStatus.READY,
+            or_(
+                Order.payment_method == PaymentMethod.COD,
+                Order.payment_status == PaymentStatus.PAID,
+            ),
         )
         .limit(limit)
     )
@@ -517,6 +529,7 @@ def claim_delivery(
     if (
         order is None
         or order.status != OrderStatus.READY
+        or not payment_allows_fulfillment(order)
         or not can_transition_delivery(delivery.status, DeliveryStatus.ASSIGNED)
     ):
         raise HTTPException(status_code=409, detail="Delivery is not available")
@@ -585,6 +598,8 @@ def update_delivery_status(
         raise HTTPException(status_code=409, detail="Delivery order is missing")
 
     if payload.status == DeliveryStatus.PICKED_UP:
+        if not payment_allows_fulfillment(order):
+            raise HTTPException(status_code=409, detail="Online payment must be confirmed before pickup")
         if not can_transition_order(order.status, OrderStatus.OUT_FOR_DELIVERY):
             raise HTTPException(
                 status_code=409,

@@ -1,9 +1,10 @@
 import pytest
 
-from app.models.orders import DeliveryStatus, OrderStatus
+from app.models.orders import DeliveryStatus, OrderStatus, PaymentMethod, PaymentStatus
 from app.services.order_transitions import (
     can_transition_delivery,
     can_transition_order,
+    payment_allows_fulfillment,
     transition_delivery,
     transition_order,
 )
@@ -54,3 +55,31 @@ def test_transition_helpers_reject_illegal_edges() -> None:
         transition_order(order, OrderStatus.DELIVERED)
     with pytest.raises(ValueError, match="Invalid delivery transition"):
         transition_delivery(delivery, DeliveryStatus.PICKED_UP)
+
+
+def test_payment_must_be_confirmed_before_prepaid_fulfillment() -> None:
+    cod = type(
+        "OrderStub",
+        (),
+        {"payment_method": PaymentMethod.COD, "payment_status": PaymentStatus.PENDING},
+    )()
+    paid_upi = type(
+        "OrderStub",
+        (),
+        {"payment_method": PaymentMethod.UPI, "payment_status": PaymentStatus.PAID},
+    )()
+    pending_upi = type(
+        "OrderStub",
+        (),
+        {"payment_method": PaymentMethod.UPI, "payment_status": PaymentStatus.PENDING},
+    )()
+    failed_upi = type(
+        "OrderStub",
+        (),
+        {"payment_method": PaymentMethod.UPI, "payment_status": PaymentStatus.FAILED},
+    )()
+
+    assert payment_allows_fulfillment(cod)
+    assert payment_allows_fulfillment(paid_upi)
+    assert not payment_allows_fulfillment(pending_upi)
+    assert not payment_allows_fulfillment(failed_upi)
