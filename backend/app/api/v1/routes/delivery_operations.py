@@ -51,9 +51,29 @@ from app.services.settlements import (
 )
 from app.services.stock import restore_order_stock_once
 from app.services.governance_audit import record_admin_action
+from app.services.rate_limit import RateLimitExceeded, RateLimitUnavailable, rate_limiter
 
 router = APIRouter(tags=["Delivery Operations"])
 OTP_TTL_MINUTES = 15
+OTP_RESEND_COOLDOWN_SECONDS = 60
+OTP_MAX_CHALLENGES = 5
+OTP_MAX_VERIFICATION_ATTEMPTS = 5
+
+
+def _limit_proof_requests(user: User, *, action: str, limit: int) -> None:
+    try:
+        rate_limiter.enforce(
+            f"delivery-proof-{action}", str(user.id), limit=limit, window_seconds=900
+        )
+    except RateLimitExceeded as exc:
+        raise HTTPException(status_code=429, detail="Too many delivery code requests. Try again later.") from exc
+    except RateLimitUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Delivery code service is temporarily unavailable.") from exc
+
+
+def _require_unlocked_proof(proof: DeliveryProof) -> None:
+    if proof.verification_locked_at is not None or proof.verification_attempt_count >= OTP_MAX_VERIFICATION_ATTEMPTS:
+        raise HTTPException(status_code=429, detail="Delivery code verification is locked. Contact support.")
 
 
 def _otp_hash(otp: str) -> str:
@@ -364,16 +384,41 @@ def issue_delivery_proof_challenge(
     if delivery.status != DeliveryStatus.PICKED_UP or order.status != OrderStatus.OUT_FOR_DELIVERY:
         raise HTTPException(status_code=409, detail="Proof challenge is available only after pickup")
 
-    otp = f"{secrets.randbelow(1_000_000):06d}"
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=OTP_TTL_MINUTES)
     proof = db.scalar(select(DeliveryProof).where(DeliveryProof.delivery_id == delivery.id).with_for_update())
+    now = datetime.now(timezone.utc)
+    if proof is not None:
+        if proof.verified_at is not None:
+            raise HTTPException(status_code=409, detail="Delivery proof is already verified. Continue completion.")
+        _require_unlocked_proof(proof)
+        if proof.challenge_count >= OTP_MAX_CHALLENGES:
+            raise HTTPException(status_code=429, detail="Delivery code request limit reached. Contact support.")
+        last_challenge = proof.last_challenge_at or proof.updated_at
+        if last_challenge is not None and now < last_challenge + timedelta(seconds=OTP_RESEND_COOLDOWN_SECONDS):
+            raise HTTPException(
+                status_code=429,
+                detail="Wait before requesting another delivery code.",
+                headers={"Retry-After": str(OTP_RESEND_COOLDOWN_SECONDS)},
+            )
+
+    _limit_proof_requests(user, action="challenge", limit=20)
+    otp = f"{secrets.randbelow(1_000_000):06d}"
+    expires_at = now + timedelta(minutes=OTP_TTL_MINUTES)
     if proof is None:
-        proof = DeliveryProof(delivery_id=delivery.id, otp_hash=_otp_hash(otp), otp_expires_at=expires_at)
+        proof = DeliveryProof(
+            delivery_id=delivery.id,
+            otp_hash=_otp_hash(otp),
+            otp_expires_at=expires_at,
+            last_challenge_at=now,
+            challenge_count=1,
+            verification_attempt_count=0,
+        )
         db.add(proof)
     else:
         proof.otp_hash = _otp_hash(otp)
         proof.otp_expires_at = expires_at
-        proof.verified_at = None
+        proof.last_challenge_at = now
+        proof.challenge_count += 1
+        # A new code never replenishes the delivery's failed-guess budget.
 
     enqueue_notification(
         db,
@@ -409,10 +454,25 @@ def verify_delivery_proof(
     proof = db.scalar(select(DeliveryProof).where(DeliveryProof.delivery_id == delivery.id).with_for_update())
     if proof is None:
         raise HTTPException(status_code=409, detail="Generate a delivery verification challenge first")
+    if proof.verified_at is not None:
+        # Authorized callers can already read this proof. Replay its immutable
+        # evidence after a lost response, even if the original code has expired.
+        return proof
+    _require_unlocked_proof(proof)
+    _limit_proof_requests(user, action="verify", limit=60)
     now = datetime.now(timezone.utc)
-    if proof.otp_expires_at < now:
+    if proof.otp_expires_at <= now:
         raise HTTPException(status_code=409, detail="Delivery verification code expired")
     if not hmac.compare_digest(proof.otp_hash, _otp_hash(payload.otp)):
+        proof.verification_attempt_count += 1
+        locked = proof.verification_attempt_count >= OTP_MAX_VERIFICATION_ATTEMPTS
+        if locked:
+            proof.verification_locked_at = now
+        # Raising without committing would roll back the failed-guess budget.
+        # The delivery/order/proof locks serialize guesses and concurrent sends.
+        db.commit()
+        if locked:
+            raise HTTPException(status_code=429, detail="Delivery code verification is locked. Contact support.")
         raise HTTPException(status_code=422, detail="Invalid delivery verification code")
 
     proof.verified_at = now
