@@ -6,7 +6,7 @@ Verified 2026-10-03 UTC.
 |---|---|
 | Local main / origin/main | Both `f64e8bfd99b35b37f24ccb655856aa328c16e76e` |
 | Baseline CI | All four required gates passed for Flutter delivery-completion PR #201 final head `2b7288067ce81f70e7aaf7cc68c09275ce4aa3b3` before merge; its P0 UPI prerequisite #202 had already merged with green CI. |
-| Open PR | None — isolated delivery proof limits are under implementation on `fix/delivery-proof-hardening`. |
+| Open PR | [#203](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/203) — delivery proof limits on `fix/delivery-proof-hardening`; focused review passed, exact-final-head CI pending. |
 | Main checkout | Protected owner Flutter/iOS modifications exist; do not reset, clean, stash, or alter them |
 | Product media B2 | Isolated `gaonone-product-media-intake` worktree; deferred |
 | Auth | Firebase verifies external identity; GaonOne issues sessions and owns roles/permissions. Web and Flutter exchange Firebase Google ID tokens for GaonOne sessions. |
