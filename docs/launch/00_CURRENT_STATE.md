@@ -6,7 +6,7 @@ Verified 2026-10-04 UTC.
 |---|---|
 | Local main / origin/main | Both `4e527879833f59129c4601eac7887b54dd5f6d86` |
 | Baseline CI | All four required gates passed for delivery-proof PR #203 final head `7de358f0029c0482c15bb20de1dc6955b7d1ae01` before merge. |
-| Open PR | None — new isolated `test/delivery-web-acceptance` exercises the web rider handoff and recovery path. |
+| Open PR | [#204](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/204) — web rider handoff recovery and acceptance on `test/delivery-web-acceptance`; required CI pending. |
 | Main checkout | Protected owner Flutter/iOS modifications exist; do not reset, clean, stash, or alter them |
 | Product media B2 | Isolated `gaonone-product-media-intake` worktree; deferred |
 | Auth | Firebase verifies external identity; GaonOne issues sessions and owns roles/permissions. Web and Flutter exchange Firebase Google ID tokens for GaonOne sessions. |

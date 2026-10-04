@@ -159,7 +159,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-Finish focused web rider handoff acceptance in `gaonone-launch-delivery-web-acceptance` / `test/delivery-web-acceptance`. Demonstrate failures before narrow remediation, run browser/build validation, inspect desktop/narrow fixture screenshots without claiming device or live-auth acceptance, then open its PR. Merge only after all four final-head gates and focused review pass. Preserve all prior worktrees and the seven protected owner changes. Do not deploy.
+PR #204 is open for the completed web handoff slice in `gaonone-launch-delivery-web-acceptance` / `test/delivery-web-acceptance`. Production webpack build, 60 focused tests, all 400 browser tests, and focused review pass. Evaluate all four required gates on the final documented PR head; merge only if green and no unresolved P0/P1 remains. Preserve the exact seven owner changes when advancing protected main. Then create a fresh branch from the new origin/main for merchant order-transition acceptance, starting with the actually linked `/merchant` console and checking `/merchant/orders` progression parity. Exclude store creation, inventory/media, and settlement redesign. Do not deploy.
 
 ## Preservation contract
 
