@@ -5,8 +5,8 @@ Run explicitly inside the backend container after deploying the code:
 
 This script never changes or deactivates existing villages/service areas. If an
 existing Washi record conflicts with the intended configuration, it aborts.
-The coordinates are an approximate Washi town-centre point; verify them before
-using this service area for real customer serviceability decisions.
+The service-area hub uses the coordinates supplied for the intended Washi
+service point; verify the point on the map before relying on live serviceability.
 """
 
 from __future__ import annotations
@@ -27,10 +27,9 @@ TALUKA = "Washi"
 DISTRICT = "Dharashiv"
 STATE = "Maharashtra"
 PINCODE = "413503"
-# Approximate town-centre coordinates; confirm on the ground before relying on
-# the radius for live customer serviceability.
-LATITUDE = 18.5422
-LONGITUDE = 75.7789
+# Coordinates supplied for the intended Washi service hub.
+LATITUDE = 18.541972471907247
+LONGITUDE = 75.77497571691751
 SERVICE_AREA_NAME = "Washi Pilot Cluster"
 RADIUS_KM = 12.0
 
@@ -183,10 +182,7 @@ def main() -> None:
     print(f"Service area ID: {area_id} ({'created' if created_area else 'already existed'})")
     print(f"Service area: {SERVICE_AREA_NAME}; radius: {RADIUS_KM:g} km")
     print("Existing service areas were not modified.")
-    print(
-        "NOTE: village coordinates are approximate; verify the hub point before "
-        "relying on live serviceability results."
-    )
+    print("Hub coordinates used: 18.541972471907247, 75.77497571691751")
 
 
 if __name__ == "__main__":
