@@ -162,7 +162,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-The active security remediation is in `gaonone-launch-next-security-remediation` / `fix/next-security-2026-10`, based on `39c356e`. Complete focused review, commit, and open its isolated PR. Evaluate all four required gates only on its final documented head; merge only if green with no unresolved P0/P1. Safely fast-forward protected main while preserving the exact seven owner changes. Then rebase the independently validated merchant transition recovery from new `origin/main`, recheck its focused evidence and review, and open its isolated PR. Exclude store creation, inventory/media, and settlement redesign. Do not deploy.
+Security [PR #208](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/208) is open from `gaonone-launch-next-security-remediation` / `fix/next-security-2026-10`, based on `39c356e`. Evaluate all four required gates only on its final documented head; merge only if green with no unresolved P0/P1. Safely fast-forward protected main while preserving the exact seven owner changes. Then rebase the independently validated merchant transition recovery from new `origin/main`, recheck its focused evidence and review, and open its isolated PR. Exclude store creation, inventory/media, and settlement redesign. Do not deploy.
 
 ## Preservation contract
 

@@ -7,7 +7,7 @@ Verified 2026-10-23 UTC.
 | Remote main / security baseline | `origin/main` = `39c356e5df5ab733f226a77b4bd74040636ef904`; #204 is merged, and #205/#206 follow it. |
 | Protected golden main | Last verified at `45b4b28144b38cf11b7c2e688a7a7ae651be1078`; safe fast-forward is pending and must preserve the seven owner-owned Flutter/iOS changes. |
 | Baseline CI | All four required gates passed for web delivery-handoff PR #204 final head `604d34215070740f2751c261e29af38fdba9528a` before merge. |
-| Security remediation | Isolated `gaonone-launch-next-security-remediation` / `fix/next-security-2026-10`; no PR yet. It upgrades the newly advisory-affected framework/resolution set only. |
+| Security remediation | Isolated `gaonone-launch-next-security-remediation` / `fix/next-security-2026-10`; [PR #208](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/208) is open for the newly advisory-affected framework/resolution set only. Required final-head CI is pending. |
 | Main checkout | Protected owner Flutter/iOS modifications exist; do not reset, clean, stash, or alter them |
 | Product media B2 | Isolated `gaonone-product-media-intake` worktree; deferred |
 | Auth | Firebase verifies external identity; GaonOne issues sessions and owns roles/permissions. Web and Flutter exchange Firebase Google ID tokens for GaonOne sessions. |
