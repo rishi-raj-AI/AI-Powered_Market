@@ -57,6 +57,21 @@ const preparationControls = (page: Page) => ({
   refresh: page.getByRole('button', {name: 'Refresh', exact: true}),
 });
 
+test('primary merchant console keeps order actions inside the mobile viewport', async ({page}, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile-chrome', 'Mobile viewport regression coverage.');
+  await installMerchantOrders(page);
+  await page.goto('/merchant');
+  await expect(controls(page).accept).toBeVisible();
+  await controls(page).accept.scrollIntoViewIfNeeded();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  const actionCenterIsClickable = await controls(page).accept.evaluate(button => {
+    const bounds = button.getBoundingClientRect();
+    const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+    return bounds.left >= 0 && bounds.right <= document.documentElement.clientWidth && (hit === button || button.contains(hit));
+  });
+  expect(actionCenterIsClickable).toBe(true);
+});
+
 test('primary merchant console follows server order progression', async ({page}) => {
   const state = await installMerchantOrders(page);
   await page.goto('/merchant');
