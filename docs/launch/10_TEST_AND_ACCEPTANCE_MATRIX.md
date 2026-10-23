@@ -12,3 +12,5 @@
 Repository commands: `make test-backend`, `make test-web`, `make test-e2e`, and `make mobile-check`; CI also runs Android analysis/tests/build and production compose/image validation. Do not use arbitrary sleeps to stabilize async tests.
 
 2026-10-04 web delivery slice: production webpack build, 60 focused handoff cases, and all 400 browser cases pass. [16_DELIVERY_WEB_ACCEPTANCE.md](16_DELIVERY_WEB_ACCEPTANCE.md) records exact server contracts, duplicate/uncertain-response recovery, loading/error/empty distinctions, accessibility/target/overflow checks, and inspected synthetic-fixture desktop/narrow screenshots. Final-head CI and actual device/live-provider evidence remain separate gates.
+
+2026-10-23 dependency security remediation: clean `npm ci` resolves Next `16.4.2`, React/React DOM `19.0.9`, Sharp `0.35.5`, and source-map-js `1.2.2`; production `npm audit --omit=dev` is clean. The production webpack build and all 400 browser cases pass across Chromium, Firefox, WebKit, and mobile Chrome. Local production-image validation is unavailable because the host Docker daemon is not running; required compose/image CI remains authoritative.
