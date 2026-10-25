@@ -56,6 +56,6 @@ It passed all 6 Chromium cases. The inspected captures show controls, Hindi/Mara
 
 ## Remaining gates
 
-The production webpack build passed. A complete local browser invocation reached 475 passed and 3 existing deliberate non-mobile skips before two unrelated WebKit `page.goto` cases timed out immediately after the host's Next cache reported `No space left on device` (367MiB free); the new admin acceptance cases passed in all four browser targets. This is an environment-limited full-suite result, not a passing full-suite claim or a source remediation. PR #212 exact-final-head required CI and review remain mandatory before merge.
+The production webpack build passed. A complete local browser invocation reached 475 passed and 3 existing deliberate non-mobile skips before two unrelated WebKit `page.goto` cases timed out immediately after the host's Next cache reported `No space left on device` (367MiB free); the new admin acceptance cases passed in all four browser targets. This is an environment-limited full-suite result, not a passing full-suite claim or a source remediation. PR #212 subsequently passed `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` on final head `76f83b96fc7236f42cbe3217d2bc37340f89f52e` and merged as `c25b9a15157d983788961ad247280b4acb75ab71`; no deployment ran.
 
 This does not complete Android/iOS device acceptance, Firebase owner setup, backend integration evidence, complete admin/support visual coverage, or release-candidate validation. No deployment is authorized.
