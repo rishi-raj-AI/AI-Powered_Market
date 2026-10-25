@@ -167,7 +167,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-Complete focused source review, commit the locally validated `test/admin-operations-acceptance` slice, push it, and open a PR. Evaluate `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` only on the exact final PR head. Merge only after all are green and no unresolved P0/P1 appears; then safely fast-forward protected main while preserving all seven owner-owned Flutter/iOS changes. Exclude store creation, inventory/media, settlement redesign, deployment, and broad UI redesign.
+PR #210 is open from the locally validated `test/admin-operations-acceptance` slice. Evaluate `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` only on its exact final head. Merge only after all are green and no unresolved P0/P1 appears; then safely fast-forward protected main while preserving all seven owner-owned Flutter/iOS changes. Exclude store creation, inventory/media, settlement redesign, deployment, and broad UI redesign.
 
 ## Preservation contract
 
