@@ -8,6 +8,8 @@ export const normalAdmin:MockUser={id:'user-admin',phone:'+919111111111',full_na
 export const activeRider:MockUser={id:'user-rider-active',phone:'+917774877196',full_name:'Bhushan',role:'delivery',is_super_admin:false,is_active:true,is_verified:true,created_at:'2026-08-28T00:00:00Z'};
 export const busyRider:MockUser={id:'user-rider-busy',phone:'+919333333333',full_name:'Suresh',role:'delivery',is_super_admin:false,is_active:true,is_verified:true,created_at:'2026-08-28T00:00:00Z'};
 export const riderCandidate:MockUser={id:'user-rider',phone:'+919222222222',full_name:'Rider Candidate',role:'customer',is_super_admin:false,is_active:true,is_verified:true,created_at:'2026-08-28T00:00:00Z'};
+const normalAdminCapabilities=['order.read','merchant.manage','rider.read','rider.operations','support.manage','user.read','media.moderate','notification.operations'];
+const superAdminCapabilities=[...normalAdminCapabilities,'admin.manage','payment.read','refund.read','refund.write','settlement.write','settlement.read','delivery_financial.write','audit.read'];
 const overview={users:7,villages:1,active_stores:1,merchants:{pending:1,approved:1,suspended:0},orders:{total:1,by_status:{ready:1}},operations:{low_stock_listings:0,ready_unassigned_deliveries:1,active_delivery_partners:2},paid_gmv:'0',gross_order_value:'240'};
 const pendingMerchant={id:'merchant-pending',owner_user_id:'user-customer',business_name:'Nimbu Kirana',gstin:null,status:'pending',created_at:'2026-08-28T00:00:00Z'};
 const approvedMerchant={id:'merchant-approved',owner_user_id:'merchant-owner',business_name:'Nimbu Kirana',gstin:null,status:'approved',created_at:'2026-08-28T00:00:00Z'};
@@ -24,7 +26,7 @@ export async function installApiMocks(page:Page,currentUser:MockUser=customer){
   await page.route('http://localhost:8000/api/v1/**',async route=>{
     const request=route.request();const url=new URL(request.url());const path=url.pathname.replace('/api/v1','');const method=request.method();
     if(path==='/users/me')return route.fulfill({json:currentUser});
-    if(path==='/users/me/capabilities')return route.fulfill({json:{is_super_admin:Boolean(currentUser.is_super_admin),capabilities:currentUser.role==='admin'?['support.manage','user.read']:[]}});
+    if(path==='/users/me/capabilities')return route.fulfill({json:{is_super_admin:Boolean(currentUser.is_super_admin),capabilities:currentUser.role==='admin'?(currentUser.is_super_admin?superAdminCapabilities:normalAdminCapabilities):[]}});
     if(path==='/admin/overview')return route.fulfill({json:overview});
     if(path==='/admin/users')return route.fulfill({json:[superAdmin,normalAdmin,activeRider,busyRider,riderCandidate,customer,merchantUser]});
     if(path==='/admin/deliveries/active')return route.fulfill({json:[activeDelivery]});

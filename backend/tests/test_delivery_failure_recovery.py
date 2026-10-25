@@ -15,6 +15,7 @@ from sqlalchemy import select
 
 from app.db.session import SessionLocal
 from app.main import app
+from app.models.governance import AdministrativeAuditEvent
 from app.models.integrations import CodCollection, SettlementEntry
 from app.models.orders import (
     Delivery,
@@ -49,8 +50,11 @@ def admin_token() -> str:
     return response.json()["access_token"]
 
 
-def auth(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+def auth(token: str, request_id: str | None = None) -> dict[str, str]:
+    headers = {"Authorization": f"Bearer {token}"}
+    if request_id:
+        headers["X-Request-ID"] = request_id
+    return headers
 
 
 def _failed_after_pickup(db, **order_kwargs):
@@ -76,9 +80,10 @@ def test_prepaid_failure_after_pickup_returns_order_and_owes_a_refund() -> None:
         db.commit()
         order_id, delivery_id = order.id, delivery.id
 
+    request_id = f"delivery-return-{uuid4()}"
     response = client.post(
         f"/api/v1/admin/deliveries/{delivery_id}/resolve-failure",
-        headers=auth(admin_token()),
+        headers=auth(admin_token(), request_id),
         json={"resolution": "return_to_store", "notes": "Rider returned the goods"},
     )
     assert response.status_code == 200, response.text
@@ -107,6 +112,27 @@ def test_prepaid_failure_after_pickup_returns_order_and_owes_a_refund() -> None:
         assert entry.void_reason == "delivery_returned"
         # Stock went back on the shelf.
         assert order.stock_restored_at is not None
+        audit = db.scalar(
+            select(AdministrativeAuditEvent).where(
+                AdministrativeAuditEvent.request_id == request_id,
+                AdministrativeAuditEvent.resource_type == "delivery",
+                AdministrativeAuditEvent.resource_id == str(delivery_id),
+            )
+        )
+        assert audit is not None
+        assert audit.actor_user_id is not None
+        assert audit.action == "delivery.failure_returned_to_store"
+        assert audit.capability == "settlement.write"
+        assert audit.previous_state == {
+            "delivery_status": "failed",
+            "order_status": "out_for_delivery",
+        }
+        assert audit.resulting_state == {
+            "delivery_status": "failed",
+            "order_status": "returned",
+            "refund_requested": True,
+            "settlement_voided": True,
+        }
         # And the whole thing is explainable afterwards.
         events = (
             db.query(StatusTransitionEvent)
