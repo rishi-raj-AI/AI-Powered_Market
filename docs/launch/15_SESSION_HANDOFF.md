@@ -175,7 +175,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-Finish focused review, record the final support source head, and open the narrow Gate E support-operations PR. Evaluate `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` only on its exact final head; merge only after all pass and no unresolved P0/P1 remains. Do not deploy. Preserve the protected checkout's seven owner-owned Flutter/iOS changes during any later main update.
+Gate E support-operations PR #213 is open. Evaluate `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` only on its exact final head; merge only after all pass and no unresolved P0/P1 remains. Do not deploy. Preserve the protected checkout's seven owner-owned Flutter/iOS changes during any later main update.
 
 ## Preservation contract
 

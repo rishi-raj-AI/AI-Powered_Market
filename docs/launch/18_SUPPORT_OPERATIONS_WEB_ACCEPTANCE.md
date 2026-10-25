@@ -59,4 +59,4 @@ It passed all 8 Chromium cases. The inspected captures show 44px actions/selects
 
 ## Remaining gates
 
-Focused review, exact-final-head `backend-check`, `build-and-ui`, `analyze-and-build-android`, `production-compose-and-images`, and PR review remain mandatory before merge. This does not complete Android/iOS device acceptance, Firebase owner setup, backend integration evidence, complete support/admin visual coverage, or release-candidate validation. No deployment is authorized.
+Gate E [PR #213](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/213) exact-final-head `backend-check`, `build-and-ui`, `analyze-and-build-android`, `production-compose-and-images`, and PR review remain mandatory before merge. This does not complete Android/iOS device acceptance, Firebase owner setup, backend integration evidence, complete support/admin visual coverage, or release-candidate validation. No deployment is authorized.
