@@ -117,7 +117,7 @@ export default function Support(){
     setDrafts(current=>({...current,[selected.id]:{body:value,idempotencyKey:null}}));
   }
 
-  return <><Nav/><main className="container section">
+  return <><Nav/><main className="container section supportOperations">
     <div className="sectionHead"><div><span className="eyebrow">Customer support</span><h2>Get help</h2><p className="muted">Tickets are ownership-checked. Support cannot bypass order or payment rules.</p></div></div>
     {msg&&<div className="notice" role="alert">{msg}</div>}
     <div className="splitGrid"><div className="stack">
