@@ -1,6 +1,6 @@
 'use client';
 
-import {FormEvent,useEffect,useState} from 'react';
+import {FormEvent,useEffect,useRef,useState} from 'react';
 import {useRouter} from 'next/navigation';
 import {BriefcaseBusiness,CheckCircle2,ShieldCheck,UserRound} from 'lucide-react';
 import Link from 'next/link';
@@ -13,31 +13,41 @@ export default function AccountPage(){
   const [merchant,setMerchant]=useState<Merchant|null>(null);
   const [businessName,setBusinessName]=useState('');
   const [gstin,setGstin]=useState('');
+  const [hasLoaded,setHasLoaded]=useState(false);
   const [loading,setLoading]=useState(true);
+  const [loadError,setLoadError]=useState('');
   const [submitting,setSubmitting]=useState(false);
   const [message,setMessage]=useState('');
   const [fullName,setFullName]=useState('');
+  const loadRequest=useRef(0);
 
-  useEffect(()=>{
-    (async()=>{
-      const startedWithToken=Boolean(getToken());
-      try{
-        const user=await gaonApi.me();setMe(user);setFullName(user.full_name||'');
-        if(user.role==='merchant'){
-          try{setMerchant(await gaonApi.merchant())}catch(e){if(!(e instanceof ApiError&&e.status===404))throw e}
-        }
-      }catch(e:any){
-        if(e instanceof ApiError&&e.status===401){
-          // A stale GaonOne session is already cleared and redirected by the
-          // shared API boundary, which preserves this page as a safe return.
-          // Only a visitor who arrived without a session needs this fallback.
-          if(!startedWithToken)router.replace('/login');
-          return;
-        }
-        setMessage(e.message||'Unable to load account.');
-      }finally{setLoading(false)}
-    })();
-  },[router]);
+  async function load(){
+    const request=++loadRequest.current;
+    const startedWithToken=Boolean(getToken());
+    setLoading(true);setLoadError('');
+    try{
+      const user=await gaonApi.me();
+      if(request!==loadRequest.current)return;
+      setMe(user);setFullName(user.full_name||'');
+      if(user.role==='merchant'){
+        try{setMerchant(await gaonApi.merchant())}catch(e){if(!(e instanceof ApiError&&e.status===404))throw e}
+      }
+      if(request!==loadRequest.current)return;
+      setHasLoaded(true);
+    }catch(e:unknown){
+      if(request!==loadRequest.current)return;
+      if(e instanceof ApiError&&e.status===401){
+        // A stale GaonOne session is already cleared and redirected by the
+        // shared API boundary, which preserves this page as a safe return.
+        // Only a visitor who arrived without a session needs this fallback.
+        if(!startedWithToken)router.replace('/login');
+        return;
+      }
+      setLoadError(e instanceof Error?e.message:'Unable to load account.');
+    }finally{if(request===loadRequest.current)setLoading(false)}
+  }
+
+  useEffect(()=>{void load()},[router]);
 
   async function apply(e:FormEvent){
     e.preventDefault();
@@ -53,9 +63,10 @@ export default function AccountPage(){
 
   async function saveProfile(e:FormEvent){e.preventDefault();if(!fullName.trim()){setMessage('Enter your name.');return}setSubmitting(true);setMessage('');try{const user=await gaonApi.updateProfile(fullName.trim());setMe(user);setFullName(user.full_name||'');setMessage('Name updated.')}catch(e:any){setMessage(e.message||'Unable to update your name.')}finally{setSubmitting(false)}}
 
-  if(loading)return <><Nav/><main className="container section"><div className="panel"><p>Loading account…</p></div></main></>;
-
-  return <><Nav/><main className="container section">
+  return <><Nav/><main className="container section customerAccount" aria-busy={loading||submitting}>
+    {loading&&!hasLoaded&&<div className="panel"><p role="status">Loading account…</p></div>}
+    {loadError&&<div className="notice" role="alert"><span>Unable to load your account. {loadError}</span><button type="button" className="btn secondary" disabled={loading} onClick={()=>void load()}>Retry account</button></div>}
+    {hasLoaded&&<>
     <div className="sectionHead"><div><span className="eyebrow">Your account</span><h2>Profile & business</h2><p className="muted">Manage your GaonOne identity and start selling locally.</p></div></div>
     {message&&<div className="notice">{message}</div>}
     <div className="grid" style={{gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:18}}>
@@ -65,14 +76,14 @@ export default function AccountPage(){
         <form className="stack" onSubmit={saveProfile}><label className="field" htmlFor="account-name">Name<input id="account-name" value={fullName} onChange={event=>setFullName(event.target.value)} maxLength={120} autoComplete="name"/></label><button className="btn secondary" disabled={submitting}>{submitting?'Saving…':'Save name'}</button></form>
         <div><strong>Role</strong><p className="muted" style={{textTransform:'capitalize'}}>{me?.role||'customer'}</p></div>
         <div className="row"><ShieldCheck size={17}/><span>{me?.is_verified?(me.phone?'Phone verified':'Google account verified'):'Verification pending'}</span></div>
-        <div className="row"><Link className="btn secondary" href="/account/addresses">Saved addresses</Link><Link className="btn ghost" href="/account/devices">Notification devices</Link></div>
+        <div className="row accountLinks"><Link className="btn secondary" href="/account/addresses">Saved addresses</Link><Link className="btn ghost" href="/account/devices">Notification devices</Link></div>
       </section>
 
       {merchant?<section className="panel stack">
         <div className="row"><span className="storeIcon"><BriefcaseBusiness size={22}/></span><div><h3 style={{margin:0}}>{merchant.business_name}</h3><p className="muted" style={{margin:'4px 0 0'}}>Merchant application</p></div></div>
         <div className="row"><CheckCircle2 size={17}/><strong style={{textTransform:'capitalize'}}>Status: {merchant.status}</strong></div>
         {merchant.status==='pending'&&<p className="muted">Your application is waiting for GaonOne admin approval. Once approved, sign in again and the Merchant workspace will open automatically.</p>}
-        {merchant.status==='approved'&&<button className="btn" onClick={()=>router.push('/merchant')}>Open Merchant workspace</button>}
+        {merchant.status==='approved'&&<button type="button" className="btn" onClick={()=>router.push('/merchant')}>Open Merchant workspace</button>}
         {merchant.status==='suspended'&&<p className="muted">This merchant account is suspended. Contact the GaonOne pilot administrator.</p>}
       </section>:
       me?.role==='customer'?<section className="panel stack">
@@ -83,6 +94,6 @@ export default function AccountPage(){
           <button className="btn" disabled={submitting}>{submitting?'Submitting…':'Apply as merchant'}</button>
         </form>
       </section>:<section className="panel stack"><h3>Role workspace</h3><p className="muted">Your current role is <strong>{me?.role}</strong>. Use the navigation above to open its workspace.</p></section>}
-    </div>
+    </div></>}
   </main></>;
 }
