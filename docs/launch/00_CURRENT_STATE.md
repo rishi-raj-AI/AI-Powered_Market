@@ -1,4 +1,6 @@
-# Current state
+# Historical current-state snapshot
+
+> Superseded by [`LAUNCH_STATUS.md`](LAUNCH_STATUS.md) and [`15_SESSION_HANDOFF.md`](15_SESSION_HANDOFF.md). This retained 2026-10-24 snapshot is historical context only and must not be used as the active baseline, PR, CI, or resume state.
 
 Verified 2026-10-24 UTC.
 
