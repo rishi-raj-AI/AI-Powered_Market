@@ -1,5 +1,14 @@
 # Session handoff
 
+## Current checkpoint — 2026-10-26
+
+- Gate E customer-purchase [PR #215](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/215) merged normally as `22c2c135e0e62ac8703038eee643df6e5d3f33c7` after all four required checks passed on final head `29ebb70d39e7d3b9f78cfce852458acb2e26c732`. No deployment ran.
+- The protected checkout and its origin tracking reference were safely advanced to `22c2c135e0e62ac8703038eee643df6e5d3f33c7`; the exact five tracked and two untracked owner-owned Flutter/iOS paths remain hash-identical, no unexplained nonignored modification appeared, and local `main == origin/main`.
+- Created fresh isolated `/Users/rishiraj/Documents/Personal_Projects/AI-Powered_Market/gaonone-launch-customer-account-web-acceptance` on `feat/launch-customer-account-web-acceptance` from that new main. Do not reuse the protected checkout or prior customer-purchase, product-media, real-OTP, or web-foundation worktrees.
+- The bounded customer-account audit found that `/account` had no distinct initial failure/retry boundary, `/account/addresses` and `/account/devices` could show empty conclusions while their reads were unconfirmed, inherited account controls were 40px/42px, and Safari could overflow merchant-application inputs at 320px. The isolated remedy keeps unconfirmed data behind accessible loading/retry state, labels later address/device refresh failures as last-confirmed data, scopes 44px controls/input containment to account roots, and preserves GaonOne session expiry, account/address/device APIs, merchant application, ownership, backend authorization, configuration, and deployment behavior.
+- Local validation passes `npm run build -- --webpack`, the 56-case four-browser acceptance suite, the combined 144-case account/auth/location/customer regression suite, and 14 Chromium evidence cases. Nine 320px/390px/1280px screenshots are inspected and recorded in `21_CUSTOMER_ACCOUNT_WEB_ACCEPTANCE.md`. No deployment ran.
+- Opened Gate E [PR #216](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/216) from implementation commit `faa547e13cc87f6e0cd3b6469cab9e26a3c7ef12`. This project-control update defines its final head; evaluate only `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` after that head is confirmed. Merge only if all pass and focused review has no unresolved P0/P1; preserve the protected owner paths during any main update.
+
 ## Objective
 
 Phase 3: validate and close launch-critical customer-path reliability gaps from sign-in through support.

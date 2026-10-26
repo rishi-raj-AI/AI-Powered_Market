@@ -58,6 +58,8 @@ It passed all 8 Chromium cases. The inspected captures show touch-sized cart qua
 | `web/app/globals.css` | `f621d7302ea6b8aec150db7e692609214885c87c63b7b0f871de50933be0dd96` |
 | `web/e2e/customer-purchase-acceptance.spec.ts` | `d69e4eb0b9f7b5e1eabc3f234629309cf91242f10cdd07a13d4f92e98f513fe1` |
 
-## Remaining gates
+## Merge record and remaining gates
 
-Focused review, exact-final-head [PR #215](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/215) required checks (`backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images`), and PR review remain mandatory before merge. This does not complete Android/iOS device acceptance, Firebase owner setup, backend integration evidence, complete customer visual coverage, or release-candidate validation. No deployment is authorized.
+[PR #215](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/215) merged normally as `22c2c135e0e62ac8703038eee643df6e5d3f33c7` after `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` passed on final head `29ebb70d39e7d3b9f78cfce852458acb2e26c732`. No deployment ran.
+
+This does not complete Android/iOS device acceptance, Firebase owner setup, backend integration evidence, complete customer visual coverage, or release-candidate validation. No deployment is authorized.
