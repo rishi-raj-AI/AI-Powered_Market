@@ -7,7 +7,7 @@
 - Created fresh isolated `/Users/rishiraj/Documents/Personal_Projects/AI-Powered_Market/gaonone-launch-customer-market-web-acceptance` on `feat/launch-customer-market-web-acceptance` from that new main. Do not reuse the protected checkout or prior customer-account, customer-purchase, product-media, real-OTP, or web-foundation worktrees.
 - The bounded customer-market audit found premature marketplace/nearby-discovery/storefront conclusions, stale confirmation after an identical reissued nearby query, a 320px nearby-action overflow, and storefront direct/alternative cart writes that could race before React rendered disabled controls. The isolated remedy gates conclusions on the current request context, preserves confirmed marketplace/storefront data after refresh failure, scopes 44px controls/action wrapping to market roots, and routes every storefront cart write through one synchronous guard that renders only the returned authoritative cart. It preserves the shared GaonOne session expiry/API boundary, customer ownership, server-authoritative availability/pricing/stock/cart/authorization, configuration, and deployment behavior.
 - Local validation passes `npx tsc --noEmit --incremental false`, `npm run build -- --webpack`, the 72-case four-browser acceptance suite, the combined 124-case location/substitution/customer-market regression suite, and 18 Chromium evidence cases. Nine 320px/390px/1280px screenshots are inspected and recorded in `22_CUSTOMER_MARKET_WEB_ACCEPTANCE.md`. Focused code review found no unresolved P0/P1. No deployment ran.
-- No PR has been opened for the customer-market branch. Commit the completed code/control evidence, open its PR, then evaluate only `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` on its exact final head. Merge only if all pass and final review remains clear; preserve the protected owner paths during any main update.
+- Opened Gate E customer-market [PR #217](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/217) from implementation/evidence commit `7231580b3bf9c572cb6d0331265ff2a72ec9cd04`. This project-control update must be committed and pushed before the PR's exact final head is confirmed; then evaluate only `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` on that head. Merge only if all pass and final review remains clear; preserve the protected owner paths during any main update.
 
 ## Objective
 
@@ -189,7 +189,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-Commit the active Gate E customer-market branch and open its PR. Evaluate `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` only on that exact final head; merge only after all pass and no unresolved P0/P1 remains. Do not deploy. Preserve the protected checkout's seven owner-owned Flutter/iOS changes during any later main update.
+Push the Gate E customer-market project-control update to [PR #217](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/217), confirm its exact final head, and evaluate `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` only on that head. Merge only after all pass and no unresolved P0/P1 remains. Do not deploy. Preserve the protected checkout's seven owner-owned Flutter/iOS changes during any later main update.
 
 ## Preservation contract
 

@@ -70,6 +70,6 @@ It passed all 18 Chromium cases. The inspected captures show readable marketplac
 
 ## Remaining gates
 
-No PR has been opened, no CI has run for this branch, and no merge/deployment claim is made here. Focused review, PR creation, and all four required checks on the exact final PR head (`backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images`) remain mandatory before merge.
+[PR #217](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/217) is open from implementation/evidence commit `7231580b3bf9c572cb6d0331265ff2a72ec9cd04`. This project-control update will supersede that head once committed and pushed; no final-head CI, merge, or deployment claim is made here. All four required checks on the exact resulting PR head (`backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images`) remain mandatory before merge.
 
 This does not complete Android/iOS device acceptance, Firebase owner setup, backend integration evidence, complete customer visual coverage, or release-candidate validation. No deployment is authorized.
