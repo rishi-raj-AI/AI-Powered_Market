@@ -59,4 +59,4 @@ It passed all 8 Chromium cases. The inspected captures show touch-sized Refresh 
 
 ## Remaining gates
 
-Focused review, exact-final-head `backend-check`, `build-and-ui`, `analyze-and-build-android`, `production-compose-and-images`, and PR review remain mandatory before merge. This does not complete Android/iOS device acceptance, Firebase owner setup, backend integration evidence, complete admin/support visual coverage, or release-candidate validation. No deployment is authorized.
+Focused review, exact-final-head [PR #214](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/214) `backend-check`, `build-and-ui`, `analyze-and-build-android`, `production-compose-and-images`, and PR review remain mandatory before merge. This does not complete Android/iOS device acceptance, Firebase owner setup, backend integration evidence, complete admin/support visual coverage, or release-candidate validation. No deployment is authorized.
