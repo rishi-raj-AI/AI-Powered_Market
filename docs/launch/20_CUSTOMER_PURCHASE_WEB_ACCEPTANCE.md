@@ -60,4 +60,4 @@ It passed all 8 Chromium cases. The inspected captures show touch-sized cart qua
 
 ## Remaining gates
 
-Focused review, exact-final-head required checks (`backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images`), and PR review remain mandatory before merge. This does not complete Android/iOS device acceptance, Firebase owner setup, backend integration evidence, complete customer visual coverage, or release-candidate validation. No deployment is authorized.
+Focused review, exact-final-head [PR #215](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/215) required checks (`backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images`), and PR review remain mandatory before merge. This does not complete Android/iOS device acceptance, Firebase owner setup, backend integration evidence, complete customer visual coverage, or release-candidate validation. No deployment is authorized.
