@@ -131,8 +131,12 @@ The `media_data` Docker volume contains uploaded product/store images. Until obj
 
 The application is provider-ready, but real credentials are intentionally absent from Git.
 
-- SMS OTP: use `AUTH_PROVIDER=local_otp` and `SMS_PROVIDER=msg91` so web and
-  mobile use the same backend-owned verification flow. Keep `DEV_OTP` empty.
+- SMS OTP: use `AUTH_PROVIDER=local_otp`, `SMS_AUTH_ENABLED=true`,
+  `SMS_PROVIDER=msg91`, and `NEXT_PUBLIC_DIRECT_OTP_ENABLED=true` so the web
+  image exposes the same backend-owned verification flow as the mobile build.
+  Keep `DEV_OTP` empty. The production validator rejects a visible web OTP
+  form unless that exact server gate is enabled, and the public flag alone
+  never enables an API route.
   Obtain `MSG91_AUTH_KEY` from the MSG91 account and `MSG91_TEMPLATE_ID` from
   an approved transactional OTP template; enter both only in the server's
   `.env.production`. Confirm the account has balance, the Indian DLT

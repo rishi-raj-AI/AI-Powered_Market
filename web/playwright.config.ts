@@ -26,6 +26,6 @@ export default defineConfig({
     url:'http://127.0.0.1:3100',
     reuseExistingServer:!process.env.CI,
     timeout:120_000,
-    env:{NEXT_PUBLIC_API_URL:'http://localhost:8000/api/v1'},
+    env:{NEXT_PUBLIC_API_URL:'http://localhost:8000/api/v1',NEXT_PUBLIC_DIRECT_OTP_ENABLED:process.env.NEXT_PUBLIC_DIRECT_OTP_ENABLED==='true'?'true':'false'},
   },
 });

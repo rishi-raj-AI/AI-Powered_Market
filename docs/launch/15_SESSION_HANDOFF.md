@@ -2,6 +2,11 @@
 
 ## Current checkpoint — 2026-10-27
 
+- Release-control [PR #218](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/218) merged normally as `1b6f4ad5ae186ffadc8eb6c4da42610d1218a847` after `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` all passed on final head `0c7c6b920087e656e4d1f2ee0ca8bf981e1fcea5`. No deployment ran.
+- The protected checkout and its origin tracking reference were advanced to `1b6f4ad5ae186ffadc8eb6c4da42610d1218a847`. The merge delta contained only seven launch-control documents; each of the five tracked and two untracked owner-owned Flutter/iOS files remains hash-identical, and protected local `main == origin/main`.
+- Created fresh isolated `/Users/rishiraj/Documents/Personal_Projects/AI-Powered_Market/gaonone-launch-auth-availability` on `fix/launch-auth-availability`, then rebased it onto the new main. Do not reuse the protected checkout or prior customer-market, customer-account, customer-purchase, product-media, real-OTP, or web-foundation worktrees.
+- Implementation commit `2fb00b0` remediates R-033: web and Flutter default legacy direct OTP controls off for Firebase launch, provide explicit non-secret opt-in only for compatible local-OTP builds, retain Google/Firebase exchange and GaonOne session behavior, and do not alter backend routes, roles, ownership, or provider credentials. The production validator requires the web UI flag to match `AUTH_PROVIDER=local_otp` plus `SMS_AUTH_ENABLED=true`, including exact literal casing, so client visibility cannot drift from its server gate.
+- Local evidence for the unchanged implementation after rebase: TypeScript and production webpack build pass; the default-disabled direct-auth suite passes with legacy cases intentionally skipped; the explicit legacy suite passes; the full 708-test web run recorded passed with the intended legacy skips; Flutter analysis and all 31 tests pass; focused Ruff/Python compilation and production-validator success/failure cases pass. No deployment ran. Final PR-head CI remains mandatory.
 - Gate E customer-market [PR #217](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/217) merged normally as `50d730f53678d5c320f5c45db978f088b0945f17` after `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` all passed on final head `3ae518cdb7810e213b1680a3b26ddc3e2a5c7296`. No deployment ran.
 - Its pre-remediation head exposed two pre-hydration WebKit test interactions after 699 passing UI checks; the test-only readiness repair passed the final four gates. The final-head Android job initially received a corrupt hosted-runner NDK archive; a retry on the unchanged head passed, so it is infrastructure-only rather than a source regression.
 - The protected checkout and its origin tracking reference were safely advanced to `50d730f53678d5c320f5c45db978f088b0945f17`; exactly five tracked and two untracked owner-owned Flutter/iOS paths remain hash-identical, no unexplained nonignored modification appeared, and local `main == origin/main`.
@@ -189,7 +194,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-Finish the release-readiness control update, then take the Firebase-launch legacy-OTP availability P1 in a fresh isolated worktree. Test disabled and explicit-enabled client behavior, retain the backend's fail-closed route gate and all server authority, and evaluate all four required checks only on its final PR head before any merge. Do not deploy. Preserve the protected checkout's seven owner-owned Flutter/iOS changes during any later main update.
+Finish the final source/configuration review of `fix/launch-auth-availability`, open its PR, and evaluate `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` only on its exact final head. Merge only after all pass and no unresolved P0/P1 remains. Do not deploy. Preserve the protected checkout's seven owner-owned Flutter/iOS changes during any later main update.
 
 ## Preservation contract
 

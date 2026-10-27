@@ -46,4 +46,4 @@ jobs:
       - working-directory: mobile
         run: flutter test
       - working-directory: mobile
-        run: flutter build apk --debug --dart-define=API_URL=http://10.0.2.2:8000/api/v1
+        run: flutter build apk --debug --dart-define=API_URL=http://10.0.2.2:8000/api/v1 --dart-define=GAONONE_LEGACY_OTP_ENABLED=false
