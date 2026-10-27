@@ -23,10 +23,17 @@ jobs:
       - run: npm run build
         env:
           NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+          NEXT_PUBLIC_DIRECT_OTP_ENABLED: "false"
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium firefox webkit
       - name: Run UI UX accessibility tests
         run: npm run test:e2e
+        env:
+          NEXT_PUBLIC_DIRECT_OTP_ENABLED: "false"
+      - name: Run explicit legacy OTP UI regression
+        run: npx playwright test e2e/auth-direct.spec.ts --grep @legacy-otp
+        env:
+          NEXT_PUBLIC_DIRECT_OTP_ENABLED: "true"
       - name: Upload Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v4

@@ -101,6 +101,18 @@ def main() -> int:
     if sms_enabled_raw not in {'true', 'false', '1', '0', 'yes', 'no'}:
         fail('SMS_AUTH_ENABLED must be true or false', errors)
     sms_enabled = sms_enabled_raw in {'true', '1', 'yes'}
+    # Next embeds this public value literally at build time and the client only
+    # enables the legacy form for the exact string "true". Do not normalize
+    # case here: accepting TRUE would validate a production configuration whose
+    # server route is enabled but whose built web client hides the form.
+    direct_otp_raw = env.get('NEXT_PUBLIC_DIRECT_OTP_ENABLED', '').strip()
+    if direct_otp_raw not in {'true', 'false'}:
+        fail('NEXT_PUBLIC_DIRECT_OTP_ENABLED must be true or false', errors)
+    else:
+        direct_otp_enabled = direct_otp_raw == 'true'
+        server_direct_otp_enabled = auth_provider == 'local_otp' and sms_enabled
+        if direct_otp_enabled != server_direct_otp_enabled:
+            fail('NEXT_PUBLIC_DIRECT_OTP_ENABLED must match AUTH_PROVIDER=local_otp with SMS_AUTH_ENABLED=true', errors)
     if sms_enabled and sms_provider != 'msg91':
         fail('SMS_PROVIDER must be msg91 when SMS_AUTH_ENABLED=true', errors)
     if sms_enabled and sms_provider == 'msg91':

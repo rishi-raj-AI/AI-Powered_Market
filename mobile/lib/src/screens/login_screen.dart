@@ -3,10 +3,20 @@ import 'package:flutter/material.dart';
 import '../api/gaon_api.dart';
 import '../auth/firebase_google_sign_in.dart';
 
+const bool legacyOtpEnabledByBuild = bool.fromEnvironment(
+  'GAONONE_LEGACY_OTP_ENABLED',
+  defaultValue: false,
+);
+
 class LoginScreen extends StatefulWidget {
   final VoidCallback onLoggedIn;
+  final bool legacyOtpEnabled;
 
-  const LoginScreen({super.key, required this.onLoggedIn});
+  const LoginScreen({
+    super.key,
+    required this.onLoggedIn,
+    this.legacyOtpEnabled = legacyOtpEnabledByBuild,
+  });
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -42,7 +52,11 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() {
         otpSent = true;
         requestedPhone = phoneController.text.trim();
-        message = result.developmentOtp != null ? 'Development OTP: ${result.developmentOtp}' : result.expiresInSeconds == null ? 'Request accepted. SMS delivery and code expiry are controlled by the provider.' : 'Code requested. It expires in ${(result.expiresInSeconds!/60).ceil()} minutes.';
+        message = result.developmentOtp != null
+            ? 'Development OTP: ${result.developmentOtp}'
+            : result.expiresInSeconds == null
+                ? 'Request accepted. SMS delivery and code expiry are controlled by the provider.'
+                : 'Code requested. It expires in ${(result.expiresInSeconds! / 60).ceil()} minutes.';
       });
     } catch (error) {
       if (!mounted) return;
@@ -91,7 +105,14 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void changeNumber(){setState((){otpSent=false;requestedPhone='';otpController.clear();message=null;});}
+  void changeNumber() {
+    setState(() {
+      otpSent = false;
+      requestedPhone = '';
+      otpController.clear();
+      message = null;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -110,9 +131,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     children: [
                       Text(
                         'GaonOne',
-                        style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                              fontWeight: FontWeight.w900,
-                            ),
+                        style:
+                            Theme.of(context).textTheme.headlineLarge?.copyWith(
+                                  fontWeight: FontWeight.w900,
+                                ),
                       ),
                       const SizedBox(height: 8),
                       Text(
@@ -123,52 +145,80 @@ class _LoginScreenState extends State<LoginScreen> {
                       FilledButton.icon(
                         onPressed: loading ? null : signInWithGoogle,
                         icon: const Icon(Icons.login),
-                        label: Text(loading ? 'Please wait...' : 'Continue with Google'),
+                        label: Text(loading
+                            ? 'Please wait...'
+                            : 'Continue with Google'),
                       ),
-                      const SizedBox(height: 12),
-                      const Text('or use mobile number where available', textAlign: TextAlign.center),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: phoneController,
-                        enabled: !otpSent,
-                        keyboardType: TextInputType.phone,
-                        decoration: const InputDecoration(
-                          labelText: 'Mobile number',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      if (!otpSent)
+                      if (widget.legacyOtpEnabled) ...[
+                        const SizedBox(height: 12),
+                        const Text('or use mobile number where available',
+                            textAlign: TextAlign.center),
+                        const SizedBox(height: 16),
                         TextField(
-                          controller: nameController,
+                          controller: phoneController,
+                          enabled: !otpSent,
+                          keyboardType: TextInputType.phone,
                           decoration: const InputDecoration(
-                            labelText: 'Name',
+                            labelText: 'Mobile number',
                             border: OutlineInputBorder(),
                           ),
                         ),
-                      if (otpSent)
-                        TextField(
-                          controller: otpController,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: 'OTP',
-                            border: OutlineInputBorder(),
+                        const SizedBox(height: 12),
+                        if (!otpSent)
+                          TextField(
+                            controller: nameController,
+                            decoration: const InputDecoration(
+                              labelText: 'Name',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        if (otpSent)
+                          TextField(
+                            controller: otpController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'OTP',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        const SizedBox(height: 16),
+                        FilledButton(
+                          onPressed: loading
+                              ? null
+                              : (otpSent ? verifyOtp : requestOtp),
+                          child: Text(
+                            loading
+                                ? 'Please wait...'
+                                : otpSent
+                                    ? 'Verify & continue'
+                                    : 'Send OTP',
                           ),
                         ),
-                      const SizedBox(height: 16),
-                      FilledButton(
-                        onPressed: loading
-                            ? null
-                            : (otpSent ? verifyOtp : requestOtp),
-                        child: Text(
-                          loading
-                              ? 'Please wait...'
-                              : otpSent
-                                  ? 'Verify & continue'
-                                  : 'Send OTP',
-                        ),
-                      ),
-                      if(otpSent)...[const SizedBox(height:8),Row(children:[Expanded(child:OutlinedButton(onPressed:loading?null:requestOtp,child:const Text('Resend code'))),const SizedBox(width:8),Expanded(child:TextButton(onPressed:loading?null:changeNumber,child:const Text('Change number')))]),const Text('Resend limits apply. GaonOne does not resend automatically.',textAlign:TextAlign.center)],
+                        if (otpSent) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: loading ? null : requestOtp,
+                                  child: const Text('Resend code'),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: TextButton(
+                                  onPressed: loading ? null : changeNumber,
+                                  child: const Text('Change number'),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Text(
+                            'Resend limits apply. GaonOne does not resend automatically.',
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ],
                       if (message != null) ...[
                         const SizedBox(height: 12),
                         Text(message!, textAlign: TextAlign.center),
