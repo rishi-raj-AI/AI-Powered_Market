@@ -37,6 +37,7 @@ test('market preserves location context and searches nearby live inventory',asyn
   await page.goto('/market?lat=20.0778&lng=74.1118&location=Niphad%20Local&serviceable=1&service_area=Niphad%20Local');
   await expect(page.getByText('Serviceable through')).toBeVisible();
   await expect(page.getByText('Niphad Local',{exact:true}).last()).toBeVisible();
+  await expect(page.getByText('Niphad Daily Needs',{exact:true})).toBeVisible();
   await page.getByPlaceholder(/Search products, categories or stores nearby/i).fill('Rice');
   await expect(page.getByText('Kolam Rice')).toBeVisible();
   await expect(page.getByText('Gaon Fresh • 1 kg')).toBeVisible();

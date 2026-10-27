@@ -66,10 +66,11 @@ It passed all 18 Chromium cases. The inspected captures show readable marketplac
 | `web/app/market/[id]/page.tsx` | `53693829a0d0ab58e3278ff1790cef6e2d28b64144b4bdc63869925a112d960d` |
 | `web/components/SubstitutionChoices.tsx` | `510bd5714f81a06b88c182e3b7347c1dcef465aa364231da459b5a73ed3b27a6` |
 | `web/app/globals.css` | `e82d680f08e882093dd8fd5d76344592fc6ab0561d61e081aaaa5878b356e580` |
-| `web/e2e/customer-market-acceptance.spec.ts` | `34a102a39bfd9da9d6fdc276290c22b6d773c9f416d29f3d1472f658072cf01c` |
+| `web/e2e/customer-market-acceptance.spec.ts` | `12625cc3e1bfb772cdadf0c9fbe4bda744f9b60006104fbb2c93a63eb0f406bc` |
+| `web/e2e/location.spec.ts` | `1778db0104ab5bca0db7f33cd020baaf06003e476b759e007d42cb5f6b6a6720` |
 
 ## Remaining gates
 
-[PR #217](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/217) is open from implementation/evidence commit `7231580b3bf9c572cb6d0331265ff2a72ec9cd04`. This project-control update will supersede that head once committed and pushed; no final-head CI, merge, or deployment claim is made here. All four required checks on the exact resulting PR head (`backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images`) remain mandatory before merge.
+[PR #217](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/217) is open from implementation/evidence commit `7231580b3bf9c572cb6d0331265ff2a72ec9cd04`. Its pre-remediation head `bc76e2e531700598a24047e93f7d6d2aa3e7ee8b` passed backend, Android, and compose/image validation; Web CI failed two WebKit tests after 699 passes. The CI trace demonstrated pre-hydration test interaction rather than a discovery response, application-state, authorization, or infrastructure issue. The test-only repair now waits for the client-rendered nearby store before typing; the exact two WebKit cases and production webpack build pass locally. This update will supersede the failed head once committed and pushed; no final-head CI, merge, or deployment claim is made here. All four required checks on the exact resulting PR head (`backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images`) remain mandatory before merge.
 
 This does not complete Android/iOS device acceptance, Firebase owner setup, backend integration evidence, complete customer visual coverage, or release-candidate validation. No deployment is authorized.

@@ -177,6 +177,7 @@ test('customer nearby discovery invalidates a previous same-query result before 
     return route.fulfill({json: {query: 'Rice', latitude: 20.0778, longitude: 74.1118, radius_km: 20, stores: [], categories: [], products: []}});
   });
   await page.goto('/market?lat=20.0778&lng=74.1118&location=Niphad%20Local&serviceable=1&service_area=Niphad%20Local');
+  await expect(page.getByText(store.name, {exact: true}).first()).toBeVisible();
   const input = page.getByLabel('Search marketplace availability');
   await input.fill('Rice');
   await expect(page.getByText('1 available product matched')).toBeVisible();
