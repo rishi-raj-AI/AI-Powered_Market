@@ -60,7 +60,7 @@ prod-up: prod-check
 prod-deploy: prod-check
 	docker compose --env-file .env.production -f docker-compose.prod.yml build api web worker migrate
 	docker compose --env-file .env.production -f docker-compose.prod.yml --profile ops run --rm migrate
-	docker compose --env-file .env.production -f docker-compose.prod.yml up -d --no-build --force-recreate api web worker
+	docker compose --env-file .env.production -f docker-compose.prod.yml up -d --no-build --force-recreate api web worker proxy
 	@sleep 15
 	docker compose --env-file .env.production -f docker-compose.prod.yml ps
 	bash deploy/monitor.sh

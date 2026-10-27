@@ -110,7 +110,4 @@ jobs:
           GAONONE_EXPECTED_SHA: ${{ needs.verify-green-main.outputs.sha }}
           GAONONE_ENVIRONMENT: staging
         run: |
-          sudo /usr/bin/env \
-            GAONONE_EXPECTED_SHA="$GAONONE_EXPECTED_SHA" \
-            GAONONE_ENVIRONMENT="$GAONONE_ENVIRONMENT" \
-            /home/ubuntu/gaonone/deploy/release.sh
+          sudo /home/ubuntu/gaonone/deploy/release.sh

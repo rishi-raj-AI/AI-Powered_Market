@@ -80,17 +80,48 @@ curl -fsS https://$DOMAIN/api/v1/health/ready
 
 Expected readiness includes `database: ok` and `redis: ok`.
 
-## 6. Deploy an update
+## 6. Deploy an approved update
+
+Use the guarded release entry point rather than a manual `git pull`/`make`
+sequence. It verifies the exact approved SHA, preserves database and media
+backups before migrations, records the prior deployed SHA, starts Caddy with
+the application services, and rolls application code back if verification
+fails.
+
+After explicit release approval, run the following on the production host. Do
+not source `.env.production`; it can contain values that are not shell-safe.
+
+Before the first release after installing this revision, an administrator must
+refresh the narrowly scoped sudo rule once:
 
 ```bash
-git pull --ff-only origin main
-make prod-build
-make prod-migrate
-make prod-up
-make prod-status
+sudo bash /home/ubuntu/gaonone/deploy/install_deploy_runner.sh
 ```
 
-Then run production smoke checks for login, store browsing, cart, checkout, merchant fulfilment, and delivery lifecycle.
+That rule preserves only the non-secret SHA and release-label selectors for the
+direct release script; it does not grant a shell, Docker, arbitrary environment
+variables, or a caller-selected checkout path.
+
+```bash
+GAONONE_EXPECTED_SHA=<full-approved-main-sha> \
+GAONONE_ENVIRONMENT=production \
+sudo /home/ubuntu/gaonone/deploy/release.sh
+```
+
+`GAONONE_ENVIRONMENT` is the deployment lock/log label and must be explicit:
+use `production` for a production host and `staging` for the separate staging
+workflow. It does not replace `APP_ENV=production` in `.env.production`, which
+remains a required runtime safety setting. `GAONONE_EXPECTED_SHA` must be the
+full green `origin/main` commit SHA; do not use the workflow-local `DEPLOY_SHA`
+name outside GitHub Actions. `GAONONE_ROOT` and `GAONONE_DEPLOY_BRANCH` retain
+their guarded defaults (`/home/ubuntu/gaonone` and `main`) in this privileged
+path. The install script allows `sudo` to preserve only the SHA and environment
+label through its narrow `env_keep` list; do not wrap the release script in
+`sudo /usr/bin/env` or source
+`.env.production`.
+
+Then run the required production acceptance checks for login, store browsing,
+cart, checkout, merchant fulfilment, and delivery lifecycle.
 
 ## 7. Logs
 
@@ -102,25 +133,25 @@ Caddy access logs are JSON on stdout. Application logs are available through Doc
 
 ## 8. Database backup
 
-Create a timestamped logical backup:
+The guarded release command already creates and verifies a timestamped database
+and media backup before migrations. To create one manually without sourcing the
+Compose environment file, run:
 
 ```bash
-mkdir -p backups
-set -a; source .env.production; set +a
-docker compose --env-file .env.production -f docker-compose.prod.yml exec -T db \
-  pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc > "backups/gaonone-$(date +%Y%m%d-%H%M%S).dump"
+bash deploy/backup.sh
 ```
 
 Backups must be copied off-server to durable storage before the pilot contains real customer data.
 
 ## 9. Database restore
 
-Restoring overwrites data. Stop application traffic first and verify the backup file.
+Restoring overwrites data. Stop application traffic first, verify the backup
+file, and use the guarded restore script with its explicit confirmation.
 
 ```bash
-set -a; source .env.production; set +a
-cat backups/FILE.dump | docker compose --env-file .env.production -f docker-compose.prod.yml exec -T db \
-  pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists
+CONFIRM_RESTORE=YES \
+  DB_BACKUP=/absolute/path/to/FILE.dump \
+  bash deploy/restore.sh
 ```
 
 ## 10. Media backup

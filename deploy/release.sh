@@ -4,8 +4,26 @@ set -euo pipefail
 ROOT_DIR="${GAONONE_ROOT:-/home/ubuntu/gaonone}"
 BRANCH="${GAONONE_DEPLOY_BRANCH:-main}"
 EXPECTED_SHA="${GAONONE_EXPECTED_SHA:-}"
-ENVIRONMENT="${GAONONE_ENVIRONMENT:-staging}"
+ENVIRONMENT="${GAONONE_ENVIRONMENT:-}"
+
+if [[ -z "$ENVIRONMENT" ]]; then
+  echo "GAONONE_ENVIRONMENT must be explicitly set to staging or production." >&2
+  exit 1
+fi
+case "$ENVIRONMENT" in
+  staging|production) ;;
+  *)
+    echo "GAONONE_ENVIRONMENT must be staging or production, got: $ENVIRONMENT" >&2
+    exit 1
+    ;;
+esac
+if [[ -z "$EXPECTED_SHA" ]]; then
+  echo "GAONONE_EXPECTED_SHA must be set to the approved origin/$BRANCH commit SHA." >&2
+  exit 1
+fi
+
 LOCK_FILE="${GAONONE_DEPLOY_LOCK:-/tmp/gaonone-${ENVIRONMENT}-deploy.lock}"
+RUNTIME_SERVICES=(api web worker proxy)
 
 cd "$ROOT_DIR"
 exec 9>"$LOCK_FILE"
@@ -14,9 +32,9 @@ if ! flock -n 9; then
   exit 1
 fi
 
-# Keep the production-grade Compose/env contract on the current server while the
-# server itself is used as staging. Renaming these files would require a separate
-# server migration and is intentionally deferred.
+# Keep the production-grade Compose/env contract. The explicit deployment label
+# above controls release locking/logging; renaming these files is a separate
+# infrastructure migration and is intentionally deferred.
 if [[ ! -f .env.production ]]; then
   echo "Missing $ROOT_DIR/.env.production" >&2
   exit 1
@@ -41,7 +59,7 @@ bash deploy/backup.sh
 echo "=== Sync $BRANCH ==="
 git fetch --prune origin "$BRANCH"
 TARGET_SHA="$(git rev-parse "origin/$BRANCH")"
-if [[ -n "$EXPECTED_SHA" && "$TARGET_SHA" != "$EXPECTED_SHA" ]]; then
+if [[ "$TARGET_SHA" != "$EXPECTED_SHA" ]]; then
   echo "Expected $EXPECTED_SHA but origin/$BRANCH is $TARGET_SHA; refusing stale deployment." >&2
   exit 1
 fi
@@ -58,6 +76,31 @@ compose() {
   else
     sudo docker compose --env-file .env.production -f docker-compose.prod.yml "$@"
   fi
+}
+
+# Caddy is the only public listener. Verify it was started before the HTTPS
+# smoke checks so an application-only rollout cannot leave the site offline.
+ensure_proxy_running() {
+  local running_services
+  running_services="$(compose ps --status running --services 2>/dev/null || true)"
+  if grep -Fxq "proxy" <<<"$running_services"; then
+    return 0
+  fi
+
+  echo "Caddy proxy is not running after the deployment settle period." >&2
+  return 1
+}
+
+start_runtime_services() {
+  if ! compose up -d --no-build --force-recreate "${RUNTIME_SERVICES[@]}"; then
+    echo "Could not start the runtime services." >&2
+    return 1
+  fi
+  if ! sleep "${GAONONE_DEPLOY_SETTLE_SECONDS:-15}"; then
+    echo "Deployment settle delay failed." >&2
+    return 1
+  fi
+  ensure_proxy_running
 }
 
 # Roll the running deployment back to the last known-good SHA.
@@ -85,10 +128,7 @@ rollback() {
 
   git reset --hard "$PREVIOUS_SHA"
   compose build api web worker
-  compose up -d --no-build --force-recreate api web worker
-  sleep "${GAONONE_DEPLOY_SETTLE_SECONDS:-15}"
-
-  if bash deploy/smoke.sh && bash deploy/monitor.sh; then
+  if start_runtime_services && bash deploy/smoke.sh && bash deploy/monitor.sh; then
     printf '%s\n' "$PREVIOUS_SHA" > .deployed-sha
     echo "=== ROLLBACK SUCCEEDED: ${ENVIRONMENT} is serving ${PREVIOUS_SHA} ===" >&2
     echo "Schema is still at the newer migration head, which is safe for" >&2
@@ -103,8 +143,10 @@ rollback() {
 
 compose build api web worker migrate
 compose --profile ops run --rm migrate
-compose up -d --no-build --force-recreate api web worker
-sleep "${GAONONE_DEPLOY_SETTLE_SECONDS:-15}"
+if ! start_runtime_services; then
+  rollback "Caddy proxy did not start"
+  exit 1
+fi
 compose ps
 
 # Everything past this point is verification. A failure here means the new code

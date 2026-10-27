@@ -14,9 +14,12 @@ if [[ ! -d "$ROOT_DIR/.git" || ! -f "$ROOT_DIR/.env.production" ]]; then
 fi
 
 # Permit the dedicated GitHub Actions runner job to invoke only the audited
-# GaonOne release entry point as root. No shell, Docker or arbitrary sudo grant.
+# GaonOne release entry point as root. Preserve only the non-secret release
+# selectors required by the script; never grant a root shell, Docker, arbitrary
+# env, or a caller-controlled checkout path.
 SUDOERS_FILE="/etc/sudoers.d/gaonone-deploy"
-printf '%s ALL=(root) NOPASSWD: %s/deploy/release.sh\n' "$RUNNER_USER" "$ROOT_DIR" > "$SUDOERS_FILE"
+printf 'Defaults:%s env_keep += "GAONONE_EXPECTED_SHA GAONONE_ENVIRONMENT"\n' "$RUNNER_USER" > "$SUDOERS_FILE"
+printf '%s ALL=(root) NOPASSWD: %s/deploy/release.sh\n' "$RUNNER_USER" "$ROOT_DIR" >> "$SUDOERS_FILE"
 chmod 0440 "$SUDOERS_FILE"
 visudo -cf "$SUDOERS_FILE"
 
