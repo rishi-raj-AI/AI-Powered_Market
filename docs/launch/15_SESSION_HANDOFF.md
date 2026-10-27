@@ -2,6 +2,10 @@
 
 ## Current checkpoint — 2026-10-27
 
+- Firebase-launch OTP-availability [PR #219](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/219) merged normally as `3aa1027cc82f27845e5d61cdba56d52ab237f56d` after `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` all passed on final head `9884eccca3041786510b7676b3791281b474ff79`. No deployment ran.
+- The protected checkout and its origin tracking reference were advanced to `3aa1027cc82f27845e5d61cdba56d52ab237f56d`. An independent target-tree sweep found only the five known tracked owner-owned Flutter/iOS modifications, and the two known untracked owner files remain hash-identical; protected local `main == origin/main`.
+- Created fresh isolated `/Users/rishiraj/Documents/Personal_Projects/AI-Powered_Market/gaonone-launch-auth-availability-control` on `chore/launch-auth-availability-control` from that new main to record the closed R-033 checkpoint. Do not reuse the protected checkout or prior availability, customer-market, customer-account, customer-purchase, product-media, real-OTP, or web-foundation worktrees.
+- PR #219 defaults legacy direct OTP controls off in Firebase-launch web and Flutter builds, retains explicit non-secret compatible-build opt-in, validates the exact web build flag against the local-OTP/SMS server gate, and covers disabled/enabled behavior. It does not alter Firebase verification, GaonOne session issuance/restoration, server roles/permissions, ownership, route gating, or provider credentials. Focused review found no unresolved P0/P1; no deployment.
 - Release-control [PR #218](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/218) merged normally as `1b6f4ad5ae186ffadc8eb6c4da42610d1218a847` after `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` all passed on final head `0c7c6b920087e656e4d1f2ee0ca8bf981e1fcea5`. No deployment ran.
 - The protected checkout and its origin tracking reference were advanced to `1b6f4ad5ae186ffadc8eb6c4da42610d1218a847`. The merge delta contained only seven launch-control documents; each of the five tracked and two untracked owner-owned Flutter/iOS files remains hash-identical, and protected local `main == origin/main`.
 - Created fresh isolated `/Users/rishiraj/Documents/Personal_Projects/AI-Powered_Market/gaonone-launch-auth-availability` on `fix/launch-auth-availability`, then rebased it onto the new main. Do not reuse the protected checkout or prior customer-market, customer-account, customer-purchase, product-media, real-OTP, or web-foundation worktrees.
@@ -194,7 +198,7 @@ Firebase project/server credentials; OAuth origins; Android/iOS configuration an
 
 ## Next task
 
-Finish the final source/configuration review of `fix/launch-auth-availability`, open its PR, and evaluate `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` only on its exact final head. Merge only after all pass and no unresolved P0/P1 remains. Do not deploy. Preserve the protected checkout's seven owner-owned Flutter/iOS changes during any later main update.
+Do not deploy. The completed source backlog contains no further independently actionable implementation task. Meaningful next work requires owner-provided Firebase/OAuth/mobile configuration and signing, domain/CORS decisions, and Android/iOS device plus field/visual/backend-integrated acceptance evidence. Once available, execute the recorded release-candidate checklist on an exact green main SHA; preserve the protected checkout's seven owner-owned Flutter/iOS changes throughout.
 
 ## Preservation contract
 
