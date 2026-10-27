@@ -65,6 +65,8 @@ It passed all 14 Chromium cases. The inspected captures show readable profile/ac
 | `web/app/globals.css` | `cc78386ac897878cf2b66efcf03914a29abed231670363b2f83d1d7875bbc2bf` |
 | `web/e2e/customer-account-acceptance.spec.ts` | `8696bc5824c71dadf2e0bda2be3b98b6be67aba7fc2a260351baf50ac29c31dd` |
 
-## Remaining gates
+## Merge record and remaining gates
 
-Focused review, exact-final-head [PR #216](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/216) required checks (`backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images`), and PR review remain mandatory before merge. This does not complete Android/iOS device acceptance, Firebase owner setup, backend integration evidence, complete customer visual coverage, or release-candidate validation. No deployment is authorized.
+[PR #216](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/216) merged normally as `5e6a5a6aa5e3f5f90b799ae15ba8941627f95239` after `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` all passed on final head `7d6112b465791af153b17594a957926749cd70dc`. The protected checkout was safely fast-forwarded; its exact seven owner-owned Flutter/iOS modifications remained intact and no unexplained local modifications appeared. No deployment ran.
+
+This does not complete Android/iOS device acceptance, Firebase owner setup, backend integration evidence, complete customer visual coverage, or release-candidate validation. No deployment is authorized.
