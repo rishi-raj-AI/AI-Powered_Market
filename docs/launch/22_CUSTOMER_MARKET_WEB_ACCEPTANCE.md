@@ -1,6 +1,6 @@
 # Customer market web acceptance
 
-Recorded 2026-10-26 on `feat/launch-customer-market-web-acceptance`, created from merged main `5e6a5a6aa5e3f5f90b799ae15ba8941627f95239`.
+Recorded 2026-10-26 on `feat/launch-customer-market-web-acceptance`, created from merged main `5e6a5a6aa5e3f5f90b799ae15ba8941627f95239`; final PR outcome recorded 2026-10-27.
 
 ## Scope and evidence boundary
 
@@ -71,6 +71,6 @@ It passed all 18 Chromium cases. The inspected captures show readable marketplac
 
 ## Remaining gates
 
-[PR #217](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/217) is open from implementation/evidence commit `7231580b3bf9c572cb6d0331265ff2a72ec9cd04`. Its pre-remediation head `bc76e2e531700598a24047e93f7d6d2aa3e7ee8b` passed backend, Android, and compose/image validation; Web CI failed two WebKit tests after 699 passes. The CI trace demonstrated pre-hydration test interaction rather than a discovery response, application-state, authorization, or infrastructure issue. The test-only repair now waits for the client-rendered nearby store before typing; the exact two WebKit cases and production webpack build pass locally. This update will supersede the failed head once committed and pushed; no final-head CI, merge, or deployment claim is made here. All four required checks on the exact resulting PR head (`backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images`) remain mandatory before merge.
+[PR #217](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/217) merged normally as `50d730f53678d5c320f5c45db978f088b0945f17` after all four required checks passed on final head `3ae518cdb7810e213b1680a3b26ddc3e2a5c7296`. Its pre-remediation head `bc76e2e531700598a24047e93f7d6d2aa3e7ee8b` passed backend, Android, and compose/image validation; Web CI failed two WebKit tests after 699 passes because it interacted with a controlled nearby-search field before hydration. The test-only repair waits for the client-rendered nearby store before typing and the final head passed `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images`. The initial Android job on that final head could not install a corrupt hosted-runner NDK archive; its retry passed on the same head, so it is an infrastructure-only event rather than an application regression. No deployment ran.
 
 This does not complete Android/iOS device acceptance, Firebase owner setup, backend integration evidence, complete customer visual coverage, or release-candidate validation. No deployment is authorized.
