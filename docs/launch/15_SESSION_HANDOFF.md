@@ -1,6 +1,13 @@
 # Session handoff
 
-## Current checkpoint — 2026-10-28
+## Current review checkpoint — 2026-10-28 20:35 UTC
+
+- All four required gates passed on PR #221 `c1deb71566bb2feb661f43d5139d580aaa070588` and documentation PR #222 `c0ee58c068f892c76c5c6b6c9fc794a61fc73f81` before this update. No submitted GitHub reviews were present. This documentation update requires its own CI.
+- Focused review found two unresolved P1 issues: conditional-function execution ignores failed protected-parent assertions; environment-specific locks do not serialize the shared release checkout across manual production and automated staging invocations. The first was reproduced with the inspected function bodies and disposable mocked filesystem checks. See [PR_221_FOCUSED_REVIEW.md](PR_221_FOCUSED_REVIEW.md).
+- Next implementation task is narrow remediation and regression coverage on the existing release branch, not merge/deployment or unrelated feature work. This heartbeat updated review documentation only. Both PRs remain open and unmerged; server installation/configuration remains unverified. Protected main, owner modifications, secrets, and live resources were not accessed or changed.
+- The transient media archive does not require the running API service; the complete backup still requires the running PostgreSQL service for pg_dump. Earlier pending-CI, installed-state, and owner-only-next-action statements below are historical and superseded by this checkpoint.
+
+## Historical checkpoint — 2026-10-28
 
 - Created fresh isolated `/Users/rishiraj/Documents/Personal_Projects/AI-Powered_Market/gaonone-v1-launch-readiness-20261028` on `chore/v1-launch-readiness-20261028` from verified `main` / `origin/main` `ebe389de31d1d473f43a65cbaa41efa53ba0ccea`. Do not reuse the protected checkout, PR #221 worktree, product-media, real-OTP, web-foundation, or prior feature worktrees.
 - Recorded the V1 readiness audit and owner/provider dependency register in `V1_READINESS_AUDIT.md`, `EXTERNAL_DEPENDENCY_REGISTER.md`, `OWNER_ACTIONS_REQUIRED.md`, `V1_MANUAL_TEST_PLAN.md`, `V1_BUG_BACKLOG.md`, and `V1_RELEASE_CHECKLIST.md`. They distinguish source/CI evidence from server, provider, device, field, visual, merge, and deployment evidence.

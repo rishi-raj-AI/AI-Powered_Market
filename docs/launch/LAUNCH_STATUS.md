@@ -3,7 +3,13 @@
 Updated: 2026-10-28
 Verified source baseline for the V1 audit: `origin/main` = protected local main = `ebe389de31d1d473f43a65cbaa41efa53ba0ccea` when the isolated audit branch was created. The protected checkout must retain its exact owner-owned Flutter/iOS modifications; this documentation branch does not modify them.
 
-## Current V1 readiness checkpoint — 2026-10-28
+## Current review checkpoint — 2026-10-28 20:35 UTC
+
+All four required checks passed on PR #221 head `c1deb71566bb2feb661f43d5139d580aaa070588` and PR #222 head `c0ee58c068f892c76c5c6b6c9fc794a61fc73f81` (before this documentation update). Focused review found two unresolved P1 implementation issues: protected-parent validation can ignore failures, and staging/production labels use different locks for the same checkout. See [PR_221_FOCUSED_REVIEW.md](PR_221_FOCUSED_REVIEW.md) for evidence and required regressions. PR #221 is not approved; no merge or deployment occurred. Fresh CI is required for this documentation update. Installation on any server is unverified.
+
+Next safe action: narrowly remediate the two release findings, rerun tests/CI, and review the new head. Owner merge/deployment approval remains mandatory. Earlier pending-CI and owner-only-next-action statements below are historical, not the current state.
+
+## Historical V1 readiness checkpoint — 2026-10-28
 
 | Field | Status |
 |---|---|
