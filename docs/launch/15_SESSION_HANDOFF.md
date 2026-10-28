@@ -1,5 +1,14 @@
 # Session handoff
 
+## Current checkpoint — 2026-10-28
+
+- Created fresh isolated `/Users/rishiraj/Documents/Personal_Projects/AI-Powered_Market/gaonone-v1-launch-readiness-20261028` on `chore/v1-launch-readiness-20261028` from verified `main` / `origin/main` `ebe389de31d1d473f43a65cbaa41efa53ba0ccea`. Do not reuse the protected checkout, PR #221 worktree, product-media, real-OTP, web-foundation, or prior feature worktrees.
+- Recorded the V1 readiness audit and owner/provider dependency register in `V1_READINESS_AUDIT.md`, `EXTERNAL_DEPENDENCY_REGISTER.md`, `OWNER_ACTIONS_REQUIRED.md`, `V1_MANUAL_TEST_PLAN.md`, `V1_BUG_BACKLOG.md`, and `V1_RELEASE_CHECKLIST.md`. They distinguish source/CI evidence from server, provider, device, field, visual, merge, and deployment evidence.
+- Public read-only check on 2026-10-28 found `https://gaonone.in/` returning HTTPS 200 through Caddy and healthy/ready API results, with reported version `0.4.0`. This does **not** establish the deployed SHA. Do not claim `ebe389d` or PR #221 is deployed without approved host evidence.
+- [PR #221](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/221) is open and mergeable at final head `4873272f003d4f7d4d04a0af69e28a7f245aeb08`; all four required CI gates passed on that exact head. It is not on `main`, is not installed on a server, and must not be merged/deployed without explicit normal approval. Its safeguards include proxy startup/verification and narrow non-secret SHA/environment propagation through sudo.
+- The audit found a separately actionable P1 deployment prerequisite: `deploy/backup.sh` archives media through a running API container before migrations. This fails safe before migration if the container is unavailable, but prevents an assured cold deployment. Create a new isolated remediation branch only after this documentation PR is reviewed; preserve backup-before-migration, exact-SHA validation, forward-only migration/rollback, proxy verification, and PostgreSQL named-volume safety.
+- P0/P1 owner dependencies remain: environment designation; actual server SHA/backup/restore evidence; Firebase/Google provider setup; canonical Android/iOS package/bundle decision and signing; actual device/field/visual acceptance; domain/CORS/TLS; and explicit release authorization. No source evidence permits a provider activation, paid SMS/payment, staging deployment, or production deployment.
+
 ## Current checkpoint — 2026-10-27
 
 - Firebase-launch OTP-availability [PR #219](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/219) merged normally as `3aa1027cc82f27845e5d61cdba56d52ab237f56d` after `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` all passed on final head `9884eccca3041786510b7676b3791281b474ff79`. No deployment ran.

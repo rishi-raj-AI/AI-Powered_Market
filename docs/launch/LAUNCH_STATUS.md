@@ -1,7 +1,20 @@
 # Launch status
 
-Updated: 2026-10-27
-Verified baseline: `origin/main` = protected local main = `3aa1027cc82f27845e5d61cdba56d52ab237f56d`; the exact seven owner-owned Flutter/iOS modifications remain intact byte-for-byte.
+Updated: 2026-10-28
+Verified source baseline for the V1 audit: `origin/main` = protected local main = `ebe389de31d1d473f43a65cbaa41efa53ba0ccea` when the isolated audit branch was created. The protected checkout must retain its exact owner-owned Flutter/iOS modifications; this documentation branch does not modify them.
+
+## Current V1 readiness checkpoint — 2026-10-28
+
+| Field | Status |
+|---|---|
+| Active worktree / branch | `gaonone-v1-launch-readiness-20261028` / `chore/v1-launch-readiness-20261028`, newly created from `ebe389de31d1d473f43a65cbaa41efa53ba0ccea` for documentation and audit only. |
+| Current phase | V1 external-dependency and release-candidate readiness audit. **Not a release candidate.** |
+| Release-control PR | [#221](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/221) is open and mergeable at `4873272f003d4f7d4d04a0af69e28a7f245aeb08`, based on current main `ebe389de31d1d473f43a65cbaa41efa53ba0ccea`. All four required checks passed on that exact head. No merge or deployment is authorized by this record. |
+| Public availability evidence | On 2026-10-28, `https://gaonone.in/` returned HTTPS 200 via Caddy and the public health/ready endpoints returned healthy database and Redis states. The reported runtime version was `0.4.0`; deployed SHA is therefore unverified. |
+| New release finding | Current `main` preserves backup-before-migration but its media backup executes through the running API container. A cold/unhealthy API safely aborts before migration, but deployment procedure does not yet guarantee that prerequisite. This is V1-001 / R-034, pending a separately reviewed narrow remediation. |
+| Owner gates | Environment designation, server SHA/backup evidence, Firebase/OAuth setup, canonical mobile identities/signing, physical-device/field acceptance, domain/CORS/TLS audit, and explicit release authorization remain open. |
+| Durable records | `V1_READINESS_AUDIT.md`, `EXTERNAL_DEPENDENCY_REGISTER.md`, `OWNER_ACTIONS_REQUIRED.md`, `V1_MANUAL_TEST_PLAN.md`, `V1_BUG_BACKLOG.md`, and `V1_RELEASE_CHECKLIST.md`. |
+| Next safe action | Review this documentation-only change, then prepare only the isolated backup-prerequisite remediation with regression tests. Do not deploy, alter provider configuration, or activate paid providers. |
 
 | Field | Status |
 |---|---|
