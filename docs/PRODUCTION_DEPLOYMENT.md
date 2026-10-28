@@ -80,17 +80,78 @@ curl -fsS https://$DOMAIN/api/v1/health/ready
 
 Expected readiness includes `database: ok` and `redis: ok`.
 
-## 6. Deploy an update
+## 6. Deploy an approved update
+
+Use the guarded release entry point rather than a manual `git pull`/`make`
+sequence. It verifies the exact approved SHA, preserves database and media
+backups before migrations, records the prior deployed SHA, starts Caddy with
+the application services, and rolls application code back if verification
+fails.
+
+`make prod-deploy` is a lower-level operational target, not an approved
+release entry point: it does not enforce the approved SHA or the guarded
+backup-and-rollback sequence.
+
+After explicit release approval, run the following on the production host. Do
+not source `.env.production`; it can contain values that are not shell-safe.
+
+The privileged release checkout is fixed at `/srv/gaonone`. It must be a
+root-owned, non-group/world-writable checkout with no symlinks, including `.git`,
+`.env.production`, deployment helpers, and Compose files. The self-hosted
+runner's workspace (including `/home/ubuntu/gaonone`) must not be used as this
+checkout or granted sudo access: it is a runner-writable workspace, not a
+privileged code boundary.
+
+Before enabling this revision, an administrator must provision and verify that
+protected checkout separately, then refresh the narrowly scoped sudo rule from
+it:
 
 ```bash
-git pull --ff-only origin main
-make prod-build
-make prod-migrate
-make prod-up
-make prod-status
+sudo /bin/bash /srv/gaonone/deploy/install_deploy_runner.sh
 ```
 
-Then run production smoke checks for login, store browsing, cart, checkout, merchant fulfilment, and delivery lifecycle.
+The policy authorizes the `ubuntu` account only. The manual operator and the
+self-hosted runner service must therefore run as `ubuntu`; a different account
+requires a separately reviewed policy change. The command-specific rule resets
+the sudo environment and preserves only the non-secret SHA and release-label
+selectors for the direct,
+no-argument root-owned release entry point at `/usr/local/sbin/gaonone-release`;
+it does not grant a shell, Docker, arbitrary environment variables, or a
+caller-selected checkout path. The installed entry point independently rejects
+an insecure protected checkout before it runs a backup, migration, build, or
+smoke check.
+
+The installer copies the reviewed privileged entry point into the root-owned
+system location. When a future approved change modifies `deploy/release.sh`,
+an administrator must repeat this protected-checkout installation step before
+that change can be used for a release.
+
+```bash
+GAONONE_EXPECTED_SHA=<full-approved-main-sha> \
+GAONONE_ENVIRONMENT=production \
+sudo /usr/local/sbin/gaonone-release
+```
+
+`GAONONE_ENVIRONMENT` is the deployment log label and must be explicit:
+use `production` for a production host and `staging` for the separate staging
+workflow. It does not replace `APP_ENV=production` in `.env.production`, which
+remains a required runtime safety setting. `GAONONE_EXPECTED_SHA` must be the
+full green `origin/main` commit SHA; do not use the workflow-local `DEPLOY_SHA`
+name outside GitHub Actions. The protected checkout and target branch are fixed
+to `/srv/gaonone` and `main` in the installed entry point; neither is a
+sudo-passed selector. The command-specific sudo policy carries the two leading
+shell assignments through sudo's default environment reset; do not use
+`sudo -E`, `sudo /usr/bin/env`, extra release-script arguments, or source
+`.env.production`.
+
+Both entry points acquire the same protected `/srv/gaonone/.gaonone-deploy.lock`:
+the label never selects a separate checkout, Compose project, or lock. A manual
+and workflow release cannot run concurrently against the shared resources.
+Checkout ownership and filesystem inspection failures abort explicitly before
+helpers are run, including after sync and before rollback startup.
+
+Then run the required production acceptance checks for login, store browsing,
+cart, checkout, merchant fulfilment, and delivery lifecycle.
 
 ## 7. Logs
 
@@ -102,25 +163,36 @@ Caddy access logs are JSON on stdout. Application logs are available through Doc
 
 ## 8. Database backup
 
-Create a timestamped logical backup:
+The guarded release command already creates and verifies a timestamped database
+and media backup before migrations. The media archive runs in a disposable
+`docker compose run --rm --no-deps -T api` container against the same `media_data`
+volume; the media step does not require the long-running API service or start
+dependencies. The database step still requires the running PostgreSQL service.
+Pseudo-TTY allocation is disabled to keep the archive stream binary-safe.
+The API image must already exist locally, which the initial
+`make prod-build` setup provides. If that one-shot archive cannot run, the
+guarded release aborts before migration—never bypass the backup or move it
+after migration. Before checksums or migration, the script checks the database
+archive with read-only `pg_restore --list` and lists the gzip media archive with
+`tar -tzf`. These detect malformed archives; they do not replace a restore drill.
+To create one manually without sourcing the Compose
+environment file, run:
 
 ```bash
-mkdir -p backups
-set -a; source .env.production; set +a
-docker compose --env-file .env.production -f docker-compose.prod.yml exec -T db \
-  pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc > "backups/gaonone-$(date +%Y%m%d-%H%M%S).dump"
+bash deploy/backup.sh
 ```
 
 Backups must be copied off-server to durable storage before the pilot contains real customer data.
 
 ## 9. Database restore
 
-Restoring overwrites data. Stop application traffic first and verify the backup file.
+Restoring overwrites data. Stop application traffic first, verify the backup
+file, and use the guarded restore script with its explicit confirmation.
 
 ```bash
-set -a; source .env.production; set +a
-cat backups/FILE.dump | docker compose --env-file .env.production -f docker-compose.prod.yml exec -T db \
-  pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists
+CONFIRM_RESTORE=YES \
+  DB_BACKUP=/absolute/path/to/FILE.dump \
+  bash deploy/restore.sh
 ```
 
 ## 10. Media backup

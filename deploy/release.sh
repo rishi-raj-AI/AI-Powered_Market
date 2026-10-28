@@ -1,12 +1,81 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 
-ROOT_DIR="${GAONONE_ROOT:-/home/ubuntu/gaonone}"
-BRANCH="${GAONONE_DEPLOY_BRANCH:-main}"
-EXPECTED_SHA="${GAONONE_EXPECTED_SHA:-}"
-ENVIRONMENT="${GAONONE_ENVIRONMENT:-staging}"
-LOCK_FILE="${GAONONE_DEPLOY_LOCK:-/tmp/gaonone-${ENVIRONMENT}-deploy.lock}"
+# sudo's env_reset retains PATH unless the host also configures secure_path.
+# This privileged entry point must never resolve Git, Docker, or its helpers
+# from the invoking user's PATH.
+PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
 
+# This script is installed as a root-owned entry point at
+# /usr/local/sbin/gaonone-release. Do not make either value caller-configurable:
+# the self-hosted runner must not select code that will run as root.
+ROOT_DIR="/srv/gaonone"
+BRANCH="main"
+EXPECTED_SHA="${GAONONE_EXPECTED_SHA:-}"
+ENVIRONMENT="${GAONONE_ENVIRONMENT:-}"
+
+if [[ -z "$ENVIRONMENT" ]]; then
+  echo "GAONONE_ENVIRONMENT must be explicitly set to staging or production." >&2
+  exit 1
+fi
+case "$ENVIRONMENT" in
+  staging|production) ;;
+  *)
+    echo "GAONONE_ENVIRONMENT must be staging or production, got: $ENVIRONMENT" >&2
+    exit 1
+    ;;
+esac
+if [[ -z "$EXPECTED_SHA" ]]; then
+  echo "GAONONE_EXPECTED_SHA must be set to the approved origin/$BRANCH commit SHA." >&2
+  exit 1
+fi
+
+RUNTIME_SERVICES=(api web worker proxy)
+
+assert_root_owned_path() {
+  local path="$1" owner mode
+  if [[ -L "$path" || ! -e "$path" ]]; then
+    echo "Protected release path is missing or symlinked: $path" >&2
+    return 1
+  fi
+  if ! owner="$(stat -c '%U' "$path")" || ! mode="$(stat -c '%a' "$path")"; then
+    echo "Could not inspect protected release path: $path" >&2
+    return 1
+  fi
+  if [[ "$owner" != "root" || $((8#$mode & 022)) -ne 0 ]]; then
+    echo "Protected release path must be root-owned and not group/world writable: $path" >&2
+    return 1
+  fi
+}
+
+assert_secure_release_checkout() {
+  local insecure_path
+  # This function is used in an if-condition, where Bash suppresses errexit.
+  # Propagate every failed check explicitly rather than relying on set -e.
+  assert_root_owned_path /srv || return 1
+  assert_root_owned_path "$ROOT_DIR" || return 1
+  if [[ ! -d "$ROOT_DIR/.git" ]]; then
+    echo "Protected release checkout is missing .git: $ROOT_DIR" >&2
+    return 1
+  fi
+  if ! insecure_path="$(find "$ROOT_DIR" -xdev \( -type l -o ! -user root -o -perm /022 \) -print -quit)"; then
+    echo "Could not inspect the protected release checkout." >&2
+    return 1
+  fi
+  if [[ -n "$insecure_path" ]]; then
+    echo "Protected release checkout contains a non-root-owned or writable path: $insecure_path" >&2
+    return 1
+  fi
+}
+
+if ! assert_secure_release_checkout; then
+  exit 1
+fi
+
+# Both labels address this same checkout and its volumes. They must contend
+# for one lock, even when manual and workflow invocations use different labels.
+LOCK_FILE="$ROOT_DIR/.gaonone-deploy.lock"
 cd "$ROOT_DIR"
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
@@ -14,9 +83,9 @@ if ! flock -n 9; then
   exit 1
 fi
 
-# Keep the production-grade Compose/env contract on the current server while the
-# server itself is used as staging. Renaming these files would require a separate
-# server migration and is intentionally deferred.
+# Keep the production-grade Compose/env contract. The explicit deployment label
+# above controls release locking/logging; renaming these files is a separate
+# infrastructure migration and is intentionally deferred.
 if [[ ! -f .env.production ]]; then
   echo "Missing $ROOT_DIR/.env.production" >&2
   exit 1
@@ -41,13 +110,17 @@ bash deploy/backup.sh
 echo "=== Sync $BRANCH ==="
 git fetch --prune origin "$BRANCH"
 TARGET_SHA="$(git rev-parse "origin/$BRANCH")"
-if [[ -n "$EXPECTED_SHA" && "$TARGET_SHA" != "$EXPECTED_SHA" ]]; then
+if [[ "$TARGET_SHA" != "$EXPECTED_SHA" ]]; then
   echo "Expected $EXPECTED_SHA but origin/$BRANCH is $TARGET_SHA; refusing stale deployment." >&2
   exit 1
 fi
 
 git checkout "$BRANCH"
 git reset --hard "$TARGET_SHA"
+if ! assert_secure_release_checkout; then
+  echo "Synced checkout failed the protected release integrity check; refusing deployment." >&2
+  exit 1
+fi
 echo "Deploying $(git log -1 --oneline) to ${ENVIRONMENT}"
 
 make prod-check
@@ -58,6 +131,31 @@ compose() {
   else
     sudo docker compose --env-file .env.production -f docker-compose.prod.yml "$@"
   fi
+}
+
+# Caddy is the only public listener. Verify it was started before the HTTPS
+# smoke checks so an application-only rollout cannot leave the site offline.
+ensure_proxy_running() {
+  local running_services
+  running_services="$(compose ps --status running --services 2>/dev/null || true)"
+  if grep -Fxq "proxy" <<<"$running_services"; then
+    return 0
+  fi
+
+  echo "Caddy proxy is not running after the deployment settle period." >&2
+  return 1
+}
+
+start_runtime_services() {
+  if ! compose up -d --no-build --force-recreate "${RUNTIME_SERVICES[@]}"; then
+    echo "Could not start the runtime services." >&2
+    return 1
+  fi
+  if ! sleep 15; then
+    echo "Deployment settle delay failed." >&2
+    return 1
+  fi
+  ensure_proxy_running
 }
 
 # Roll the running deployment back to the last known-good SHA.
@@ -84,11 +182,12 @@ rollback() {
   fi
 
   git reset --hard "$PREVIOUS_SHA"
+  if ! assert_secure_release_checkout; then
+    echo "Rollback checkout failed the protected release integrity check; refusing rollback startup." >&2
+    return 1
+  fi
   compose build api web worker
-  compose up -d --no-build --force-recreate api web worker
-  sleep "${GAONONE_DEPLOY_SETTLE_SECONDS:-15}"
-
-  if bash deploy/smoke.sh && bash deploy/monitor.sh; then
+  if start_runtime_services && bash deploy/smoke.sh && bash deploy/monitor.sh; then
     printf '%s\n' "$PREVIOUS_SHA" > .deployed-sha
     echo "=== ROLLBACK SUCCEEDED: ${ENVIRONMENT} is serving ${PREVIOUS_SHA} ===" >&2
     echo "Schema is still at the newer migration head, which is safe for" >&2
@@ -103,8 +202,10 @@ rollback() {
 
 compose build api web worker migrate
 compose --profile ops run --rm migrate
-compose up -d --no-build --force-recreate api web worker
-sleep "${GAONONE_DEPLOY_SETTLE_SECONDS:-15}"
+if ! start_runtime_services; then
+  rollback "Caddy proxy did not start"
+  exit 1
+fi
 compose ps
 
 # Everything past this point is verification. A failure here means the new code

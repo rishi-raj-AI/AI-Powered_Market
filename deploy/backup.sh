@@ -34,10 +34,17 @@ MANIFEST="${BACKUP_DIR}/gaonone-${STAMP}.sha256"
 echo "Creating PostgreSQL backup..."
 compose exec -T db pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc > "$DB_OUT"
 test -s "$DB_OUT" || { echo "Database backup is empty" >&2; exit 1; }
+# Inspect the custom-format archive without restoring or changing any data.
+compose exec -T db pg_restore --list < "$DB_OUT" > /dev/null
 
 echo "Creating uploaded-media backup..."
-compose exec -T api sh -c 'cd /app/data && tar -czf - uploads' > "$MEDIA_OUT"
+# Backup runs before migration, so it cannot require the long-running API
+# service to be healthy. Reuse its already-built image only as a transient
+# container and suppress dependent-service startup: this mounts the same media
+# volume without starting API, PostgreSQL, or Redis.
+compose run --rm --no-deps -T api sh -c 'cd /app/data && tar -czf - uploads' > "$MEDIA_OUT"
 test -s "$MEDIA_OUT" || { echo "Media backup is empty" >&2; exit 1; }
+tar -tzf "$MEDIA_OUT" > /dev/null
 
 sha256sum "$DB_OUT" "$MEDIA_OUT" > "$MANIFEST"
 find "$BACKUP_DIR" -type f \( -name 'gaonone-db-*.dump' -o -name 'gaonone-media-*.tar.gz' -o -name 'gaonone-*.sha256' \) -mtime "+${RETENTION_DAYS}" -delete
