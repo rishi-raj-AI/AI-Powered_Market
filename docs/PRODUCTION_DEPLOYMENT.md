@@ -132,7 +132,7 @@ GAONONE_ENVIRONMENT=production \
 sudo /usr/local/sbin/gaonone-release
 ```
 
-`GAONONE_ENVIRONMENT` is the deployment lock/log label and must be explicit:
+`GAONONE_ENVIRONMENT` is the deployment log label and must be explicit:
 use `production` for a production host and `staging` for the separate staging
 workflow. It does not replace `APP_ENV=production` in `.env.production`, which
 remains a required runtime safety setting. `GAONONE_EXPECTED_SHA` must be the
@@ -143,6 +143,12 @@ sudo-passed selector. The command-specific sudo policy carries the two leading
 shell assignments through sudo's default environment reset; do not use
 `sudo -E`, `sudo /usr/bin/env`, extra release-script arguments, or source
 `.env.production`.
+
+Both entry points acquire the same protected `/srv/gaonone/.gaonone-deploy.lock`:
+the label never selects a separate checkout, Compose project, or lock. A manual
+and workflow release cannot run concurrently against the shared resources.
+Checkout ownership and filesystem inspection failures abort explicitly before
+helpers are run, including after sync and before rollback startup.
 
 Then run the required production acceptance checks for login, store browsing,
 cart, checkout, merchant fulfilment, and delivery lifecycle.
@@ -159,12 +165,17 @@ Caddy access logs are JSON on stdout. Application logs are available through Doc
 
 The guarded release command already creates and verifies a timestamped database
 and media backup before migrations. The media archive runs in a disposable
-`docker compose run --rm --no-deps api` container against the same `media_data`
-volume; it does not require the long-running API service, PostgreSQL, or Redis
-to be started. The API image must already exist locally, which the initial
+`docker compose run --rm --no-deps -T api` container against the same `media_data`
+volume; the media step does not require the long-running API service or start
+dependencies. The database step still requires the running PostgreSQL service.
+Pseudo-TTY allocation is disabled to keep the archive stream binary-safe.
+The API image must already exist locally, which the initial
 `make prod-build` setup provides. If that one-shot archive cannot run, the
 guarded release aborts before migration—never bypass the backup or move it
-after migration. To create one manually without sourcing the Compose
+after migration. Before checksums or migration, the script checks the database
+archive with read-only `pg_restore --list` and lists the gzip media archive with
+`tar -tzf`. These detect malformed archives; they do not replace a restore drill.
+To create one manually without sourcing the Compose
 environment file, run:
 
 ```bash

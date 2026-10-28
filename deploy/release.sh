@@ -39,8 +39,10 @@ assert_root_owned_path() {
     echo "Protected release path is missing or symlinked: $path" >&2
     return 1
   fi
-  owner="$(stat -c '%U' "$path")"
-  mode="$(stat -c '%a' "$path")"
+  if ! owner="$(stat -c '%U' "$path")" || ! mode="$(stat -c '%a' "$path")"; then
+    echo "Could not inspect protected release path: $path" >&2
+    return 1
+  fi
   if [[ "$owner" != "root" || $((8#$mode & 022)) -ne 0 ]]; then
     echo "Protected release path must be root-owned and not group/world writable: $path" >&2
     return 1
@@ -49,13 +51,18 @@ assert_root_owned_path() {
 
 assert_secure_release_checkout() {
   local insecure_path
-  assert_root_owned_path /srv
-  assert_root_owned_path "$ROOT_DIR"
+  # This function is used in an if-condition, where Bash suppresses errexit.
+  # Propagate every failed check explicitly rather than relying on set -e.
+  assert_root_owned_path /srv || return 1
+  assert_root_owned_path "$ROOT_DIR" || return 1
   if [[ ! -d "$ROOT_DIR/.git" ]]; then
     echo "Protected release checkout is missing .git: $ROOT_DIR" >&2
     return 1
   fi
-  insecure_path="$(find "$ROOT_DIR" -xdev \( -type l -o ! -user root -o -perm /022 \) -print -quit)"
+  if ! insecure_path="$(find "$ROOT_DIR" -xdev \( -type l -o ! -user root -o -perm /022 \) -print -quit)"; then
+    echo "Could not inspect the protected release checkout." >&2
+    return 1
+  fi
   if [[ -n "$insecure_path" ]]; then
     echo "Protected release checkout contains a non-root-owned or writable path: $insecure_path" >&2
     return 1
@@ -66,7 +73,9 @@ if ! assert_secure_release_checkout; then
   exit 1
 fi
 
-LOCK_FILE="$ROOT_DIR/.gaonone-${ENVIRONMENT}-deploy.lock"
+# Both labels address this same checkout and its volumes. They must contend
+# for one lock, even when manual and workflow invocations use different labels.
+LOCK_FILE="$ROOT_DIR/.gaonone-deploy.lock"
 cd "$ROOT_DIR"
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then

@@ -9,9 +9,12 @@ environment.
 from __future__ import annotations
 
 import os
+import select
 import shlex
 import shutil
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -74,7 +77,7 @@ def _make_fake_checkout(tmp_path: Path) -> tuple[Path, Path, Path]:
         f'assert_root_owned_path "{root.parent}"',
         1,
     )
-    assert 'LOCK_FILE="$ROOT_DIR/.gaonone-${ENVIRONMENT}-deploy.lock"' in release_source
+    assert 'LOCK_FILE="$ROOT_DIR/.gaonone-deploy.lock"' in release_source
     release_source = release_source.replace(
         "sleep 15",
         "sleep 0",
@@ -271,8 +274,141 @@ def _events(root: Path) -> list[str]:
     return (root.parent / "events.log").read_text().splitlines()
 
 
+@pytest.mark.parametrize("phase", [1, 2, 3], ids=["initial", "synced", "rollback"])
+@pytest.mark.parametrize(
+    "failure",
+    ["parent_owner", "parent_mode", "root_owner", "root_mode", "stat_owner", "stat_mode", "scan"],
+)
+def test_checkout_inspection_errors_fail_closed(tmp_path: Path, phase: int, failure: str) -> None:
+    root, bin_dir, _ = _make_fake_checkout(tmp_path)
+    count_file = tmp_path / "inspection-count"
+    _write_executable(
+        bin_dir / "stat",
+        f"""
+count=0
+if [[ -f {shlex.quote(str(count_file))} ]]; then
+  count="$(< {shlex.quote(str(count_file))})"
+fi
+if [[ "$2" == '%U' && "$3" == {shlex.quote(str(root.parent))} ]]; then
+  count=$((count + 1))
+  printf '%s\\n' "$count" > {shlex.quote(str(count_file))}
+fi
+if [[ "$count" == "{phase}" ]]; then
+  case "{failure}:$2:$3" in
+    stat_owner:%U:*|stat_mode:%a:*) exit 73 ;;
+    parent_owner:%U:{root.parent}|root_owner:%U:{root}) printf 'ubuntu\\n'; exit 0 ;;
+    parent_mode:%a:{root.parent}|root_mode:%a:{root}) printf '777\\n'; exit 0 ;;
+  esac
+fi
+case "$2" in
+  %U) printf 'root\\n' ;;
+  %a) printf '755\\n' ;;
+  *) exit 74 ;;
+esac
+""",
+    )
+    if failure == "scan":
+        _write_executable(
+            bin_dir / "find",
+            f'[[ "$(< {shlex.quote(str(count_file))})" != "{phase}" ]]\n',
+        )
+    env = _release_environment(root, bin_dir)
+    if phase == 3:
+        env["SMOKE_FAIL_ONCE"] = "1"
+    result = subprocess.run(
+        [str(root / "deploy" / "release.sh")],
+        cwd=root, env=env, text=True, capture_output=True, timeout=10, check=False,
+    )
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    events = _events(root)
+    if phase == 1:
+        assert events == []
+    elif phase == 2:
+        assert "backup" in events
+        assert "make prod-check" not in events
+        assert "compose run --rm migrate" not in events
+    else:
+        assert events.count("smoke") == 1
+        assert events.count("compose up -d --no-build --force-recreate api web worker proxy") == 1
+        assert "compose build api web worker" not in events
+        assert "ROLLBACK SUCCEEDED" not in result.stderr
+    assert (root / ".deployed-sha").read_text() == f"{PREVIOUS_SHA}\n"
+
+
+@pytest.mark.parametrize("first_label", ["production", "staging"])
+def test_release_labels_contend_for_the_same_real_lock(tmp_path: Path, first_label: str) -> None:
+    root, bin_dir, _ = _make_fake_checkout(tmp_path)
+    real_flock = shutil.which("flock")
+    if real_flock:
+        _write_executable(bin_dir / "flock", f'exec {shlex.quote(real_flock)} "$@"\n')
+    else:
+        # macOS lacks the Linux flock command. Exercise the same OS advisory
+        # locking on the shell's inherited descriptor, not an always-pass shim.
+        _write_executable(
+            bin_dir / "flock",
+            f'exec {shlex.quote(sys.executable)} -c '
+            + shlex.quote(
+                "import fcntl,sys; "
+                "fcntl.flock(int(sys.argv[2]), fcntl.LOCK_EX | fcntl.LOCK_NB)"
+            ) + ' "$@"\n',
+        )
+    release_barrier = tmp_path / "release-backup"
+    os.mkfifo(release_barrier)
+    backup = root / "deploy" / "backup.sh"
+    backup.write_text(
+        backup.read_text().replace(
+            "set -euo pipefail\n",
+            'set -euo pipefail\nprintf "BACKUP_BARRIER\\n"\n'
+            f'read -r < {shlex.quote(str(release_barrier))}\n',
+            1,
+        )
+    )
+    first = subprocess.Popen(
+        [str(root / "deploy" / "release.sh")], cwd=root,
+        env=_release_environment(root, bin_dir, environment=first_label),
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1,
+    )
+    try:
+        assert first.stdout is not None
+        # The first release is held at a deterministic backup barrier with its
+        # lock held; no sleep or scheduler-dependent simultaneous-start claim.
+        deadline = time.monotonic() + 10
+        output = b""
+        while True:
+            remaining = deadline - time.monotonic()
+            assert remaining > 0, "first release did not reach the backup barrier"
+            ready, _, _ = select.select([first.stdout], [], [], remaining)
+            assert ready, "first release did not reach the backup barrier"
+            chunk = os.read(first.stdout.fileno(), 4096)
+            assert chunk, "first release exited before the backup barrier"
+            output += chunk
+            if b"BACKUP_BARRIER\n" in output:
+                break
+        events_before = _events(root)
+        second_label = "staging" if first_label == "production" else "production"
+        second = subprocess.run(
+            [str(root / "deploy" / "release.sh")], cwd=root,
+            env=_release_environment(root, bin_dir, environment=second_label),
+            text=True, capture_output=True, timeout=10, check=False,
+        )
+        assert second.returncode == 1
+        assert "deployment is already running" in second.stderr
+        assert _events(root) == events_before
+        with release_barrier.open("w") as barrier:
+            barrier.write("continue\n")
+        stdout, stderr = first.communicate(timeout=10)
+        assert first.returncode == 0, stdout + stderr
+        assert (root / ".deployed-sha").read_text() == f"{TARGET_SHA}\n"
+    finally:
+        if first.poll() is None:
+            first.kill()
+        first.communicate(timeout=10)
+
+
 def _run_backup_without_running_api(
     tmp_path: Path,
+    failure: str = "none",
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     """Exercise the actual backup script with no long-running API container.
 
@@ -288,6 +424,8 @@ def _run_backup_without_running_api(
     bin_dir.mkdir()
     event_log.touch()
     (root / ".env.production").write_text("# fake production environment\n")
+    (root / "uploads").mkdir()
+    (root / "uploads" / "fixture.txt").write_text("media fixture\n")
 
     _write_executable(
         bin_dir / "docker",
@@ -323,7 +461,13 @@ case "${{1:-}}" in
         ;;
       "db:pg_dump -U gaonone -d gaonone -Fc")
         printf 'db-dump\n' >> {shlex.quote(str(event_log))}
+        [[ "${{BACKUP_FAILURE:-}}" == "empty-db" ]] && exit 0
         printf 'database-backup\n'
+        ;;
+      "db:pg_restore --list")
+        printf 'db-inspect\n' >> {shlex.quote(str(event_log))}
+        cat > /dev/null
+        [[ "${{BACKUP_FAILURE:-}}" != "bad-db" ]]
         ;;
       "api:"*)
         echo "backup must not exec into a running API service" >&2
@@ -337,9 +481,14 @@ case "${{1:-}}" in
     ;;
   run)
     shift
-    if [[ "${{1:-}}" == "--rm" && "${{2:-}}" == "--no-deps" && "${{3:-}}" == "api" && "${{4:-}}" == "sh" && "${{5:-}}" == "-c" && "${{6:-}}" == "cd /app/data && tar -czf - uploads" ]]; then
+    if [[ "${{1:-}}" == "--rm" && "${{2:-}}" == "--no-deps" && "${{3:-}}" == "-T" && "${{4:-}}" == "api" && "${{5:-}}" == "sh" && "${{6:-}}" == "-c" && "${{7:-}}" == "cd /app/data && tar -czf - uploads" ]]; then
       printf 'media-run\n' >> {shlex.quote(str(event_log))}
-      printf 'media-backup\n'
+      [[ "${{BACKUP_FAILURE:-}}" == "empty-media" ]] && exit 0
+      if [[ "${{BACKUP_FAILURE:-}}" == "bad-media" ]]; then
+        printf 'not-a-gzip-archive\n'
+      else
+        tar -czf - uploads
+      fi
       exit 0
     fi
     echo "Unexpected fake compose run: $*" >&2
@@ -363,6 +512,7 @@ done
 
     env = os.environ.copy()
     env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    env["BACKUP_FAILURE"] = failure
     result = subprocess.run(
         ["bash", str(BACKUP_SCRIPT)],
         cwd=root,
@@ -384,6 +534,7 @@ def test_backup_archives_media_before_migration_without_a_running_api(
         "db-user",
         "db-name",
         "db-dump",
+        "db-inspect",
         "media-run",
     ]
     backups = root / "backups"
@@ -391,8 +542,31 @@ def test_backup_archives_media_before_migration_without_a_running_api(
     assert len(list(backups.glob("gaonone-media-*.tar.gz"))) == 1
     assert len(list(backups.glob("gaonone-*.sha256"))) == 1
     backup_source = BACKUP_SCRIPT.read_text()
-    assert "compose run --rm --no-deps api" in backup_source
+    assert "compose run --rm --no-deps -T api" in backup_source
     assert "compose exec -T api" not in backup_source
+
+
+@pytest.mark.parametrize("failure", ["empty-db", "bad-db", "empty-media", "bad-media"])
+def test_backup_rejects_empty_or_unreadable_archives(tmp_path: Path, failure: str) -> None:
+    result, root, event_log = _run_backup_without_running_api(tmp_path, failure)
+    assert result.returncode != 0
+    assert not list((root / "backups").glob("*.sha256"))
+    if failure.endswith("db"):
+        assert "media-run" not in event_log.read_text().splitlines()
+
+
+def test_failed_backup_aborts_release_before_sync_or_migration(tmp_path: Path) -> None:
+    root, bin_dir, _ = _make_fake_checkout(tmp_path)
+    _write_executable(root / "deploy" / "backup.sh", "exit 77\n")
+    result = subprocess.run(
+        [str(root / "deploy" / "release.sh")], cwd=root,
+        env=_release_environment(root, bin_dir), text=True, capture_output=True,
+        timeout=10, check=False,
+    )
+    assert result.returncode == 77
+    assert "git fetch --prune origin main" not in _events(root)
+    assert not any(event.startswith(("compose ", "make ")) for event in _events(root))
+    assert (root / ".deployed-sha").read_text() == f"{PREVIOUS_SHA}\n"
 
 
 def _write_scoped_sudo_shim(bin_dir: Path, root: Path) -> None:
@@ -613,7 +787,7 @@ def test_privileged_release_policy_and_documentation_are_narrow() -> None:
     assert "GAONONE_DEPLOY_BRANCH" not in RELEASE_SCRIPT.read_text()
     assert "GAONONE_DEPLOY_LOCK" not in RELEASE_SCRIPT.read_text()
     assert "GAONONE_DEPLOY_SETTLE_SECONDS" not in RELEASE_SCRIPT.read_text()
-    assert 'LOCK_FILE="$ROOT_DIR/.gaonone-${ENVIRONMENT}-deploy.lock"' in RELEASE_SCRIPT.read_text()
+    assert 'LOCK_FILE="$ROOT_DIR/.gaonone-deploy.lock"' in RELEASE_SCRIPT.read_text()
     assert "-type l" in RELEASE_SCRIPT.read_text()
     assert f'RELEASE_ENTRYPOINT="{SUDO_RELEASE_PATH}"' in installer
     assert 'RUNNER_USER="ubuntu"' in installer
