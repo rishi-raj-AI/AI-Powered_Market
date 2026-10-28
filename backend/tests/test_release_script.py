@@ -19,6 +19,7 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RELEASE_SCRIPT = PROJECT_ROOT / "deploy" / "release.sh"
+BACKUP_SCRIPT = PROJECT_ROOT / "deploy" / "backup.sh"
 DEPLOY_RUNNER_INSTALLER = PROJECT_ROOT / "deploy" / "install_deploy_runner.sh"
 DEPLOY_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "production-deploy.yml"
 DEPLOYMENT_RUNBOOK = PROJECT_ROOT / "docs" / "PRODUCTION_DEPLOYMENT.md"
@@ -268,6 +269,130 @@ def _run_release(
 
 def _events(root: Path) -> list[str]:
     return (root.parent / "events.log").read_text().splitlines()
+
+
+def _run_backup_without_running_api(
+    tmp_path: Path,
+) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
+    """Exercise the actual backup script with no long-running API container.
+
+    The fake Compose implementation rejects ``exec api`` outright. A successful
+    run therefore proves that the media archive uses the one-shot, no-dependency
+    API-image path rather than relying on an already-running application.
+    """
+
+    root = tmp_path / "backup-checkout"
+    bin_dir = tmp_path / "backup-bin"
+    event_log = tmp_path / "backup-events.log"
+    root.mkdir()
+    bin_dir.mkdir()
+    event_log.touch()
+    (root / ".env.production").write_text("# fake production environment\n")
+
+    _write_executable(
+        bin_dir / "docker",
+        f"""
+if [[ "${{1:-}}" == "info" ]]; then
+  exit 0
+fi
+if [[ "${{1:-}}" != "compose" ]]; then
+  echo "Unexpected fake docker command: $*" >&2
+  exit 1
+fi
+shift
+while (( $# )); do
+  case "$1" in
+    --env-file|-f) shift 2 ;;
+    *) break ;;
+  esac
+done
+case "${{1:-}}" in
+  exec)
+    shift
+    [[ "${{1:-}}" == "-T" ]] && shift
+    service="${{1:-}}"
+    shift
+    case "$service:$*" in
+      "db:printenv POSTGRES_USER")
+        printf 'db-user\n' >> {shlex.quote(str(event_log))}
+        printf 'gaonone\n'
+        ;;
+      "db:printenv POSTGRES_DB")
+        printf 'db-name\n' >> {shlex.quote(str(event_log))}
+        printf 'gaonone\n'
+        ;;
+      "db:pg_dump -U gaonone -d gaonone -Fc")
+        printf 'db-dump\n' >> {shlex.quote(str(event_log))}
+        printf 'database-backup\n'
+        ;;
+      "api:"*)
+        echo "backup must not exec into a running API service" >&2
+        exit 88
+        ;;
+      *)
+        echo "Unexpected fake compose exec: $service $*" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+  run)
+    shift
+    if [[ "${{1:-}}" == "--rm" && "${{2:-}}" == "--no-deps" && "${{3:-}}" == "api" && "${{4:-}}" == "sh" && "${{5:-}}" == "-c" && "${{6:-}}" == "cd /app/data && tar -czf - uploads" ]]; then
+      printf 'media-run\n' >> {shlex.quote(str(event_log))}
+      printf 'media-backup\n'
+      exit 0
+    fi
+    echo "Unexpected fake compose run: $*" >&2
+    exit 1
+    ;;
+  *)
+    echo "Unexpected fake compose command: $*" >&2
+    exit 1
+    ;;
+esac
+""",
+    )
+    _write_executable(
+        bin_dir / "sha256sum",
+        """
+for backup_file in "$@"; do
+  printf 'fixture-sha  %s\\n' "$backup_file"
+done
+""",
+    )
+
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    result = subprocess.run(
+        ["bash", str(BACKUP_SCRIPT)],
+        cwd=root,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return result, root, event_log
+
+
+def test_backup_archives_media_before_migration_without_a_running_api(
+    tmp_path: Path,
+) -> None:
+    result, root, event_log = _run_backup_without_running_api(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert event_log.read_text().splitlines() == [
+        "db-user",
+        "db-name",
+        "db-dump",
+        "media-run",
+    ]
+    backups = root / "backups"
+    assert len(list(backups.glob("gaonone-db-*.dump"))) == 1
+    assert len(list(backups.glob("gaonone-media-*.tar.gz"))) == 1
+    assert len(list(backups.glob("gaonone-*.sha256"))) == 1
+    backup_source = BACKUP_SCRIPT.read_text()
+    assert "compose run --rm --no-deps api" in backup_source
+    assert "compose exec -T api" not in backup_source
 
 
 def _write_scoped_sudo_shim(bin_dir: Path, root: Path) -> None:

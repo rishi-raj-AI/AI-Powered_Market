@@ -158,8 +158,14 @@ Caddy access logs are JSON on stdout. Application logs are available through Doc
 ## 8. Database backup
 
 The guarded release command already creates and verifies a timestamped database
-and media backup before migrations. To create one manually without sourcing the
-Compose environment file, run:
+and media backup before migrations. The media archive runs in a disposable
+`docker compose run --rm --no-deps api` container against the same `media_data`
+volume; it does not require the long-running API service, PostgreSQL, or Redis
+to be started. The API image must already exist locally, which the initial
+`make prod-build` setup provides. If that one-shot archive cannot run, the
+guarded release aborts before migration—never bypass the backup or move it
+after migration. To create one manually without sourcing the Compose
+environment file, run:
 
 ```bash
 bash deploy/backup.sh

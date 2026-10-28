@@ -36,7 +36,11 @@ compose exec -T db pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc > "$DB_OUT"
 test -s "$DB_OUT" || { echo "Database backup is empty" >&2; exit 1; }
 
 echo "Creating uploaded-media backup..."
-compose exec -T api sh -c 'cd /app/data && tar -czf - uploads' > "$MEDIA_OUT"
+# Backup runs before migration, so it cannot require the long-running API
+# service to be healthy. Reuse its already-built image only as a transient
+# container and suppress dependent-service startup: this mounts the same media
+# volume without starting API, PostgreSQL, or Redis.
+compose run --rm --no-deps api sh -c 'cd /app/data && tar -czf - uploads' > "$MEDIA_OUT"
 test -s "$MEDIA_OUT" || { echo "Media backup is empty" >&2; exit 1; }
 
 sha256sum "$DB_OUT" "$MEDIA_OUT" > "$MANIFEST"
