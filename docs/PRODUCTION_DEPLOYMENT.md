@@ -88,24 +88,48 @@ backups before migrations, records the prior deployed SHA, starts Caddy with
 the application services, and rolls application code back if verification
 fails.
 
+`make prod-deploy` is a lower-level operational target, not an approved
+release entry point: it does not enforce the approved SHA or the guarded
+backup-and-rollback sequence.
+
 After explicit release approval, run the following on the production host. Do
 not source `.env.production`; it can contain values that are not shell-safe.
 
-Before the first release after installing this revision, an administrator must
-refresh the narrowly scoped sudo rule once:
+The privileged release checkout is fixed at `/srv/gaonone`. It must be a
+root-owned, non-group/world-writable checkout with no symlinks, including `.git`,
+`.env.production`, deployment helpers, and Compose files. The self-hosted
+runner's workspace (including `/home/ubuntu/gaonone`) must not be used as this
+checkout or granted sudo access: it is a runner-writable workspace, not a
+privileged code boundary.
+
+Before enabling this revision, an administrator must provision and verify that
+protected checkout separately, then refresh the narrowly scoped sudo rule from
+it:
 
 ```bash
-sudo bash /home/ubuntu/gaonone/deploy/install_deploy_runner.sh
+sudo /bin/bash /srv/gaonone/deploy/install_deploy_runner.sh
 ```
 
-That rule preserves only the non-secret SHA and release-label selectors for the
-direct release script; it does not grant a shell, Docker, arbitrary environment
-variables, or a caller-selected checkout path.
+The policy authorizes the `ubuntu` account only. The manual operator and the
+self-hosted runner service must therefore run as `ubuntu`; a different account
+requires a separately reviewed policy change. The command-specific rule resets
+the sudo environment and preserves only the non-secret SHA and release-label
+selectors for the direct,
+no-argument root-owned release entry point at `/usr/local/sbin/gaonone-release`;
+it does not grant a shell, Docker, arbitrary environment variables, or a
+caller-selected checkout path. The installed entry point independently rejects
+an insecure protected checkout before it runs a backup, migration, build, or
+smoke check.
+
+The installer copies the reviewed privileged entry point into the root-owned
+system location. When a future approved change modifies `deploy/release.sh`,
+an administrator must repeat this protected-checkout installation step before
+that change can be used for a release.
 
 ```bash
 GAONONE_EXPECTED_SHA=<full-approved-main-sha> \
 GAONONE_ENVIRONMENT=production \
-sudo /home/ubuntu/gaonone/deploy/release.sh
+sudo /usr/local/sbin/gaonone-release
 ```
 
 `GAONONE_ENVIRONMENT` is the deployment lock/log label and must be explicit:
@@ -113,11 +137,11 @@ use `production` for a production host and `staging` for the separate staging
 workflow. It does not replace `APP_ENV=production` in `.env.production`, which
 remains a required runtime safety setting. `GAONONE_EXPECTED_SHA` must be the
 full green `origin/main` commit SHA; do not use the workflow-local `DEPLOY_SHA`
-name outside GitHub Actions. `GAONONE_ROOT` and `GAONONE_DEPLOY_BRANCH` retain
-their guarded defaults (`/home/ubuntu/gaonone` and `main`) in this privileged
-path. The install script allows `sudo` to preserve only the SHA and environment
-label through its narrow `env_keep` list; do not wrap the release script in
-`sudo /usr/bin/env` or source
+name outside GitHub Actions. The protected checkout and target branch are fixed
+to `/srv/gaonone` and `main` in the installed entry point; neither is a
+sudo-passed selector. The command-specific sudo policy carries the two leading
+shell assignments through sudo's default environment reset; do not use
+`sudo -E`, `sudo /usr/bin/env`, extra release-script arguments, or source
 `.env.production`.
 
 Then run the required production acceptance checks for login, store browsing,

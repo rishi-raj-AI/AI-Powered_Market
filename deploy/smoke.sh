@@ -24,9 +24,9 @@ PILOT_VILLAGE_LONGITUDE="$(env_value PILOT_VILLAGE_LONGITUDE)"
 BASE="https://${DOMAIN}"
 
 echo "Checking ${BASE}"
-curl --fail --silent --show-error --max-time 15 "${BASE}/api/v1/health" | tee /tmp/gaonone-health.json
+curl --fail --silent --show-error --max-time 15 "${BASE}/api/v1/health"
 echo
-curl --fail --silent --show-error --max-time 15 "${BASE}/api/v1/health/ready" | tee /tmp/gaonone-ready.json
+curl --fail --silent --show-error --max-time 15 "${BASE}/api/v1/health/ready"
 echo
 curl --fail --silent --show-error --max-time 15 -o /dev/null "${BASE}/"
 

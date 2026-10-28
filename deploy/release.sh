@@ -1,8 +1,17 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 
-ROOT_DIR="${GAONONE_ROOT:-/home/ubuntu/gaonone}"
-BRANCH="${GAONONE_DEPLOY_BRANCH:-main}"
+# sudo's env_reset retains PATH unless the host also configures secure_path.
+# This privileged entry point must never resolve Git, Docker, or its helpers
+# from the invoking user's PATH.
+PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+
+# This script is installed as a root-owned entry point at
+# /usr/local/sbin/gaonone-release. Do not make either value caller-configurable:
+# the self-hosted runner must not select code that will run as root.
+ROOT_DIR="/srv/gaonone"
+BRANCH="main"
 EXPECTED_SHA="${GAONONE_EXPECTED_SHA:-}"
 ENVIRONMENT="${GAONONE_ENVIRONMENT:-}"
 
@@ -22,9 +31,42 @@ if [[ -z "$EXPECTED_SHA" ]]; then
   exit 1
 fi
 
-LOCK_FILE="${GAONONE_DEPLOY_LOCK:-/tmp/gaonone-${ENVIRONMENT}-deploy.lock}"
 RUNTIME_SERVICES=(api web worker proxy)
 
+assert_root_owned_path() {
+  local path="$1" owner mode
+  if [[ -L "$path" || ! -e "$path" ]]; then
+    echo "Protected release path is missing or symlinked: $path" >&2
+    return 1
+  fi
+  owner="$(stat -c '%U' "$path")"
+  mode="$(stat -c '%a' "$path")"
+  if [[ "$owner" != "root" || $((8#$mode & 022)) -ne 0 ]]; then
+    echo "Protected release path must be root-owned and not group/world writable: $path" >&2
+    return 1
+  fi
+}
+
+assert_secure_release_checkout() {
+  local insecure_path
+  assert_root_owned_path /srv
+  assert_root_owned_path "$ROOT_DIR"
+  if [[ ! -d "$ROOT_DIR/.git" ]]; then
+    echo "Protected release checkout is missing .git: $ROOT_DIR" >&2
+    return 1
+  fi
+  insecure_path="$(find "$ROOT_DIR" -xdev \( -type l -o ! -user root -o -perm /022 \) -print -quit)"
+  if [[ -n "$insecure_path" ]]; then
+    echo "Protected release checkout contains a non-root-owned or writable path: $insecure_path" >&2
+    return 1
+  fi
+}
+
+if ! assert_secure_release_checkout; then
+  exit 1
+fi
+
+LOCK_FILE="$ROOT_DIR/.gaonone-${ENVIRONMENT}-deploy.lock"
 cd "$ROOT_DIR"
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
@@ -66,6 +108,10 @@ fi
 
 git checkout "$BRANCH"
 git reset --hard "$TARGET_SHA"
+if ! assert_secure_release_checkout; then
+  echo "Synced checkout failed the protected release integrity check; refusing deployment." >&2
+  exit 1
+fi
 echo "Deploying $(git log -1 --oneline) to ${ENVIRONMENT}"
 
 make prod-check
@@ -96,7 +142,7 @@ start_runtime_services() {
     echo "Could not start the runtime services." >&2
     return 1
   fi
-  if ! sleep "${GAONONE_DEPLOY_SETTLE_SECONDS:-15}"; then
+  if ! sleep 15; then
     echo "Deployment settle delay failed." >&2
     return 1
   fi
@@ -127,6 +173,10 @@ rollback() {
   fi
 
   git reset --hard "$PREVIOUS_SHA"
+  if ! assert_secure_release_checkout; then
+    echo "Rollback checkout failed the protected release integrity check; refusing rollback startup." >&2
+    return 1
+  fi
   compose build api web worker
   if start_runtime_services && bash deploy/smoke.sh && bash deploy/monitor.sh; then
     printf '%s\n' "$PREVIOUS_SHA" > .deployed-sha
