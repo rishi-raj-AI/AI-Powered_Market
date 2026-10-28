@@ -36,12 +36,12 @@ This is an action register, not a request to send secrets in chat or commit them
 ## P1 — required before enabling the related V1 capability
 
 1. **Approve and merge release-control PR #221 only after normal review.**
-   - PR #221 is green on its final head but remains open. Its root-owned runner installation and proxy/selector safeguards do not exist on current `main` or the live server.
+   - PR #221 remains open at `c1deb71566bb2feb661f43d5139d580aaa070588`; its previous green head changed when the cold media-backup remediation was added, so all four required checks must pass again. Its root-owned runner installation and proxy/selector safeguards do not exist on current `main` or the live server.
    - After an explicit merge decision, an authorized administrator must provision the narrow runner path. No general root shell, arbitrary `env`, arbitrary Docker access, caller-selected checkout, or preserved secret environment is acceptable.
 
 2. **Resolve the pre-migration media-backup runtime prerequisite.**
    - `deploy/backup.sh` invokes the running API container to archive media. A cold/failed API container safely prevents migration, but the deploy procedure currently does not make that prerequisite explicit or eliminate it.
-   - Engineering will prepare a narrow, separately reviewed remediation that preserves backup-before-migration order and forward-only rollback safety. Owner acceptance is needed before any production use.
+   - Engineering added the narrow remediation to PR #221 head `c1deb71566bb2feb661f43d5139d580aaa070588`: a one-shot `--no-deps` container archives the media volume before migration. Fresh CI, review, and owner acceptance are still needed before any production use.
 
 3. **Make the domain/CORS/TLS boundary explicit.**
    - Confirm the public domain, required browser origins, trusted hosts, reverse-proxy ports, certificate contact, and direct-origin firewall rules.

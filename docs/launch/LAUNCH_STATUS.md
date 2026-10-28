@@ -9,12 +9,12 @@ Verified source baseline for the V1 audit: `origin/main` = protected local main 
 |---|---|
 | Active worktree / branch | `gaonone-v1-launch-readiness-20261028` / `chore/v1-launch-readiness-20261028`, newly created from `ebe389de31d1d473f43a65cbaa41efa53ba0ccea` for documentation and audit only. |
 | Current phase | V1 external-dependency and release-candidate readiness audit. **Not a release candidate.** |
-| Release-control PR | [#221](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/221) is open and mergeable at `4873272f003d4f7d4d04a0af69e28a7f245aeb08`, based on current main `ebe389de31d1d473f43a65cbaa41efa53ba0ccea`. All four required checks passed on that exact head. No merge or deployment is authorized by this record. |
+| Release-control PR | [#221](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/221) is open and mergeable at `c1deb71566bb2feb661f43d5139d580aaa070588`, based on current main `ebe389de31d1d473f43a65cbaa41efa53ba0ccea`. Its prior head was green; the cold media-backup remediation changed the head, so all four required checks are pending again. No merge or deployment is authorized by this record. |
 | Public availability evidence | On 2026-10-28, `https://gaonone.in/` returned HTTPS 200 via Caddy and the public health/ready endpoints returned healthy database and Redis states. The reported runtime version was `0.4.0`; deployed SHA is therefore unverified. |
-| New release finding | Current `main` preserves backup-before-migration but its media backup executes through the running API container. A cold/unhealthy API safely aborts before migration, but deployment procedure does not yet guarantee that prerequisite. This is V1-001 / R-034, pending a separately reviewed narrow remediation. |
+| New release finding | Current `main` preserves backup-before-migration but its media backup executes through the running API container. PR #221 head `c1deb71566bb2feb661f43d5139d580aaa070588` changes this to a one-shot `--no-deps` backup and adds a regression; it remains V1-001 / R-034 until fresh CI/review passes. |
 | Owner gates | Environment designation, server SHA/backup evidence, Firebase/OAuth setup, canonical mobile identities/signing, physical-device/field acceptance, domain/CORS/TLS audit, and explicit release authorization remain open. |
 | Durable records | `V1_READINESS_AUDIT.md`, `EXTERNAL_DEPENDENCY_REGISTER.md`, `OWNER_ACTIONS_REQUIRED.md`, `V1_MANUAL_TEST_PLAN.md`, `V1_BUG_BACKLOG.md`, and `V1_RELEASE_CHECKLIST.md`. |
-| Next safe action | Review this documentation-only change, then prepare only the isolated backup-prerequisite remediation with regression tests. Do not deploy, alter provider configuration, or activate paid providers. |
+| Next safe action | Review this documentation-only change and the fresh PR #221 CI/review. Do not deploy, alter provider configuration, activate paid providers, or merge automatically. |
 
 | Field | Status |
 |---|---|
