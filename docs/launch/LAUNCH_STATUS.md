@@ -1,5 +1,11 @@
 # Launch status
 
+## Current Maps integration checkpoint — 2026-10-30
+
+PR #225 remains open at `599ff6c5d5dbf72edf460e464cd9edfb83af2f19`, with its verified QA APK preserved. Separate branch `feat/maps-client-integration` adds optional Android Maps SDK rendering/key injection and narrow web location resilience fixes. Owner's new public Maps Variable is present; console restrictions and device acceptance are not independently proven. Backend paid location services remain disabled; website configuration/CSP changes and deployment require separate approval. See [Maps configuration and QA](MAPS_CLIENT_INTEGRATION.md) and [current handoff](15_SESSION_HANDOFF.md). Earlier checkpoints below are historical, not a fresh protected-main/server verification.
+
+## Historical checkpoint
+
 Updated: 2026-10-27
 Verified baseline: `origin/main` = protected local main = `3aa1027cc82f27845e5d61cdba56d52ab237f56d`; the exact seven owner-owned Flutter/iOS modifications remain intact byte-for-byte.
 

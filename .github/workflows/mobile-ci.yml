@@ -13,6 +13,7 @@ jobs:
     # GitHub masks their values before printing step environment headers.
     # Do not inherit repository secrets or pass release/Admin credentials.
     secrets:
+      GAONONE_GOOGLE_MAPS_ANDROID_API_KEY: ${{ vars.GAONONE_GOOGLE_MAPS_ANDROID_API_KEY }}
       GAONONE_FIREBASE_ANDROID_API_KEY: ${{ vars.GAONONE_FIREBASE_ANDROID_API_KEY }}
       GAONONE_FIREBASE_ANDROID_APP_ID: ${{ vars.GAONONE_FIREBASE_ANDROID_APP_ID }}
       GAONONE_FIREBASE_ANDROID_MESSAGING_SENDER_ID: ${{ vars.GAONONE_FIREBASE_ANDROID_MESSAGING_SENDER_ID }}

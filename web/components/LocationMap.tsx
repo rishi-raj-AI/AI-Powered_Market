@@ -59,6 +59,9 @@ export function mapsConfigured(){return Boolean(key)}
 export function LocationMap({latitude,longitude,onChange,editable=false,height=280,zoom=16,markers=[],encodedPolyline='',className=''}:Props){
   const root=useRef<HTMLDivElement|null>(null);
   const mapRef=useRef<any>(null);
+  const [ready,setReady]=useState(false);
+  const changeRef=useRef(onChange);changeRef.current=onChange;
+  const lastSelection=useRef('');
   const overlays=useRef<any[]>([]);
   const routeLine=useRef<any>(null);
   const [available,setAvailable]=useState(Boolean(key));
@@ -72,23 +75,26 @@ export function LocationMap({latitude,longitude,onChange,editable=false,height=2
       if(!alive||!root.current)return;
       const options:any={center:{lat:fallbackLat,lng:fallbackLng},zoom,mapTypeControl:false,streetViewControl:false,fullscreenControl:false,clickableIcons:false};
       if(mapId)options.mapId=mapId;
-      const map=new maps.Map(root.current,options);mapRef.current=map;setAvailable(true);setMessage('');
-      if(editable&&onChange){map.addListener('idle',()=>{const center=map.getCenter();if(center)onChange(center.lat(),center.lng())})}
+      const map=new maps.Map(root.current,options);mapRef.current=map;setReady(true);setAvailable(true);setMessage('');
+      if(editable){map.addListener('idle',()=>{const center=map.getCenter();if(!center)return;const point=`${center.lat()},${center.lng()}`;if(point===lastSelection.current)return;lastSelection.current=point;changeRef.current?.(center.lat(),center.lng())})}
     }).catch(()=>{if(alive){setAvailable(false);setMessage('Embedded map is not configured yet. Coordinates still work.')}});
     return()=>{alive=false;overlays.current.forEach(x=>{try{x.map=null}catch{}});overlays.current=[];routeLine.current?.setMap?.(null);routeLine.current=null;mapRef.current=null};
   },[]);
 
-  useEffect(()=>{const map=mapRef.current;if(!map||latitude===undefined||longitude===undefined)return;map.panTo({lat:latitude,lng:longitude})},[latitude,longitude]);
+  useEffect(()=>{const map=mapRef.current;if(!map||latitude===undefined||longitude===undefined)return;lastSelection.current=`${latitude},${longitude}`;map.panTo({lat:latitude,lng:longitude})},[latitude,longitude,ready]);
 
   useEffect(()=>{
     const map=mapRef.current;const g=(window as any).google;if(!map||!g?.maps||!mapId)return;
     overlays.current.forEach(x=>{try{x.map=null}catch{}});overlays.current=[];
     if(!markers.length)return;
+    let alive=true;
     g.maps.importLibrary('marker').then(({AdvancedMarkerElement}:any)=>{
+      if(!alive)return;
       overlays.current=markers.map(point=>new AdvancedMarkerElement({map,position:{lat:point.lat,lng:point.lng},title:point.label||point.kind||'Location'}));
       if(markers.length>1&&!encodedPolyline){const bounds=new g.maps.LatLngBounds();markers.forEach(p=>bounds.extend({lat:p.lat,lng:p.lng}));map.fitBounds(bounds,56)}
     }).catch(()=>{});
-  },[markers.map(m=>`${m.lat},${m.lng},${m.label||''}`).join('|'),encodedPolyline]);
+    return()=>{alive=false};
+  },[markers.map(m=>`${m.lat},${m.lng},${m.label||''}`).join('|'),encodedPolyline,ready]);
 
   useEffect(()=>{
     const map=mapRef.current;const g=(window as any).google;if(!map||!g?.maps)return;
@@ -97,7 +103,7 @@ export function LocationMap({latitude,longitude,onChange,editable=false,height=2
     const path=decodePolyline(encodedPolyline);if(!path.length)return;
     routeLine.current=new g.maps.Polyline({map,path,strokeOpacity:.85,strokeWeight:5,geodesic:true});
     const bounds=new g.maps.LatLngBounds();path.forEach(p=>bounds.extend(p));map.fitBounds(bounds,56);
-  },[encodedPolyline]);
+  },[encodedPolyline,ready]);
 
   function locate(){
     if(!navigator.geolocation){setMessage('Location is unavailable in this browser.');return}

@@ -63,11 +63,13 @@ export function AddressLocationPicker({latitude,longitude,onChange,onAddress,onS
  async function resolve(lat:number,lng:number,requestId=beginLocationRequest()){
   onChange(lat,lng);
   try{
-   const[r,next]=await Promise.all([gaonApi.reverseGeocode(lat,lng),requireServiceable?gaonApi.serviceability(lat,lng):Promise.resolve(null)]);
+   // Geocoding is optional. Its disabled-provider response must not erase an
+   // independently valid serviceability result or the user's typed landmark.
+   const[r,next]=await Promise.all([gaonApi.reverseGeocode(lat,lng).catch(()=>null),requireServiceable?gaonApi.serviceability(lat,lng):Promise.resolve(null)]);
    if(!isCurrent(requestId))return;
    publishService(next);
-   if(r.formatted_address)applyAddress(r.formatted_address);
-   setMsg('');
+   if(r?.formatted_address)applyAddress(r.formatted_address);
+   setMsg(r?.formatted_address?'':'Coordinates selected. Keep or enter your landmark manually.');
   }catch(e:any){
    if(!isCurrent(requestId))return;
    publishService(null);
