@@ -1,0 +1,141 @@
+name: Android QA build
+on:
+  workflow_call:
+    # Optional at dispatch so the generator reports ALL missing variable names.
+    # These are public client identifiers, not repository signing/server secrets.
+    secrets:
+      GAONONE_FIREBASE_ANDROID_API_KEY:
+        required: false
+      GAONONE_FIREBASE_ANDROID_APP_ID:
+        required: false
+      GAONONE_FIREBASE_ANDROID_MESSAGING_SENDER_ID:
+        required: false
+      GAONONE_FIREBASE_ANDROID_PROJECT_ID:
+        required: false
+      GAONONE_GOOGLE_SERVER_CLIENT_ID:
+        required: false
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The artifact records and builds the PR head, not a synthetic merge.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.1'
+          cache: true
+
+      # Reproducibility: once pubspec.lock is committed, --enforce-lockfile
+      # makes the build fail rather than silently resolving a different tree.
+      # Until then the run still resolves normally and publishes the lock it
+      # produced, so it can be committed in one step.
+      - name: Resolve dependencies
+        working-directory: mobile
+        run: |
+          if [ -f pubspec.lock ]; then
+            echo "pubspec.lock present: enforcing the locked dependency tree."
+            flutter pub get --enforce-lockfile
+          else
+            echo "::warning title=Unlocked dependencies::mobile/pubspec.lock is not committed, so this build resolved its own dependency tree. Download the pubspec-lock artifact from this run and commit it to make mobile builds reproducible."
+            flutter pub get
+          fi
+
+      - name: Publish the resolved lockfile for committing
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pubspec-lock
+          path: mobile/pubspec.lock
+          if-no-files-found: warn
+          retention-days: 14
+
+      - working-directory: mobile
+        run: flutter analyze lib
+      - working-directory: mobile
+        run: flutter test
+      - name: Test public QA configuration boundary
+        run: python3 -m unittest discover -s mobile/tool -p 'test_*.py' -v
+
+      - name: Prepare public QA configuration
+        env:
+          GAONONE_FIREBASE_ANDROID_API_KEY: ${{ secrets.GAONONE_FIREBASE_ANDROID_API_KEY }}
+          GAONONE_FIREBASE_ANDROID_APP_ID: ${{ secrets.GAONONE_FIREBASE_ANDROID_APP_ID }}
+          GAONONE_FIREBASE_ANDROID_MESSAGING_SENDER_ID: ${{ secrets.GAONONE_FIREBASE_ANDROID_MESSAGING_SENDER_ID }}
+          GAONONE_FIREBASE_ANDROID_PROJECT_ID: ${{ secrets.GAONONE_FIREBASE_ANDROID_PROJECT_ID }}
+          GAONONE_GOOGLE_SERVER_CLIENT_ID: ${{ secrets.GAONONE_GOOGLE_SERVER_CLIENT_ID }}
+        run: >-
+          python3 mobile/tool/qa_build_config.py
+          --output "$RUNNER_TEMP/gaonone-qa.json"
+          --report "$RUNNER_TEMP/gaonone-config-status.json"
+
+      - name: Test actual QA compile-time configuration
+        working-directory: mobile
+        run: flutter test --no-pub --dart-define-from-file="$RUNNER_TEMP/gaonone-qa.json" test/qa_build_contract_test.dart test/auth_accounts_test.dart
+
+      - name: Build installable QA APK (not production release)
+        working-directory: mobile
+        run: flutter build apk --debug --no-pub --dart-define-from-file="$RUNNER_TEMP/gaonone-qa.json"
+
+      - name: Verify APK and record provenance
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          apk=mobile/build/app/outputs/flutter-apk/app-debug.apk
+          test -s "$apk"
+          output=mobile/build/qa-artifact
+          mkdir -p "$output"
+          cp "$apk" "$output/gaonone-qa.apk"
+          build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$build_tools/apksigner" verify --verbose --print-certs "$apk" > "$output/signing-certificate.txt"
+          "$build_tools/aapt" dump badging "$apk" > "$output/apk-metadata.txt"
+          grep -q "package: name='in.gaonone.gaonone_mobile'" "$output/apk-metadata.txt"
+          grep -q "application-label:'GaonOne QA'" "$output/apk-metadata.txt"
+          grep -q 'Android Debug' "$output/signing-certificate.txt"
+          file "$apk" > "$output/file-type.txt"
+          flutter --version --machine > "$output/flutter-version.json"
+          java -version 2> "$output/java-version.txt"
+          cp "$RUNNER_TEMP/gaonone-config-status.json" "$output/configuration-status.json"
+          cp docs/launch/ANDROID_QA_APK.md "$output/INSTALL-AND-LIMITATIONS.md"
+          printf '%s\n' "$EXPECTED_SOURCE_SHA" > "$output/source-sha.txt"
+          git rev-parse HEAD^{tree} > "$output/source-tree.txt"
+          shasum -a 256 mobile/pubspec.lock > "$output/pubspec-lock.sha256"
+          (cd "$output" && sha256sum gaonone-qa.apk > SHA256SUMS)
+          {
+            echo '## GaonOne QA APK — debug signed, not a production release'
+            echo "Source: $EXPECTED_SOURCE_SHA"
+            echo 'API: https://gaonone.in/api/v1; legacy OTP disabled.'
+            echo 'Download the gaonone-qa-apk artifact. Physical-device testing is NOT performed by CI.'
+            echo 'Google login requires public Firebase variables and registration of the certificate in signing-certificate.txt.'
+            echo '```'
+            cat "$output/SHA256SUMS" "$output/configuration-status.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Prove production release refuses missing signing inputs
+        working-directory: mobile/android
+        run: |
+          set -euo pipefail
+          if ./gradlew :app:assembleRelease --dry-run > "$RUNNER_TEMP/release-signing-check.log" 2>&1; then
+            echo 'Unsigned/unconfigured release was unexpectedly accepted.' >&2
+            exit 1
+          fi
+          grep -q 'Release signing is not configured' "$RUNNER_TEMP/release-signing-check.log"
+
+      - name: Publish verified QA APK and evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: gaonone-qa-apk-${{ github.event.pull_request.head.sha || github.sha }}
+          path: mobile/build/qa-artifact/
+          if-no-files-found: error
+          retention-days: 14

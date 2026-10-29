@@ -4,7 +4,7 @@ This is a **debug-signed QA build**, not a production release or proof of physic
 
 ## Download and install
 
-1. Open the focused APK PR's **analyze-and-build-android** check, or GitHub Actions → **Mobile CI** → the successful run for the exact PR head.
+1. Open the focused APK PR's **analyze-and-build-android** check, or GitHub Actions → **Mobile CI** → the successful run for the exact PR head. Build details are in **android-qa / build**; the existing required check passes only after all validation and artifact publication succeed.
 2. Download `gaonone-qa-apk-<full-source-sha>` from **Artifacts** (GitHub sign-in/repository access required; retention 14 days). Unzip it. The APK is `gaonone-qa.apk`.
 3. Read `configuration-status.json` first. All five public variables must be present or CI fails before building/publishing the APK. `provided_unverified` is not provider/device acceptance; nonempty inputs can still have incorrect project/client/certificate registration.
 4. Compare the file with `SHA256SUMS`; retain `source-sha.txt`, `source-tree.txt`, APK metadata, toolchain versions, and `signing-certificate.txt` with test evidence. The certificate's SHA-1/SHA-256 are public; the private QA key is never uploaded.
@@ -22,6 +22,8 @@ In repository Settings → Secrets and variables → Actions → **Variables**, 
 - `GAONONE_FIREBASE_ANDROID_MESSAGING_SENDER_ID`
 - `GAONONE_FIREBASE_ANDROID_PROJECT_ID`
 - `GAONONE_GOOGLE_SERVER_CLIENT_ID` (**Web OAuth client ID**, not Android OAuth client ID)
+
+Keep these under **Variables**. The calling workflow maps only these five public values into the reusable workflow's masked secret channel so GitHub's step headers cannot print them. This does not require creating repository Secrets, granting additional token permissions, or supplying signing/Firebase Admin credentials. The generator rejects missing/blank values by name before the APK build, and Flutter receives the allowlisted temporary JSON through `--dart-define-from-file`.
 
 Verify the Firebase Android registration uses exactly `in.gaonone.gaonone_mobile`, Google provider is enabled, OAuth consent/test-user eligibility is correct, and the APK certificate SHA-1/SHA-256 from `signing-certificate.txt` are registered. A fresh hosted runner generates a fresh debug certificate; register the fingerprint of the artifact being tested. A stable internal QA signing identity can be introduced separately through an approved secret store; never cache/upload private debug keys as artifacts.
 

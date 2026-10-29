@@ -1,15 +1,46 @@
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 
 from qa_build_config import API_URL, PUBLIC_KEYS, configuration
 
 
 class QaBuildConfigurationTests(unittest.TestCase):
+    def test_workflow_passes_only_exact_public_variables_via_masked_channel(self):
+        root = Path(__file__).resolve().parents[2]
+        caller = (root / ".github/workflows/mobile-ci.yml").read_text()
+        builder = (root / ".github/workflows/android-qa-build.yml").read_text()
+        mappings = dict(re.findall(r"(GAONONE_\w+): \$\{\{ vars\.(\w+) \}\}", caller))
+        self.assertEqual(mappings, {key: key for key in PUBLIC_KEYS})
+        masked = dict(re.findall(r"(GAONONE_\w+): \$\{\{ secrets\.(\w+) \}\}", builder))
+        self.assertEqual(masked, mappings)
+        self.assertNotIn("secrets: inherit", caller)
+        self.assertNotIn("${{ vars.", builder)
+        self.assertIn("uses: ./.github/workflows/android-qa-build.yml", caller)
+        self.assertIn('python3 mobile/tool/qa_build_config.py', builder)
+        self.assertIn('--dart-define-from-file="$RUNNER_TEMP/gaonone-qa.json"', builder)
+
+    def test_required_gate_runs_and_rejects_every_unsuccessful_build_state(self):
+        root = Path(__file__).resolve().parents[2]
+        workflow = (root / ".github/workflows/mobile-ci.yml").read_text()
+        gate = workflow.split("  analyze-and-build-android:\n", 1)[1]
+        self.assertIn("needs: android-qa", gate)
+        self.assertIn("if: ${{ always() }}", gate)
+        self.assertIn("ANDROID_QA_RESULT: ${{ needs.android-qa.result }}", gate)
+        script = textwrap.dedent(gate.split("        run: |\n", 1)[1])
+        for state in ("success", "failure", "cancelled", "skipped", ""):
+            with self.subTest(state=state):
+                result = subprocess.run(["bash", "-eu", "-c", script],
+                                        env={**os.environ, "ANDROID_QA_RESULT": state},
+                                        capture_output=True, text=True, check=False)
+                self.assertEqual(result.returncode, 0 if state == "success" else 1)
+
     def test_missing_configuration_is_reported_not_invented(self):
         values, report = configuration({})
         self.assertEqual(values["API_URL"], "https://gaonone.in/api/v1")
