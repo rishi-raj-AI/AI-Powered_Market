@@ -4,6 +4,28 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Private release credentials are injected only by an approved signing runner.
+// QA/debug builds never need them and release must never fall back to debug.
+val releaseSigning = listOf(
+    "GAONONE_RELEASE_KEYSTORE_PATH", "GAONONE_RELEASE_KEY_ALIAS",
+    "GAONONE_RELEASE_STORE_PASSWORD", "GAONONE_RELEASE_KEY_PASSWORD",
+).associateWith { System.getenv(it).orEmpty() }
+val releaseSigningReady = releaseSigning.values.all { it.isNotBlank() }
+
+gradle.taskGraph.whenReady {
+    if (allTasks.any { it.project == project && it.name in setOf(
+            "assembleRelease", "bundleRelease", "packageRelease", "validateSigningRelease"
+        ) }) {
+        check(releaseSigningReady) {
+            "Release signing is not configured. Supply the four GAONONE_RELEASE_* inputs on an approved signing runner; use debug for QA."
+        }
+        check(releaseSigning.getValue("GAONONE_RELEASE_KEY_ALIAS") != "androiddebugkey" &&
+            file(releaseSigning.getValue("GAONONE_RELEASE_KEYSTORE_PATH")).name != "debug.keystore") {
+            "Android debug signing is not permitted for a production release."
+        }
+    }
+}
+
 android {
     namespace = "in.gaonone.gaonone_mobile"
     compileSdk = flutter.compileSdkVersion
@@ -29,11 +51,20 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            if (releaseSigningReady) {
+                storeFile = file(releaseSigning.getValue("GAONONE_RELEASE_KEYSTORE_PATH"))
+                keyAlias = releaseSigning.getValue("GAONONE_RELEASE_KEY_ALIAS")
+                storePassword = releaseSigning.getValue("GAONONE_RELEASE_STORE_PASSWORD")
+                keyPassword = releaseSigning.getValue("GAONONE_RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }

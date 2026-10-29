@@ -1,5 +1,14 @@
 # Session handoff
 
+## Issue #224 APK-first implementation — 2026-10-29
+
+- New isolated `feat/android-qa-apk` branch starts from freshly verified main `575df507e879dff94569d04f6c57878c259446e2`, including merged #223 Firebase web CSP correction. Protected main, #221/#222, production accounts/configuration, and prior owner changes remain untouched.
+- User now explicitly authorizes a clearly labeled installable QA APK targeting `https://gaonone.in/api/v1`, with downloadable Actions artifact. Production signing remains separate. This supersedes the earlier wait-for-release-signing gate only for debug-signed QA, not production distribution or device/live-data authorization.
+- Mobile CI retains analysis/tests and adds fixed-public QA configuration, exact-head build, package/signature/hash/provenance checks and 14-day artifact publication. Release signing no longer defaults to debug and must receive external approved inputs. Google/Firebase exchange, backend roles, and shared workspaces are unchanged.
+- Repository public Actions variables were absent at inspection; owner said they will configure them and explicitly requires all five. Missing/blank inputs now fail before APK build/publication, with names only in diagnostics. Device/install/login/role acceptance must be recorded separately from CI.
+- See [ANDROID_QA_APK.md](ANDROID_QA_APK.md) for exact variable names, certificate registration, download/install, reproduction, signing, and manual acceptance. Validation/build results will be recorded after actual execution. Do not begin UI/features before the APK milestone or merge/deploy automatically.
+- Local validation: enforced-lockfile resolution, Flutter analysis, all 32 Flutter tests, seven QA-define/auth tests, five Python configuration tests (including every missing variable), Ruff, Python compilation, workflow YAML parsing, and whitespace checks pass. No local Android build is claimed: SDK/JDK/storage prerequisites remain unavailable; the actual APK/signing checks run on GitHub's Android-capable runner. PR run/artifact evidence must be checked on its exact head before claiming a built APK.
+
 ## Current checkpoint — 2026-10-27
 
 - Firebase-launch OTP-availability [PR #219](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/219) merged normally as `3aa1027cc82f27845e5d61cdba56d52ab237f56d` after `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` all passed on final head `9884eccca3041786510b7676b3791281b474ff79`. No deployment ran.
