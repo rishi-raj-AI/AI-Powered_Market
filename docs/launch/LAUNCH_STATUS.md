@@ -1,7 +1,32 @@
 # Launch status
 
-Updated: 2026-10-27
-Verified baseline: `origin/main` = protected local main = `3aa1027cc82f27845e5d61cdba56d52ab237f56d`; the exact seven owner-owned Flutter/iOS modifications remain intact byte-for-byte.
+Updated: 2026-10-29
+Verified source baseline for the V1 audit: `origin/main` = protected local main = `ebe389de31d1d473f43a65cbaa41efa53ba0ccea` when the isolated audit branch was created. The protected checkout must retain its exact owner-owned Flutter/iOS modifications; this documentation branch does not modify them.
+
+## Current review checkpoint — 2026-10-29 04:00 UTC
+
+PR #221 head `9fdc683d945dc7f90040133cd17aecacb4b5a301` passes all four required gates. Focused final review confirms the protected-checkout failure propagation and shared-lock P1 findings are remediated, with archive validation and proxy/SHA/sudo/backup/rollback safeguards preserved. No unresolved P0/P1 implementation issue was found in this bounded release review; see [PR_221_FOCUSED_REVIEW.md](PR_221_FOCUSED_REVIEW.md).
+
+PR #222 head `daa0580c24b253250668cc267d90baf755ff890f` also passed all four gates before this documentation update, which requires fresh CI. Neither PR has a submitted GitHub review. Both remain open and unmerged. Owner merge approval, installed-host policy verification, actual backup/restore acceptance, and deployment authorization remain distinct gates. No server installation or deployment occurred. GaonOne is **not a validated release candidate**; broader mobile/provider/device readiness remains open.
+
+## Historical review checkpoint — 2026-10-28 20:35 UTC
+
+All four required checks passed on PR #221 head `c1deb71566bb2feb661f43d5139d580aaa070588` and PR #222 head `c0ee58c068f892c76c5c6b6c9fc794a61fc73f81` (before this documentation update). Focused review found two unresolved P1 implementation issues: protected-parent validation can ignore failures, and staging/production labels use different locks for the same checkout. See [PR_221_FOCUSED_REVIEW.md](PR_221_FOCUSED_REVIEW.md) for evidence and required regressions. PR #221 is not approved; no merge or deployment occurred. Fresh CI is required for this documentation update. Installation on any server is unverified.
+
+Next safe action: narrowly remediate the two release findings, rerun tests/CI, and review the new head. Owner merge/deployment approval remains mandatory. Earlier pending-CI and owner-only-next-action statements below are historical, not the current state.
+
+## Historical V1 readiness checkpoint — 2026-10-28
+
+| Field | Status |
+|---|---|
+| Active worktree / branch | `gaonone-v1-launch-readiness-20261028` / `chore/v1-launch-readiness-20261028`, newly created from `ebe389de31d1d473f43a65cbaa41efa53ba0ccea` for documentation and audit only. |
+| Current phase | V1 external-dependency and release-candidate readiness audit. **Not a release candidate.** |
+| Release-control PR | [#221](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/221) is open and mergeable at `c1deb71566bb2feb661f43d5139d580aaa070588`, based on current main `ebe389de31d1d473f43a65cbaa41efa53ba0ccea`. Its prior head was green; the cold media-backup remediation changed the head, so all four required checks are pending again. No merge or deployment is authorized by this record. |
+| Public availability evidence | On 2026-10-28, `https://gaonone.in/` returned HTTPS 200 via Caddy and the public health/ready endpoints returned healthy database and Redis states. The reported runtime version was `0.4.0`; deployed SHA is therefore unverified. |
+| New release finding | Current `main` preserves backup-before-migration but its media backup executes through the running API container. PR #221 head `c1deb71566bb2feb661f43d5139d580aaa070588` changes this to a one-shot `--no-deps` backup and adds a regression; it remains V1-001 / R-034 until fresh CI/review passes. |
+| Owner gates | Environment designation, server SHA/backup evidence, Firebase/OAuth setup, canonical mobile identities/signing, physical-device/field acceptance, domain/CORS/TLS audit, and explicit release authorization remain open. |
+| Durable records | `V1_READINESS_AUDIT.md`, `EXTERNAL_DEPENDENCY_REGISTER.md`, `OWNER_ACTIONS_REQUIRED.md`, `V1_MANUAL_TEST_PLAN.md`, `V1_BUG_BACKLOG.md`, and `V1_RELEASE_CHECKLIST.md`. |
+| Next safe action | Review this documentation-only change and the fresh PR #221 CI/review. Do not deploy, alter provider configuration, activate paid providers, or merge automatically. |
 
 | Field | Status |
 |---|---|
