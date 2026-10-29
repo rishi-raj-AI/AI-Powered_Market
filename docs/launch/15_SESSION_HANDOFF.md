@@ -1,6 +1,13 @@
 # Session handoff
 
-## Current review checkpoint — 2026-10-28 20:35 UTC
+## Current review checkpoint — 2026-10-29 04:00 UTC
+
+- GitHub confirms PR #221 remains open at `9fdc683d945dc7f90040133cd17aecacb4b5a301`. All four required gates passed on that exact head. Documentation PR #222 also passed all four gates at `daa0580c24b253250668cc267d90baf755ff890f`; this subsequent documentation commit needs fresh CI. Neither PR has a submitted GitHub review.
+- Focused final source/test review found the two previously recorded P1 release issues remediated: every protected-path/inspection failure propagates explicitly, and staging/production invocations contend for one checkout lock. Regression coverage exercises all three validation phases and real two-process lock contention in both label orders. Archive inspection, proxy-before-HTTPS, mandatory SHA/environment selectors, narrow sudo policy, backup-before-migration, forward-only rollback, and named-volume safeguards remain intact. See [PR_221_FOCUSED_REVIEW.md](PR_221_FOCUSED_REVIEW.md).
+- No unresolved P0/P1 implementation finding remains in this focused release review. This is not a submitted human approval, installed-host sudo test, restore drill, or release-candidate decision. Both PRs remain unmerged; explicit owner approval is required before merge, installation, or deployment.
+- Do not repeat the completed release audit or change release code merely to refresh CI. Preserve the separate uncommitted mobile-audit draft; it is outside this heartbeat's documentation commit. Broader mobile/provider/device readiness work remains separate. This follow-up did not access production, secrets, protected main, or owner modifications.
+
+## Historical review checkpoint — 2026-10-28 20:35 UTC
 
 - All four required gates passed on PR #221 `c1deb71566bb2feb661f43d5139d580aaa070588` and documentation PR #222 `c0ee58c068f892c76c5c6b6c9fc794a61fc73f81` before this update. No submitted GitHub reviews were present. This documentation update requires its own CI.
 - Focused review found two unresolved P1 issues: conditional-function execution ignores failed protected-parent assertions; environment-specific locks do not serialize the shared release checkout across manual production and automated staging invocations. The first was reproduced with the inspected function bodies and disposable mocked filesystem checks. See [PR_221_FOCUSED_REVIEW.md](PR_221_FOCUSED_REVIEW.md).

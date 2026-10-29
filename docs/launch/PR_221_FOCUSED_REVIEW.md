@@ -1,6 +1,21 @@
-# PR #221 focused review — 2026-10-28 20:35 UTC
+# PR #221 focused review
 
-Status: **changes required; not approved for merge or deployment**.
+## Final remediation review — 2026-10-29 04:00 UTC
+
+Status: **focused implementation findings resolved; owner approval still required**.
+
+- GitHub head and clean release worktree HEAD both equal `9fdc683d945dc7f90040133cd17aecacb4b5a301`. Required gates `backend-check`, `build-and-ui`, `analyze-and-build-android`, and `production-compose-and-images` all succeeded on this exact head. PR #222's four gates also succeeded at `daa0580c24b253250668cc267d90baf755ff890f` before this documentation update. No submitted GitHub reviews were present.
+- Protected-parent/root assertions and failed `stat`/recursive `find` inspection now return failure explicitly even in Bash conditional-function context. Twenty-one regression cases cover seven failures across initial, post-sync, and rollback checks, including no startup/false success after rejection.
+- One fixed `.gaonone-deploy.lock` serializes the shared checkout regardless of the explicit environment label. Two real OS-lock contention tests hold the first process at a deterministic backup barrier and prove the other label is rejected without side effects, in both label orders. The workflow still explicitly selects staging; no environment designation changed.
+- Database backup is nonempty and inspected with `pg_restore --list`; media backup uses `--rm --no-deps -T`, is nonempty, and is inspected with `tar -tzf` before checksums/retention. Regressions cover invalid/empty archives and abort before sync/migration after backup failure. Database TOC inspection is not a restore drill or proof that every data block is recoverable. Media inspection uses real tar; Docker/database and sudo behavior are simulated locally.
+- Rechecked normal and rollback runtime lists (`api web worker proxy`), proxy-running verification before HTTPS checks, exact expected-SHA equality, mandatory valid environment labels, fixed privileged checkout/PATH, command-specific two-selector sudo allowlist with no arguments/NOSETENV, backup-before-migration, forward-only schema policy, and no PostgreSQL volume removal/recreation. Smoke/monitor assumptions remain valid; their public HTTPS results establish availability, not deployed-SHA provenance.
+- Existing implementation validation: 47 focused release regressions and four deployment-validator tests passed locally; shell syntax, Ruff, Python compilation, whitespace checks, and `make -n prod-deploy` passed. The local production Settings suite lacked `redis`; the exact-head green backend CI is separate integration evidence. Tests were not needlessly repeated during this heartbeat.
+
+No unresolved P0/P1 implementation finding remains within this focused review. Both PRs remain open and unmerged. Administrator provisioning/verification of the protected checkout and installed sudo policy, real backup/restore acceptance, owner environment designation, and explicit merge/installation/deployment authorization remain external gates. No installer, live-server command, deployment, secret change, or protected-main mutation was performed.
+
+## Historical review — 2026-10-28 20:35 UTC
+
+Historical status: changes required at `c1deb71566bb2feb661f43d5139d580aaa070588`; superseded by the exact-head remediation review above.
 
 ## Exact-head CI evidence
 

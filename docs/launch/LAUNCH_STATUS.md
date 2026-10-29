@@ -1,9 +1,15 @@
 # Launch status
 
-Updated: 2026-10-28
+Updated: 2026-10-29
 Verified source baseline for the V1 audit: `origin/main` = protected local main = `ebe389de31d1d473f43a65cbaa41efa53ba0ccea` when the isolated audit branch was created. The protected checkout must retain its exact owner-owned Flutter/iOS modifications; this documentation branch does not modify them.
 
-## Current review checkpoint — 2026-10-28 20:35 UTC
+## Current review checkpoint — 2026-10-29 04:00 UTC
+
+PR #221 head `9fdc683d945dc7f90040133cd17aecacb4b5a301` passes all four required gates. Focused final review confirms the protected-checkout failure propagation and shared-lock P1 findings are remediated, with archive validation and proxy/SHA/sudo/backup/rollback safeguards preserved. No unresolved P0/P1 implementation issue was found in this bounded release review; see [PR_221_FOCUSED_REVIEW.md](PR_221_FOCUSED_REVIEW.md).
+
+PR #222 head `daa0580c24b253250668cc267d90baf755ff890f` also passed all four gates before this documentation update, which requires fresh CI. Neither PR has a submitted GitHub review. Both remain open and unmerged. Owner merge approval, installed-host policy verification, actual backup/restore acceptance, and deployment authorization remain distinct gates. No server installation or deployment occurred. GaonOne is **not a validated release candidate**; broader mobile/provider/device readiness remains open.
+
+## Historical review checkpoint — 2026-10-28 20:35 UTC
 
 All four required checks passed on PR #221 head `c1deb71566bb2feb661f43d5139d580aaa070588` and PR #222 head `c0ee58c068f892c76c5c6b6c9fc794a61fc73f81` (before this documentation update). Focused review found two unresolved P1 implementation issues: protected-parent validation can ignore failures, and staging/production labels use different locks for the same checkout. See [PR_221_FOCUSED_REVIEW.md](PR_221_FOCUSED_REVIEW.md) for evidence and required regressions. PR #221 is not approved; no merge or deployment occurred. Fresh CI is required for this documentation update. Installation on any server is unverified.
 
