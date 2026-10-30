@@ -131,6 +131,10 @@ class FakeContentScanner:
         self.seen.append(item)
         return self.result
 
+    def scan_bytes(self, item: StoredMediaObject, content: bytes) -> ScanResult:
+        self.seen.append(item)
+        return self.result
+
 
 class FailClosedScanner:
     """The only safe non-production default: unavailable is never approval."""
