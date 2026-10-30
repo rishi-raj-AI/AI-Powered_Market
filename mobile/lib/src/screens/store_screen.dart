@@ -14,6 +14,7 @@ class StoreScreen extends StatefulWidget {
 
 class _StoreScreenState extends State<StoreScreen> {
   List<StoreProduct> products = [];
+  Map<String, String> approvedImages = {};
   bool loading = true;
   String? error;
   String query = '';
