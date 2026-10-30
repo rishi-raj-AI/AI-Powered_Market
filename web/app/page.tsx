@@ -1,3 +1,4 @@
+import './marketplace-home.css';
 import Link from 'next/link';
 import {ArrowRight, MapPin, Search, ShoppingBasket, UtensilsCrossed, Sprout, Hammer, Store, Truck, ShieldCheck} from 'lucide-react';
 import {Nav} from '@/components/Nav';
