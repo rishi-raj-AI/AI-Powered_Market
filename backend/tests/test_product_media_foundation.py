@@ -267,3 +267,45 @@ def test_local_storage_rejects_ambiguous_keys(tmp_path: Path, unsafe_key: str) -
     storage = LocalObjectStorage(tmp_path / "private", tmp_path / "public")
     with pytest.raises(ValueError, match="relative opaque paths"):
         storage.put_quarantine(unsafe_key, b"source", "image/webp")
+
+
+def test_database_job_claim_respects_lease_and_retry_schedule(monkeypatch):
+    """Exercise the real PostgreSQL selector rather than mocking its SQL."""
+    from datetime import datetime, timedelta, timezone
+    from app.services import product_media
+    from app.services.product_media import claim_due_media_job, complete_media_job
+    from app.models.user import User
+
+    monkeypatch.setattr(product_media.settings, "MEDIA_JOB_MAX_ATTEMPTS", 3)
+    now = datetime.now(timezone.utc)
+    with session() as db:
+        store = make_store(db)
+        listing = make_listing(db, store)
+        owner = db.get(User, db.get(Merchant, store.merchant_id).owner_user_id)
+        asset = new_quarantined_asset(
+            store_product_id=listing.id, uploader=owner,
+            source_object_key=f"quarantine/listings/{listing.id}/lease-test",
+            source_sha256=_source_hash(),
+        )
+        db.add(asset)
+        db.flush()
+        job, created = create_media_job(db, asset=asset)
+        assert created
+        db.commit()
+        first = claim_due_media_job(db, now=now)
+        assert first is not None and first.id == job.id
+        assert first.attempt_count == 1 and first.state == "processing"
+        db.commit()
+        assert claim_due_media_job(db, now=now + timedelta(seconds=1)) is None
+        reclaimed = claim_due_media_job(db, now=now + timedelta(seconds=121))
+        assert reclaimed is not None and reclaimed.id == job.id
+        assert reclaimed.attempt_count == 2
+        complete_media_job(reclaimed, outcome="retry", now=now + timedelta(seconds=121))
+        db.commit()
+        assert claim_due_media_job(db, now=now + timedelta(seconds=122)) is None
+        due = db.get(ProductMediaJob, job.id)
+        assert due.state == "queued" and due.next_attempt_at is not None
+        next_claim = claim_due_media_job(db, now=due.next_attempt_at + timedelta(seconds=1))
+        assert next_claim is not None and next_claim.attempt_count == 3
+        db.commit()
+        assert claim_due_media_job(db, now=now + timedelta(days=1)) is None
