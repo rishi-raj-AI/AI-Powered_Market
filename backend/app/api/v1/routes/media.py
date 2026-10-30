@@ -148,3 +148,24 @@ def public_approved_listing_images(
     if store is None or not store.is_active or merchant is None or merchant.status.value != "approved":
         raise HTTPException(status_code=404, detail="Listing not available")
     return approved_listing_media(db, [listing_id]).get(listing_id, [])
+
+
+@router.get("/stores/{store_id}/approved-images")
+def public_store_approved_images(
+    store_id: uuid.UUID,
+    limit: int = Query(default=100, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> dict[str, list[dict]]:
+    """Batch public-approved images for a storefront, without per-product requests."""
+    store = db.get(Store, store_id)
+    merchant = db.get(Merchant, store.merchant_id) if store else None
+    if store is None or not store.is_active or merchant is None or merchant.status.value != "approved":
+        raise HTTPException(status_code=404, detail="Store not found")
+    listing_ids = list(db.scalars(
+        select(StoreProduct.id).where(
+            StoreProduct.store_id == store_id,
+            StoreProduct.is_available.is_(True),
+            StoreProduct.stock_quantity > 0,
+        ).order_by(StoreProduct.updated_at.desc()).limit(limit)
+    ).all())
+    return {str(key): value for key, value in approved_listing_media(db, listing_ids).items()}
