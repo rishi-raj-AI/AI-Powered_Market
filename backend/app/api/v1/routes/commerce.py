@@ -524,6 +524,19 @@ def create_merchant_product_listing(
         db.flush()
     elif not category.is_active:
         raise HTTPException(status_code=422, detail="This category is unavailable")
+    # Avoid duplicate merchant listings for the same named item and pack size.
+    existing = db.scalar(
+        select(StoreProduct)
+        .join(Product, StoreProduct.product_id == Product.id)
+        .where(
+            StoreProduct.store_id == store.id,
+            Product.category_id == category.id,
+            Product.unit == unit,
+            Product.name.ilike(name),
+        )
+    )
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="This product is already listed in your store; update its inventory instead")
     product = Product(
         category_id=category.id,
         name=name,
