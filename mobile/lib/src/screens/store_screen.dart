@@ -26,6 +26,7 @@ class _StoreScreenState extends State<StoreScreen> {
   }
 
   Future<void> load() async {
+    if (mounted) setState(() { loading = products.isEmpty; error = null; });
     try {
       final result = await GaonApi.storeProducts(widget.store.id);
       if (!mounted) return;
@@ -124,7 +125,16 @@ class _StoreScreenState extends State<StoreScreen> {
                     Text('${visibleProducts.length} items', style: const TextStyle(color: Color(0xFF667069))),
                   ]),
                   const SizedBox(height: 12),
-                  if (error != null) Padding(padding: const EdgeInsets.only(bottom: 12), child: Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
+                  if (error != null) Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('Could not refresh products. Check your connection.', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                        const SizedBox(height: 8),
+                        TextButton.icon(onPressed: load, icon: const Icon(Icons.refresh), label: const Text('Retry')),
+                      ]),
+                    ),
+                  ),
                   ...visibleProducts.map((product) => Card(
                     margin: const EdgeInsets.only(bottom: 12),
                     clipBehavior: Clip.antiAlias,
