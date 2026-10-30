@@ -82,7 +82,12 @@ def process_due_media_jobs(*, limit: int = 10) -> dict[str, int]:
                 if job.lease_expires_at is None or job.lease_expires_at <= datetime.now(timezone.utc):
                     db.rollback()
                     if published_key:
-                        storage.delete_public_derivative(published_key)
+                        try:
+                            storage.delete_public_derivative(published_key)
+                        except Exception:
+                            # Preserve the original lease-expiry outcome.
+                            # A durable orphan sweeper is still required.
+                            pass
                     continue
                 complete_media_job(job, outcome=outcome, failure_code=result.reason)
                 db.commit()
