@@ -46,10 +46,10 @@ def test_worker_claim_process_and_complete(monkeypatch):
         id=asset_id, state="approved", public_object_key="public/ok.webp",
         derivative_sha256="a" * 64,
     )
-    sessions = [MagicMock(), MagicMock()]
+    sessions = [MagicMock() for _ in range(3)]
     for session in sessions:
         session.__enter__.return_value = session
-    sessions[1].get.side_effect = [job, asset]
+    sessions[2].get.side_effect = [job, asset]
     claims = iter([job, None])
     monkeypatch.setattr(worker, "SessionLocal", lambda: sessions.pop(0))
     monkeypatch.setattr(worker, "expire_exhausted_media_jobs", lambda db, limit: 0)
@@ -83,11 +83,11 @@ def test_publication_without_derivative_does_not_complete_job(monkeypatch):
         lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
     )
     asset = SimpleNamespace(id=asset_id, state="approved", public_object_key=None, derivative_sha256=None)
-    sessions = [MagicMock() for _ in range(3)]
+    sessions = [MagicMock() for _ in range(4)]
     for session in sessions:
         session.__enter__.return_value = session
-    sessions[1].get.side_effect = [job, asset]
-    sessions[2].get.return_value = job
+    sessions[2].get.side_effect = [job, asset]
+    sessions[3].get.return_value = job
     monkeypatch.setattr(worker, "SessionLocal", lambda: sessions.pop(0))
     monkeypatch.setattr(worker, "expire_exhausted_media_jobs", lambda db, limit: 0)
     monkeypatch.setattr(worker, "claim_due_media_job", lambda db: job)
@@ -126,7 +126,7 @@ def test_worker_reconciles_already_approved_asset_without_republishing(monkeypat
     sessions = [MagicMock(), MagicMock()]
     for db in sessions:
         db.__enter__.return_value = db
-    sessions[1].get.side_effect = [job, asset]
+    sessions[2].get.side_effect = [job, asset]
     monkeypatch.setattr(worker, "SessionLocal", lambda: sessions.pop(0))
     monkeypatch.setattr(worker, "expire_exhausted_media_jobs", lambda *a, **kw: 0)
     monkeypatch.setattr(worker, "claim_due_media_job", lambda db: job)
@@ -160,11 +160,11 @@ def test_expired_retry_lease_does_not_modify_job(monkeypatch):
         lease_expires_at=datetime.now(timezone.utc) + timedelta(seconds=60),
     )
     asset = SimpleNamespace(id=asset_id, state="quarantined", retired_at=None)
-    sessions = [MagicMock() for _ in range(3)]
+    sessions = [MagicMock() for _ in range(4)]
     for db in sessions:
         db.__enter__.return_value = db
-    sessions[1].get.side_effect = [job, asset]
-    sessions[2].get.return_value = SimpleNamespace(
+    sessions[2].get.side_effect = [job, asset]
+    sessions[3].get.return_value = SimpleNamespace(
         state="processing", attempt_count=1,
         lease_expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
     )
@@ -206,7 +206,7 @@ def test_retired_approved_asset_is_not_reconciled_as_approved(monkeypatch):
     sessions = [MagicMock(), MagicMock()]
     for db in sessions:
         db.__enter__.return_value = db
-    sessions[1].get.side_effect = [job, asset]
+    sessions[2].get.side_effect = [job, asset]
     monkeypatch.setattr(worker, "SessionLocal", lambda: sessions.pop(0))
     monkeypatch.setattr(worker, "expire_exhausted_media_jobs", lambda *a, **kw: 0)
     monkeypatch.setattr(worker, "claim_due_media_job", lambda db: job)
