@@ -112,10 +112,11 @@ def public_derivative_url(key: str | None) -> str | None:
     if not settings.PRODUCT_MEDIA_ENABLED or not base or not key:
         return None
     parsed = urlsplit(base)
-    if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment:
+    if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
+            or parsed.query or parsed.fragment or parsed.path not in {"", "/"}):
         return None
     if any(part in {"", ".", ".."} for part in key.split("/")):
         return None
-    if key.startswith("/") or "\\\\" in key or "\\" in key or "?" in key or "#" in key or "%" in key or ":" in key:
+    if key.startswith("/") or "\\" in key or "?" in key or "#" in key or "%" in key or ":" in key:
         return None
     return base.rstrip("/") + "/" + "/".join(quote(part, safe="-_.~") for part in key.split("/"))
