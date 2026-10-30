@@ -123,3 +123,19 @@ def test_http_scanner_network_errors_are_unavailable(monkeypatch):
 
     monkeypatch.setattr(httpx, "post", mock_post)
     assert scanner.scan_bytes(item, b"source").verdict == "unavailable"
+
+
+@pytest.mark.parametrize("reason", [123, ["unsafe"], {"code": "bad"}, "x" * 81])
+def test_http_scanner_rejects_malformed_reason_code(monkeypatch, reason):
+    import httpx
+    scanner = HttpContentScanner("https://scanner.invalid/scan", "token")
+    item = FakeObjectStorage().put_quarantine("private/a", b"source", "image/png")
+
+    def mock_post(*args, **kwargs):
+        return httpx.Response(
+            200, json={"verdict": "clean", "reason_code": reason},
+            request=httpx.Request("POST", args[0]),
+        )
+
+    monkeypatch.setattr(httpx, "post", mock_post)
+    assert scanner.scan_bytes(item, b"source").verdict == "unavailable"
