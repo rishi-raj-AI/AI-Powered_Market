@@ -180,7 +180,10 @@ class HttpContentScanner:
             data = response.json()
             if not isinstance(data, dict) or data.get("verdict") not in {"clean", "infected", "rejected"}:
                 return ScanResult(verdict="unavailable", reason_code="invalid_scan_response")
-            return ScanResult(verdict=data["verdict"], reason_code=data.get("reason_code"))
+            reason = data.get("reason_code")
+            if reason is not None and (not isinstance(reason, str) or len(reason) > 80):
+                return ScanResult(verdict="unavailable", reason_code="invalid_scan_response")
+            return ScanResult(verdict=data["verdict"], reason_code=reason)
         except (httpx.HTTPError, ValueError, TypeError):
             return ScanResult(verdict="unavailable", reason_code="scanner_unavailable")
 
