@@ -17,8 +17,8 @@ def test_production_without_storage_adapter_fails_closed(monkeypatch):
     from app.services import product_media_worker
     monkeypatch.setattr(product_media_worker.settings, "PRODUCT_MEDIA_ENABLED", True)
     monkeypatch.setattr(product_media_worker.settings, "APP_ENV", "production")
-    monkeypatch.setattr(product_media_worker.settings, "MEDIA_STORAGE_BACKEND", "s3")
-    with pytest.raises(RuntimeError, match="not configured"):
+    monkeypatch.setattr(product_media_worker.settings, "MEDIA_STORAGE_BACKEND", "local")
+    with pytest.raises(RuntimeError, match="development-only"):
         process_due_media_jobs(limit=10)
 
 
