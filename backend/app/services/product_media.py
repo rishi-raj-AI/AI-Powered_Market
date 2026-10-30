@@ -1,8 +1,11 @@
-"""Small durable helpers for the product-media foundation; no public routes yet."""
+"""Durable product-media helpers and public approved-derivative selectors."""
 
 from __future__ import annotations
 
 import uuid
+from urllib.parse import quote, urlsplit
+
+from app.core.config import settings
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -70,8 +73,7 @@ def new_quarantined_asset(
 def approved_listing_media(db: Session, listing_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[dict]]:
     """Public-safe image descriptors; only approved, non-retired derivatives.
 
-    Do not return storage object keys or guess public URLs. A separate
-    configured publication adapter will resolve approved keys to URLs.
+    Never return private storage keys; use only configured HTTPS public URLs.
     """
     if not listing_ids or not settings.PRODUCT_MEDIA_ENABLED or not settings.MEDIA_PUBLIC_BASE_URL:
         return {}
