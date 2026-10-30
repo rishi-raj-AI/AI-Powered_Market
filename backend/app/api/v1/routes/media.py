@@ -9,7 +9,7 @@ from app.api.deps import get_db
 from app.models.commerce import Merchant, Store, StoreProduct
 from app.models.product_media import ProductMediaAsset
 from app.services.product_media import new_quarantined_asset, create_media_job, audit_media_event
-from app.services.product_media_storage import LocalObjectStorage
+from app.services.product_media_storage import configured_media_storage
 from app.services.product_media import approved_listing_media
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -115,7 +115,7 @@ async def queue_listing_image(
     """Quarantine a listing-owned image; never expose its private object key."""
     if not settings.PRODUCT_MEDIA_ENABLED:
         raise HTTPException(status_code=503, detail="Product image processing is unavailable")
-    if settings.APP_ENV not in {"development", "test"} or settings.MEDIA_STORAGE_BACKEND != "local":
+    if settings.MEDIA_STORAGE_BACKEND == "local" and settings.APP_ENV not in {"development", "test"}:
         raise HTTPException(status_code=503, detail="Secure production upload adapter is unavailable")
     listing = db.get(StoreProduct, listing_id, with_for_update=True)
     store = db.get(Store, listing.store_id) if listing else None
@@ -149,7 +149,7 @@ async def queue_listing_image(
         raise HTTPException(status_code=409, detail="Listing image limit reached")
     asset_id = uuid.uuid4()
     key = f"quarantine/listings/{listing_id}/{asset_id.hex}"
-    storage = LocalObjectStorage(Path("data/media/quarantine"), Path("data/media/public"))
+    storage = configured_media_storage()
     stored = storage.put_quarantine(key, content, mime)
     asset = new_quarantined_asset(
         store_product_id=listing_id, uploader=user, source_object_key=key,
