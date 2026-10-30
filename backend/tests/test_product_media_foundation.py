@@ -209,3 +209,34 @@ def test_enabled_production_media_accepts_complete_s3_and_scanner_contract() -> 
     )
     assert settings.PRODUCT_MEDIA_ENABLED is True
     assert settings.MEDIA_STORAGE_BACKEND == "s3"
+
+
+def test_public_media_selector_excludes_quarantine_and_retired_images() -> None:
+    from app.services.product_media import approved_listing_media
+    from app.models.user import User
+    with session() as db:
+        store = make_store(db)
+        listing = make_listing(db, store)
+        user = db.get(User, db.get(Merchant, store.merchant_id).owner_user_id)
+        for index, (state, retired) in enumerate([
+            ("quarantined", False),
+            ("approved", False),
+            ("approved", True),
+        ]):
+            db.add(ProductMediaAsset(
+                store_product_id=listing.id,
+                uploader_user_id=user.id,
+                state=state,
+                source_object_key=f"quarantine/listings/source-{index}",
+                public_object_key=f"public/listings/derivative-{index}.webp" if state == "approved" else None,
+                source_sha256=str(index) * 64,
+                position=index,
+                is_primary=False,
+                retired_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc) if retired else None,
+            ))
+        db.commit()
+        results = approved_listing_media(db, [listing.id])
+        assert len(results[listing.id]) == 1
+        assert results[listing.id][0]["position"] == 1
+        assert "public_object_key" not in results[listing.id][0]
+        assert approved_listing_media(db, []) == {}
