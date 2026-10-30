@@ -40,7 +40,17 @@ jobs:
       - name: Test
         working-directory: mobile
         run: flutter test
-      - name: Build production-connected debug QA APK
+      - name: Restore permanent Android signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.GAONONE_ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KEYSTORE_BASE64" ]; then echo "::error::Missing GAONONE_ANDROID_KEYSTORE_BASE64"; exit 1; fi
+          mkdir -p "$RUNNER_TEMP/gaonone-signing"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/gaonone-signing/gaonone-release.jks"
+          chmod 600 "$RUNNER_TEMP/gaonone-signing/gaonone-release.jks"
+          echo "GAONONE_ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/gaonone-signing/gaonone-release.jks" >> "$GITHUB_ENV"
+      - name: Build production-connected signed release QA APK
         working-directory: mobile
         env:
           FIREBASE_API_KEY: ${{ vars.GAONONE_FIREBASE_ANDROID_API_KEY }}
@@ -49,8 +59,15 @@ jobs:
           FIREBASE_PROJECT_ID: ${{ vars.GAONONE_FIREBASE_ANDROID_PROJECT_ID }}
           GOOGLE_SERVER_CLIENT_ID: ${{ vars.GAONONE_GOOGLE_SERVER_CLIENT_ID }}
           MAPS_ANDROID_API_KEY: ${{ vars.GAONONE_GOOGLE_MAPS_ANDROID_API_KEY }}
+          GAONONE_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.GAONONE_ANDROID_KEYSTORE_PASSWORD }}
+          GAONONE_ANDROID_KEY_ALIAS: ${{ secrets.GAONONE_ANDROID_KEY_ALIAS }}
+          GAONONE_ANDROID_KEY_PASSWORD: ${{ secrets.GAONONE_ANDROID_KEY_PASSWORD }}
         run: |
-          flutter build apk --debug \
+          set -euo pipefail
+          for key in GAONONE_ANDROID_KEYSTORE_PASSWORD GAONONE_ANDROID_KEY_ALIAS GAONONE_ANDROID_KEY_PASSWORD; do
+            if [ -z "${!key}" ]; then echo "::error::Missing signing secret $key"; exit 1; fi
+          done
+          flutter build apk --release --build-number=3 \
             --dart-define=API_URL=https://gaonone.in/api/v1 \
             --dart-define=GAONONE_LEGACY_OTP_ENABLED=false \
             --dart-define=GAONONE_FIREBASE_ANDROID_API_KEY="$FIREBASE_API_KEY" \
@@ -59,13 +76,19 @@ jobs:
             --dart-define=GAONONE_FIREBASE_ANDROID_PROJECT_ID="$FIREBASE_PROJECT_ID" \
             --dart-define=GAONONE_GOOGLE_SERVER_CLIENT_ID="$GOOGLE_SERVER_CLIENT_ID" \
             --dart-define=GAONONE_GOOGLE_MAPS_ANDROID_API_KEY="$MAPS_ANDROID_API_KEY"
-          cp build/app/outputs/flutter-apk/app-debug.apk build/app/outputs/flutter-apk/gaonone-qa.apk
+          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/gaonone-qa.apk
       - name: Report new APK signing fingerprints
         run: |
           APK=mobile/build/app/outputs/flutter-apk/gaonone-qa.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" || {
-            find "$ANDROID_HOME/build-tools" -name apksigner -type f -exec {} verify --print-certs "$APK" \; -quit
-          }
+          set -euo pipefail
+          SIGNER_TOOL=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)
+          "$SIGNER_TOOL" verify --print-certs "$APK"
+          ACTUAL_SHA256=$("$SIGNER_TOOL" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr '[:upper:]' '[:lower:]')
+          EXPECTED_SHA256="0b936a93cc249dd83131d92d23011158e7d17536724155ca312059c58f8e935b"
+          if [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then
+            echo "::error::APK signing certificate does not match the permanent GaonOne certificate"
+            exit 1
+          fi
       - name: Publish QA APK
         uses: actions/upload-artifact@v4
         with:
