@@ -65,3 +65,34 @@ def new_quarantined_asset(
         state="quarantined",
         is_primary=False,
     )
+
+
+def approved_listing_media(db: Session, listing_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[dict]]:
+    """Public-safe image descriptors; only approved, non-retired derivatives.
+
+    Do not return storage object keys or guess public URLs. A separate
+    configured publication adapter will resolve approved keys to URLs.
+    """
+    if not listing_ids:
+        return {}
+    assets = db.scalars(
+        select(ProductMediaAsset).where(
+            ProductMediaAsset.store_product_id.in_(listing_ids),
+            ProductMediaAsset.state == "approved",
+            ProductMediaAsset.public_object_key.is_not(None),
+            ProductMediaAsset.retired_at.is_(None),
+        ).order_by(
+            ProductMediaAsset.store_product_id,
+            ProductMediaAsset.position,
+            ProductMediaAsset.created_at,
+        )
+    ).all()
+    result: dict[uuid.UUID, list[dict]] = {}
+    for asset in assets:
+        result.setdefault(asset.store_product_id, []).append({
+            "id": str(asset.id),
+            "alt_text": asset.alt_text,
+            "position": asset.position,
+            "is_primary": asset.is_primary,
+        })
+    return result
