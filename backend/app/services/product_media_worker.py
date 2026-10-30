@@ -5,7 +5,6 @@ private/public object-store adapter is configured and validated.
 """
 from __future__ import annotations
 
-from pathlib import Path
 from datetime import datetime, timezone
 
 from app.core.config import settings
@@ -14,17 +13,17 @@ from app.models.product_media import ProductMediaAsset, ProductMediaJob
 from app.services.product_media import claim_due_media_job, complete_media_job, expire_exhausted_media_jobs
 from app.services.product_media_processing import MediaScanUnavailable
 from app.services.product_media_publication import process_quarantined_asset
-from app.services.product_media_storage import HttpContentScanner, LocalObjectStorage
+from app.services.product_media_storage import HttpContentScanner, configured_media_storage
 
 
 def process_due_media_jobs(*, limit: int = 10) -> dict[str, int]:
     if not settings.PRODUCT_MEDIA_ENABLED:
         return {"considered": 0}
-    if settings.MEDIA_STORAGE_BACKEND != "local" or settings.APP_ENV not in {"development", "test"}:
-        raise RuntimeError("Production media storage adapter is not configured")
+    if settings.MEDIA_STORAGE_BACKEND == "local" and settings.APP_ENV not in {"development", "test"}:
+        raise RuntimeError("Local media storage is development-only")
     if settings.MEDIA_SCAN_PROVIDER != "http":
         raise RuntimeError("A mandatory HTTP scanner is required")
-    storage = LocalObjectStorage(Path("data/media/quarantine"), Path("data/media/public"))
+    storage = configured_media_storage()
     scanner = HttpContentScanner(settings.MEDIA_SCAN_ENDPOINT_URL, settings.MEDIA_SCAN_AUTH_TOKEN)
     counts = {"considered": 0, "approved": 0, "rejected": 0, "retried": 0, "expired": 0}
     with SessionLocal() as db:
