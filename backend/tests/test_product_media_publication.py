@@ -84,3 +84,36 @@ def test_retired_asset_cannot_be_published(monkeypatch):
     )
     assert result.reason == "not_eligible"
     assert storage.public == {}
+
+
+def test_publication_rejects_storage_content_type_mismatch(monkeypatch):
+    from app.services.product_media_storage import StoredMediaObject
+
+    storage, asset, db = setup(monkeypatch)
+    original_put = storage.put_public_derivative
+
+    def mismatched_put(key, content, content_type):
+        result = original_put(key, content, content_type)
+        return StoredMediaObject(result.key, "image/png", result.byte_size, result.sha256)
+
+    monkeypatch.setattr(storage, "put_public_derivative", mismatched_put)
+    with pytest.raises(RuntimeError, match="verification failed"):
+        product_media_publication.process_quarantined_asset(
+            db, asset=asset, storage=storage, scanner=Scanner("clean"), request_id="test"
+        )
+    assert storage.public == {}
+    assert asset.state == "quarantined"
+    assert asset.public_object_key is None
+    db.add.assert_not_called()
+
+
+def test_publication_rejects_tampered_source_checksum(monkeypatch):
+    storage, asset, db = setup(monkeypatch)
+    storage.quarantine[asset.source_object_key] = b"tampered"
+    from app.services.product_media_processing import MediaRejected
+    with pytest.raises(MediaRejected):
+        product_media_publication.process_quarantined_asset(
+            db, asset=asset, storage=storage, scanner=Scanner("clean"), request_id="test"
+        )
+    assert storage.public == {}
+    assert asset.state == "quarantined"
