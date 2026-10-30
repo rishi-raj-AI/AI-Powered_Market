@@ -122,3 +122,28 @@ def public_derivative_url(key: str | None) -> str | None:
     if key.startswith("/") or "\\" in key or "?" in key or "#" in key or "%" in key or ":" in key:
         return None
     return base.rstrip("/") + "/" + "/".join(quote(part, safe="-_.~") for part in key.split("/"))
+
+
+def claim_due_media_job(db: Session, *, now=None) -> ProductMediaJob | None:
+    """Atomically lease one due job using a row lock; commit before external I/O."""
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import or_
+    now = now or datetime.now(timezone.utc)
+    job = db.scalar(
+        select(ProductMediaJob)
+        .where(
+            ProductMediaJob.state.in_(("queued", "processing")),
+            ProductMediaJob.attempt_count < settings.MEDIA_JOB_MAX_ATTEMPTS,
+            or_(ProductMediaJob.next_attempt_at.is_(None), ProductMediaJob.next_attempt_at <= now),
+            or_(ProductMediaJob.lease_expires_at.is_(None), ProductMediaJob.lease_expires_at <= now),
+        )
+        .order_by(ProductMediaJob.created_at, ProductMediaJob.id)
+        .with_for_update(skip_locked=True)
+        .limit(1)
+    )
+    if job is not None:
+        job.state = "processing"
+        job.attempt_count += 1
+        job.lease_expires_at = now + timedelta(seconds=settings.MEDIA_JOB_LEASE_SECONDS)
+        job.next_attempt_at = None
+    return job
