@@ -249,13 +249,13 @@ def test_public_derivative_urls_fail_closed(monkeypatch) -> None:
     from app.services import product_media
     monkeypatch.setattr(product_media.settings, "PRODUCT_MEDIA_ENABLED", False)
     monkeypatch.setattr(product_media.settings, "MEDIA_PUBLIC_BASE_URL", "https://media.example.invalid")
-    assert product_media.public_derivative_url("public/a.webp") is None
+    assert product_media.public_derivative_url("public/listings/a.webp") is None
     monkeypatch.setattr(product_media.settings, "PRODUCT_MEDIA_ENABLED", True)
-    assert product_media.public_derivative_url("public/a.webp") == "https://media.example.invalid/public/a.webp"
-    for key in ("../secret", "/absolute", "https://evil.invalid/a", "public//a.webp", "public/%2e%2e/a.webp", "public/a.webp?token=x"):
+    assert product_media.public_derivative_url("public/listings/a.webp") == "https://media.example.invalid/public/listings/a.webp"
+    for key in ("../secret", "/absolute", "https://evil.invalid/a", "public//a.webp", "public/%2e%2e/a.webp", "public/a.webp?token=x", "quarantine/listings/private.webp", "public/listings/source.png"):
         assert product_media.public_derivative_url(key) is None
     monkeypatch.setattr(product_media.settings, "MEDIA_PUBLIC_BASE_URL", "http://media.example.invalid")
-    assert product_media.public_derivative_url("public/a.webp") is None
+    assert product_media.public_derivative_url("public/listings/a.webp") is None
 
 
 @pytest.mark.parametrize("unsafe_key", [
