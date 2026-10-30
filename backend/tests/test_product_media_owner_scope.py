@@ -99,3 +99,35 @@ def test_public_store_images_rejects_unapproved_merchant():
         public_store_approved_images(uuid.uuid4(), limit=100, db=db)
     assert exc.value.status_code == 404
     db.scalars.assert_not_called()
+
+
+def test_media_job_claim_leases_one_due_job(monkeypatch):
+    from datetime import datetime, timezone
+    from app.services.product_media import claim_due_media_job
+    from app.services import product_media
+    now = datetime(2026, 10, 30, tzinfo=timezone.utc)
+    job = SimpleNamespace(state="queued", attempt_count=0, lease_expires_at=None, next_attempt_at=None)
+    db = MagicMock()
+    db.scalar.return_value = job
+    monkeypatch.setattr(product_media.settings, "MEDIA_JOB_LEASE_SECONDS", 120)
+    assert claim_due_media_job(db, now=now) is job
+    assert job.state == "processing"
+    assert job.attempt_count == 1
+    assert job.lease_expires_at > now
+
+
+def test_media_job_retry_exhaustion_and_completion(monkeypatch):
+    from datetime import datetime, timezone
+    from app.services.product_media import complete_media_job
+    from app.services import product_media
+    monkeypatch.setattr(product_media.settings, "MEDIA_JOB_MAX_ATTEMPTS", 3)
+    now = datetime(2026, 10, 30, tzinfo=timezone.utc)
+    job = SimpleNamespace(state="processing", attempt_count=1, failure_code=None, next_attempt_at=None, lease_expires_at=now)
+    complete_media_job(job, outcome="retry", now=now)
+    assert job.state == "queued" and job.next_attempt_at > now
+    assert job.lease_expires_at is None
+    job.attempt_count = 3
+    complete_media_job(job, outcome="retry", now=now)
+    assert job.state == "failed" and job.failure_code == "max_attempts_exceeded"
+    complete_media_job(job, outcome="approved", now=now)
+    assert job.state == "completed" and job.failure_code is None
