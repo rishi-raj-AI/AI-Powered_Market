@@ -25,6 +25,7 @@ class _MarketScreenState extends State<MarketScreen> {
   Timer? searchDebounce;
   int searchGeneration = 0;
   bool searchingProducts = false;
+  bool hasSearchedProducts = false;
   String? searchError;
   List<Map<String, dynamic>> matchedProducts = [];
   List<Map<String, dynamic>> matchedStores = [];
@@ -49,7 +50,7 @@ class _MarketScreenState extends State<MarketScreen> {
   void updateSearch(String value) {
     searchDebounce?.cancel();
     final generation = ++searchGeneration;
-    setState(() { searchQuery = value; searchError = null; matchedProducts = []; matchedStores = []; searchingProducts = false; });
+    setState(() { searchQuery = value; searchError = null; matchedProducts = []; matchedStores = []; searchingProducts = false; hasSearchedProducts = false; });
     if (value.trim().isEmpty || searchLatitude == null || searchLongitude == null) return;
     searchDebounce = Timer(const Duration(milliseconds: 350), () async {
       if (!mounted || generation != searchGeneration) return;
@@ -61,6 +62,7 @@ class _MarketScreenState extends State<MarketScreen> {
           matchedProducts = (result['products'] as List? ?? []).map((item) => Map<String, dynamic>.from(item as Map)).toList();
           matchedStores = (result['stores'] as List? ?? []).map((item) => Map<String, dynamic>.from(item as Map)).toList();
           searchingProducts = false;
+          hasSearchedProducts = true;
         });
       } catch (exception) {
         if (!mounted || generation != searchGeneration) return;
@@ -74,7 +76,15 @@ class _MarketScreenState extends State<MarketScreen> {
       final loadedVillages = await GaonApi.villages();
       final loadedStores = await GaonApi.stores(selectedVillageId);
       if (!mounted) return;
+      searchDebounce?.cancel();
+      ++searchGeneration;
       setState(() {
+        searchLatitude = null;
+        searchLongitude = null;
+        matchedProducts = [];
+        matchedStores = [];
+        hasSearchedProducts = false;
+        searchingProducts = false;
         villages = loadedVillages;
         stores = loadedStores;
         loading = false;
@@ -111,7 +121,13 @@ class _MarketScreenState extends State<MarketScreen> {
       );
       final nearby = await GaonApi.nearbyStores(position.latitude, position.longitude);
       if (!mounted) return;
+      searchDebounce?.cancel();
+      ++searchGeneration;
       setState(() {
+        matchedProducts = [];
+        matchedStores = [];
+        hasSearchedProducts = false;
+        searchingProducts = false;
         stores = nearby;
         searchLatitude = position.latitude;
         searchLongitude = position.longitude;
@@ -204,7 +220,7 @@ class _MarketScreenState extends State<MarketScreen> {
                     const Padding(padding: EdgeInsets.only(top: 10), child: Text('Select “Use my current location” to search products across nearby stores. Store names can be filtered without GPS.')),
                   if (searchingProducts) const Padding(padding: EdgeInsets.only(top: 10), child: LinearProgressIndicator()),
                   if (searchError != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(searchError!, style: const TextStyle(color: Color(0xFFB42318)))),
-                  if (searchQuery.trim().isNotEmpty && searchLatitude != null && !searchingProducts && searchError == null) ...[
+                  if (searchQuery.trim().isNotEmpty && searchLatitude != null && hasSearchedProducts && !searchingProducts && searchError == null) ...[
                     const SizedBox(height: 16),
                     Text('Matching products', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
                     if (matchedProducts.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('No nearby products match this search.')),
