@@ -66,40 +66,45 @@ def process_due_media_jobs(*, limit: int = 10) -> dict[str, int]:
                 db.commit()
                 counts["rejected"] += 1
                 continue
+            # The public object store is not part of the SQL transaction.
+            # Track newly written objects so a rollback cannot leave an
+            # unaudited, externally readable derivative behind.
+            published_key = None
             try:
                 result = process_quarantined_asset(
                     db, asset=asset, storage=storage, scanner=scanner,
                     request_id=f"media-job-{job_id}",
                 )
+                published_key = asset.public_object_key
                 outcome = result.state if result.state in {"approved", "rejected"} else "retry"
-                if outcome == "approved" and (asset.public_object_key is None or asset.derivative_sha256 is None):
+                if outcome == "approved" and (not published_key or not asset.derivative_sha256):
                     raise RuntimeError("Approved asset has no verified public derivative")
                 if job.lease_expires_at is None or job.lease_expires_at <= datetime.now(timezone.utc):
                     db.rollback()
+                    if published_key:
+                        storage.delete_public_derivative(published_key)
                     continue
                 complete_media_job(job, outcome=outcome, failure_code=result.reason)
+                db.commit()
                 counts["retried" if outcome == "retry" else outcome] += 1
-            except MediaScanUnavailable:
+            except Exception as exc:
                 db.rollback()
+                if published_key:
+                    try:
+                        storage.delete_public_derivative(published_key)
+                    except Exception:
+                        # Cleanup must not mask the original error; a storage
+                        # lifecycle sweeper is still needed for hard crashes.
+                        pass
                 with SessionLocal() as retry_db:
                     retry_job = retry_db.get(ProductMediaJob, job_id, with_for_update=True)
                     if (retry_job is not None and retry_job.state == "processing"
                             and retry_job.attempt_count == claim_attempt
                             and retry_job.lease_expires_at is not None
                             and retry_job.lease_expires_at > datetime.now(timezone.utc)):
-                        complete_media_job(retry_job, outcome="retry", failure_code="scanner_unavailable")
+                        failure_code = "scanner_unavailable" if isinstance(exc, MediaScanUnavailable) else "processing_error"
+                        complete_media_job(retry_job, outcome="retry", failure_code=failure_code)
                         retry_db.commit()
                         counts["retried"] += 1
                 continue
-            except Exception:
-                # Roll back any partial asset changes, then record a durable retry.
-                db.rollback()
-                with SessionLocal() as retry_db:
-                    retry_job = retry_db.get(ProductMediaJob, job_id, with_for_update=True)
-                    if retry_job is not None and retry_job.state == "processing" and retry_job.attempt_count == claim_attempt:
-                        complete_media_job(retry_job, outcome="retry", failure_code="processing_error")
-                        retry_db.commit()
-                        counts["retried"] += 1
-                continue
-            db.commit()
     return counts
