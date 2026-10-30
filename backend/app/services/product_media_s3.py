@@ -92,6 +92,8 @@ class S3ObjectStorage:
             method, self.endpoint + path, headers=headers, content=content,
             timeout=self.timeout_seconds, follow_redirects=False,
         )
+        if method == "GET" and response.status_code == 404:
+            raise FileNotFoundError("Quarantined media object is missing")
         response.raise_for_status()
         return response.content
 
