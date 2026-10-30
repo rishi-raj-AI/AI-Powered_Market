@@ -269,3 +269,51 @@ def test_public_derivative_is_deleted_when_database_commit_fails(monkeypatch):
     assert result["approved"] == 0 and result["retried"] == 1
     assert outcomes == ["approved", "retry"]
     storage.delete_public_derivative.assert_called_once_with("public/listings/derivative.webp")
+
+
+def test_expired_lease_after_publication_deletes_derivative(monkeypatch):
+    import uuid
+    from datetime import datetime, timedelta, timezone
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+    from app.services import product_media_worker as worker
+
+    monkeypatch.setattr(worker.settings, "PRODUCT_MEDIA_ENABLED", True)
+    monkeypatch.setattr(worker.settings, "APP_ENV", "test")
+    monkeypatch.setattr(worker.settings, "MEDIA_STORAGE_BACKEND", "local")
+    monkeypatch.setattr(worker.settings, "MEDIA_SCAN_PROVIDER", "http")
+    monkeypatch.setattr(worker.settings, "MEDIA_SCAN_ENDPOINT_URL", "https://scanner.example.test/scan")
+    monkeypatch.setattr(worker.settings, "MEDIA_SCAN_AUTH_TOKEN", "test-token")
+    asset_id = uuid.uuid4()
+    job = SimpleNamespace(
+        id=uuid.uuid4(), asset_id=asset_id, attempt_count=1, state="processing",
+        lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+    )
+    asset = SimpleNamespace(
+        id=asset_id, state="quarantined", public_object_key=None,
+        derivative_sha256=None, retired_at=None,
+    )
+    sessions = [MagicMock() for _ in range(3)]
+    for db in sessions:
+        db.__enter__.return_value = db
+    sessions[2].get.side_effect = [job, asset]
+    monkeypatch.setattr(worker, "SessionLocal", lambda: sessions.pop(0))
+    monkeypatch.setattr(worker, "expire_exhausted_media_jobs", lambda *a, **kw: 0)
+    monkeypatch.setattr(worker, "claim_due_media_job", lambda db: job)
+    storage = MagicMock()
+    monkeypatch.setattr(worker, "LocalObjectStorage", lambda *a: storage)
+    monkeypatch.setattr(worker, "HttpContentScanner", lambda *a: object())
+
+    def publish(*args, **kwargs):
+        asset.public_object_key = "public/listings/expired.webp"
+        asset.derivative_sha256 = "b" * 64
+        job.lease_expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        return SimpleNamespace(state="approved", reason=None)
+
+    monkeypatch.setattr(worker, "process_quarantined_asset", publish)
+    complete = MagicMock()
+    monkeypatch.setattr(worker, "complete_media_job", complete)
+    result = worker.process_due_media_jobs(limit=1)
+    assert result["approved"] == 0 and result["retried"] == 0
+    storage.delete_public_derivative.assert_called_once_with("public/listings/expired.webp")
+    complete.assert_not_called()
