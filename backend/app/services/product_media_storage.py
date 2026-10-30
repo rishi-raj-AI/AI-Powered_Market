@@ -207,3 +207,22 @@ class HttpContentScanner:
     def scan(self, item: StoredMediaObject) -> ScanResult:
         # Metadata-only scanning is never sufficient for publication.
         return ScanResult(verdict="unavailable", reason_code="source_bytes_required")
+
+
+def configured_media_storage() -> ObjectStorage:
+    """Construct only the explicitly configured storage backend."""
+    from app.core.config import settings
+
+    if settings.MEDIA_STORAGE_BACKEND == "local" and settings.APP_ENV in {"development", "test"}:
+        return LocalObjectStorage(Path("data/media/quarantine"), Path("data/media/public"))
+    if settings.MEDIA_STORAGE_BACKEND == "s3":
+        from app.services.product_media_s3 import S3ObjectStorage
+        return S3ObjectStorage(
+            endpoint=settings.MEDIA_S3_ENDPOINT_URL,
+            region=settings.MEDIA_S3_REGION,
+            quarantine_bucket=settings.MEDIA_S3_QUARANTINE_BUCKET,
+            public_bucket=settings.MEDIA_S3_PUBLIC_BUCKET,
+            access_key_id=settings.MEDIA_S3_ACCESS_KEY_ID,
+            secret_access_key=settings.MEDIA_S3_SECRET_ACCESS_KEY,
+        )
+    raise RuntimeError("Secure media storage backend is not configured")
