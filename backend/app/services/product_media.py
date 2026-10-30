@@ -73,7 +73,7 @@ def approved_listing_media(db: Session, listing_ids: list[uuid.UUID]) -> dict[uu
     Do not return storage object keys or guess public URLs. A separate
     configured publication adapter will resolve approved keys to URLs.
     """
-    if not listing_ids:
+    if not listing_ids or not settings.PRODUCT_MEDIA_ENABLED or not settings.MEDIA_PUBLIC_BASE_URL:
         return {}
     assets = db.scalars(
         select(ProductMediaAsset).where(
@@ -89,10 +89,33 @@ def approved_listing_media(db: Session, listing_ids: list[uuid.UUID]) -> dict[uu
     ).all()
     result: dict[uuid.UUID, list[dict]] = {}
     for asset in assets:
+        url = public_derivative_url(asset.public_object_key)
+        if url is None:
+            continue
         result.setdefault(asset.store_product_id, []).append({
             "id": str(asset.id),
+            "url": url,
             "alt_text": asset.alt_text,
             "position": asset.position,
             "is_primary": asset.is_primary,
         })
     return result
+
+
+def public_derivative_url(key: str | None) -> str | None:
+    """Resolve only approved derivative object keys against a configured HTTPS origin.
+
+    Never accept absolute URLs, query strings, dot segments, or untrusted
+    object paths. The caller must also check database approval and retirement.
+    """
+    base = settings.MEDIA_PUBLIC_BASE_URL
+    if not settings.PRODUCT_MEDIA_ENABLED or not base or not key:
+        return None
+    parsed = urlsplit(base)
+    if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        return None
+    if any(part in {"", ".", ".."} for part in key.split("/")):
+        return None
+    if key.startswith("/") or "\\\\" in key or "\\" in key or "?" in key or "#" in key or "%" in key or ":" in key:
+        return None
+    return base.rstrip("/") + "/" + "/".join(quote(part, safe="-_.~") for part in key.split("/"))
