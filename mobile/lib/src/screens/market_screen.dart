@@ -221,9 +221,14 @@ class _MarketScreenState extends State<MarketScreen> {
                     ),
                   ),
                   if (searchQuery.trim().isNotEmpty && searchLatitude == null)
-                    const Padding(padding: EdgeInsets.only(top: 10), child: Text('Select “Use my current location” to search products across nearby stores. Store names can be filtered without GPS.')),
+                    const Padding(padding: EdgeInsets.only(top: 10), child: Text('Store names are searchable without GPS. Choose a locality below or enable location to search products nearby.')),
+                  if (searchQuery.trim().isNotEmpty)
+                    Semantics(liveRegion: true, child: Text('${filtered.length} matching shops', style: const TextStyle(fontWeight: FontWeight.w600))),
                   if (searchingProducts) const Padding(padding: EdgeInsets.only(top: 10), child: LinearProgressIndicator()),
-                  if (searchError != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(searchError!, style: const TextStyle(color: Color(0xFFB42318)))),
+                  if (searchError != null) Padding(padding: const EdgeInsets.only(top: 10), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('Product search is unavailable. Nearby shops remain browsable.', style: TextStyle(color: Color(0xFFB42318))),
+                    TextButton.icon(onPressed: () => updateSearch(searchQuery), icon: const Icon(Icons.refresh), label: const Text('Retry search')),
+                  ])),
                   if (searchQuery.trim().isNotEmpty && searchLatitude != null && hasSearchedProducts && !searchingProducts && searchError == null) ...[
                     const SizedBox(height: 16),
                     Text('Matching products', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
