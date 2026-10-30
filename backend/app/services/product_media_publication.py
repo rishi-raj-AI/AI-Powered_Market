@@ -45,7 +45,10 @@ def process_quarantined_asset(
         return PublicationResult(asset.id, asset.state, "not_eligible")
     if asset.public_object_key:
         raise RuntimeError("Quarantined asset unexpectedly has a public key")
-    source = storage.read_quarantine(asset.source_object_key)
+    try:
+        source = storage.read_quarantine(asset.source_object_key)
+    except FileNotFoundError as exc:
+        raise MediaRejected("source_missing") from exc
     original = StoredMediaObject(
         key=asset.source_object_key,
         content_type=asset.detected_mime or "",
