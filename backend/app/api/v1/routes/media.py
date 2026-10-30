@@ -166,7 +166,12 @@ async def queue_listing_image(
         db.commit()
     except Exception:
         db.rollback()
-        storage.delete_quarantine(key)
+        try:
+            storage.delete_quarantine(key)
+        except Exception:
+            # Preserve the database failure. A durable storage orphan
+            # reconciler must handle deletion failures and hard crashes.
+            pass
         raise
     return {"id": str(asset.id), "state": "quarantined"}
 
