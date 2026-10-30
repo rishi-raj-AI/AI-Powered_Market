@@ -55,7 +55,8 @@ def process_due_media_jobs(*, limit: int = 10) -> dict[str, int]:
                 continue
             # Recover a committed publication if the worker crashed before
             # committing the corresponding job completion.
-            if asset.state == "approved" and asset.public_object_key and asset.derivative_sha256:
+            if (asset.state == "approved" and asset.public_object_key
+                    and asset.derivative_sha256 and getattr(asset, "retired_at", None) is None):
                 complete_media_job(job, outcome="approved")
                 db.commit()
                 counts["approved"] += 1
@@ -82,7 +83,10 @@ def process_due_media_jobs(*, limit: int = 10) -> dict[str, int]:
                 db.rollback()
                 with SessionLocal() as retry_db:
                     retry_job = retry_db.get(ProductMediaJob, job_id, with_for_update=True)
-                    if retry_job is not None and retry_job.state == "processing" and retry_job.attempt_count == claim_attempt:
+                    if (retry_job is not None and retry_job.state == "processing"
+                            and retry_job.attempt_count == claim_attempt
+                            and retry_job.lease_expires_at is not None
+                            and retry_job.lease_expires_at > datetime.now(timezone.utc)):
                         complete_media_job(retry_job, outcome="retry", failure_code="scanner_unavailable")
                         retry_db.commit()
                         counts["retried"] += 1
