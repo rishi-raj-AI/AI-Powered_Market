@@ -156,6 +156,10 @@ class FailClosedScanner:
         del item
         return ScanResult(verdict="unavailable", reason_code="scanner_not_configured")
 
+    def scan_bytes(self, item: StoredMediaObject, content: bytes) -> ScanResult:
+        del item, content
+        return ScanResult(verdict="unavailable", reason_code="scanner_not_configured")
+
 
 class HttpContentScanner:
     """Synchronous private byte-stream scanner; a malformed response fails closed.
