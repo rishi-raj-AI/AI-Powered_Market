@@ -117,3 +117,17 @@ def test_publication_rejects_tampered_source_checksum(monkeypatch):
         )
     assert storage.public == {}
     assert asset.state == "quarantined"
+
+
+def test_missing_quarantine_source_is_audited_and_rejected(monkeypatch):
+    storage, asset, db = setup(monkeypatch)
+    storage.delete_quarantine(asset.source_object_key)
+    result = product_media_publication.process_quarantined_asset(
+        db, asset=asset, storage=storage, scanner=Scanner("clean"), request_id="test"
+    )
+    assert result.state == "rejected"
+    assert result.reason == "source_missing"
+    assert asset.state == "rejected"
+    assert asset.public_object_key is None
+    assert storage.public == {}
+    db.add.assert_called_once()
