@@ -31,7 +31,7 @@ def test_upload_fails_closed_when_feature_disabled(monkeypatch):
 def test_upload_fails_closed_without_production_adapter(monkeypatch):
     monkeypatch.setattr(media.settings, "PRODUCT_MEDIA_ENABLED", True)
     monkeypatch.setattr(media.settings, "APP_ENV", "production")
-    monkeypatch.setattr(media.settings, "MEDIA_STORAGE_BACKEND", "s3")
+    monkeypatch.setattr(media.settings, "MEDIA_STORAGE_BACKEND", "local")
     with pytest.raises(HTTPException) as exc:
         call_upload(MagicMock(), SimpleNamespace(id=uuid.uuid4(), role=UserRole.MERCHANT))
     assert exc.value.status_code == 503
@@ -66,7 +66,7 @@ def test_owner_upload_queues_private_asset_without_exposing_storage_key(monkeypa
     ]
     db.query.return_value.filter.return_value.count.return_value = 0
     storage = FakeObjectStorage()
-    monkeypatch.setattr(media, "LocalObjectStorage", lambda *args: storage)
+    monkeypatch.setattr(media, "configured_media_storage", lambda: storage)
     monkeypatch.setattr(media.rate_limiter, "enforce", lambda *args, **kwargs: None)
     result = call_upload(db, SimpleNamespace(id=owner_id, role=UserRole.MERCHANT))
     assert result["state"] == "quarantined"
@@ -127,7 +127,7 @@ def test_failed_database_write_removes_quarantine_object(monkeypatch):
     db.query.return_value.filter.return_value.count.return_value = 0
     db.flush.side_effect = RuntimeError("database failure")
     storage = FakeObjectStorage()
-    monkeypatch.setattr(media, "LocalObjectStorage", lambda *args: storage)
+    monkeypatch.setattr(media, "configured_media_storage", lambda: storage)
     monkeypatch.setattr(media.rate_limiter, "enforce", lambda *args, **kwargs: None)
     with pytest.raises(RuntimeError, match="database failure"):
         call_upload(db, SimpleNamespace(id=owner, role=UserRole.MERCHANT))
