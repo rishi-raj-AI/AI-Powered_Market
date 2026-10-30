@@ -10,7 +10,7 @@ from app.models.commerce import Merchant, Store, StoreProduct
 from app.models.product_media import ProductMediaAsset
 from app.services.product_media import approved_listing_media
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 
 from app.api.deps import ensure_capability, require_roles
 from app.core.capabilities import Capability
