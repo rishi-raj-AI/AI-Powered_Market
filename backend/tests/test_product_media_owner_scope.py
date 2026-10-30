@@ -76,3 +76,26 @@ def test_public_images_require_active_approved_merchant():
         public_approved_listing_images(listing_id, db=db)
     assert exc.value.status_code == 404
     db.scalars.assert_not_called()
+
+
+def test_public_store_images_rejects_inactive_store():
+    from app.api.v1.routes.media import public_store_approved_images
+    db = MagicMock()
+    db.get.return_value = SimpleNamespace(is_active=False, merchant_id=uuid.uuid4())
+    with pytest.raises(HTTPException) as exc:
+        public_store_approved_images(uuid.uuid4(), limit=100, db=db)
+    assert exc.value.status_code == 404
+    db.scalars.assert_not_called()
+
+
+def test_public_store_images_rejects_unapproved_merchant():
+    from app.api.v1.routes.media import public_store_approved_images
+    db = MagicMock()
+    db.get.side_effect = [
+        SimpleNamespace(is_active=True, merchant_id=uuid.uuid4()),
+        SimpleNamespace(status=SimpleNamespace(value="pending")),
+    ]
+    with pytest.raises(HTTPException) as exc:
+        public_store_approved_images(uuid.uuid4(), limit=100, db=db)
+    assert exc.value.status_code == 404
+    db.scalars.assert_not_called()
