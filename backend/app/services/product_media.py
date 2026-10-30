@@ -82,6 +82,8 @@ def approved_listing_media(db: Session, listing_ids: list[uuid.UUID]) -> dict[uu
             ProductMediaAsset.store_product_id.in_(listing_ids),
             ProductMediaAsset.state == "approved",
             ProductMediaAsset.public_object_key.is_not(None),
+            ProductMediaAsset.derivative_sha256.is_not(None),
+            ProductMediaAsset.approved_at.is_not(None),
             ProductMediaAsset.retired_at.is_(None),
         ).order_by(
             ProductMediaAsset.store_product_id,
