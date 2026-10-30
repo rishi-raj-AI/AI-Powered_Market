@@ -1,3 +1,5 @@
+import java.util.Base64
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
@@ -41,7 +43,7 @@ android {
         // that allowlisted public configuration; never log the decoded values.
         val defines = (project.findProperty("dart-defines") as? String).orEmpty()
             .split(",").filter { it.isNotEmpty() }.associate {
-                val pair = String(java.util.Base64.getDecoder().decode(it), Charsets.UTF_8)
+                val pair = String(Base64.getDecoder().decode(it), Charsets.UTF_8)
                     .split("=", limit = 2)
                 pair[0] to pair.getOrElse(1) { "" }
             }

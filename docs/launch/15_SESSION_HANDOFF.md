@@ -8,6 +8,7 @@
 - Web keeps existing `GOOGLE_MAPS_BROWSER_KEY` and `GOOGLE_MAPS_MAP_ID` build configuration. Source fixes initial asynchronous map synchronization and optional-geocoding failure handling. Website activation still requires authorized build/deployment and a separately reviewed CSP adjustment; no server change here.
 - Local evidence: Flutter analysis, 34 Flutter tests, two Maps-enabled fake-platform tests, nine Python configuration/manifest tests, Ruff, TypeScript, 12 location/fallback Chromium checks and 11 tracking/fallback Chromium checks, and production Next.js build pass. New native APK and final-head CI evidence must be recorded in the integration PR after execution.
 - See [MAPS_CLIENT_INTEGRATION.md](MAPS_CLIENT_INTEGRATION.md) for exact configuration, new-certificate registration, deferred costs and physical QA. No Places/Routes/Geocoding activation, merge, deployment or app publication is authorized.
+- Integration [PR #227](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/227) targets #225's branch. Initial head `8d79a69` passed backend, web/UI and production-compose gates plus Flutter analysis/tests, but Android compilation exposed Gradle's `java` name shadowing `java.util.Base64`; an explicit Base64 import fixes this integration-caused error. Final-head native build/manifest/artifact checks must pass before claiming a new APK.
 
 ## Issue #224 APK-first implementation — 2026-10-29
 
