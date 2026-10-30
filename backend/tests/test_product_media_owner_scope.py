@@ -131,3 +131,28 @@ def test_media_job_retry_exhaustion_and_completion(monkeypatch):
     assert job.state == "failed" and job.failure_code == "max_attempts_exceeded"
     complete_media_job(job, outcome="approved", now=now)
     assert job.state == "completed" and job.failure_code is None
+
+
+def test_expired_exhausted_media_jobs_become_terminal(monkeypatch):
+    from datetime import datetime, timezone
+    from app.services.product_media import expire_exhausted_media_jobs
+    from app.services import product_media
+    now = datetime(2026, 10, 31, tzinfo=timezone.utc)
+    job = SimpleNamespace(
+        state="processing", attempt_count=3, failure_code=None,
+        lease_expires_at=now, next_attempt_at=now,
+    )
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = [job]
+    monkeypatch.setattr(product_media.settings, "MEDIA_JOB_MAX_ATTEMPTS", 3)
+    assert expire_exhausted_media_jobs(db, now=now) == 1
+    assert job.state == "failed"
+    assert job.failure_code == "max_attempts_exceeded"
+    assert job.lease_expires_at is None and job.next_attempt_at is None
+
+
+def test_expired_exhausted_media_jobs_noop(monkeypatch):
+    from app.services.product_media import expire_exhausted_media_jobs
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = []
+    assert expire_exhausted_media_jobs(db) == 0
