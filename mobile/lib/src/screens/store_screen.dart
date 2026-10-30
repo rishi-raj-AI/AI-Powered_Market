@@ -33,6 +33,14 @@ class _StoreScreenState extends State<StoreScreen> {
         loading = false;
         error = null;
       });
+      // Images are optional: a slow or unavailable media service must not
+      // prevent shopping, especially on unreliable mobile connections.
+      try {
+        final images = await GaonApi.approvedStoreImageUrls(widget.store.id);
+        if (mounted) setState(() => approvedImages = images);
+      } catch (_) {
+        if (mounted) setState(() => approvedImages = {});
+      }
     } catch (exception) {
       if (!mounted) return;
       setState(() {
@@ -125,7 +133,15 @@ class _StoreScreenState extends State<StoreScreen> {
                         Container(
                           width: 80, height: 92,
                           decoration: BoxDecoration(color: const Color(0xFFEAF4ED), borderRadius: BorderRadius.circular(14)),
-                          child: const Icon(Icons.shopping_basket_rounded, color: Color(0xFF1F7A45), size: 34),
+                          child: approvedImages[product.id] == null
+                              ? const Icon(Icons.shopping_basket_rounded, color: Color(0xFF1F7A45), size: 34)
+                              : Image.network(
+                                  approvedImages[product.id]!,
+                                  fit: BoxFit.cover,
+                                  width: 80,
+                                  height: 92,
+                                  errorBuilder: (_, __, ___) => const Icon(Icons.shopping_basket_rounded, color: Color(0xFF1F7A45), size: 34),
+                                ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
