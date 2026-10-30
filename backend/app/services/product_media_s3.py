@@ -111,6 +111,18 @@ class S3ObjectStorage:
                 or not key.endswith(".webp") or not content):
             raise ValueError("Only safe listing WebP derivatives may be published")
         self._request("PUT", self.public_bucket, key, content=content, content_type=content_type)
+        # An HTTP 2xx from PUT is not proof that a compatible object store
+        # persisted the exact derivative. Verify bytes before DB approval.
+        try:
+            persisted = self._request("GET", self.public_bucket, key)
+            if hashlib.sha256(persisted).digest() != hashlib.sha256(content).digest():
+                raise RuntimeError("Public derivative read-back checksum mismatch")
+        except Exception:
+            try:
+                self.delete_public_derivative(key)
+            except Exception:
+                pass
+            raise
         return StoredMediaObject(key, content_type, len(content), hashlib.sha256(content).hexdigest())
 
     def delete_quarantine(self, key: str) -> None:
