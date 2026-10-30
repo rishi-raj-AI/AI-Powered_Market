@@ -89,25 +89,77 @@ class _MerchantWorkspaceState extends State<MerchantWorkspace> {
   }
 
   Future<void> addListing(StoreModel store) async {
-    final products = await GaonApi.products();
-    if (!mounted || products.isEmpty) { snack('No starter products are available.'); return; }
-    String productId = products.first.id;
+    final name = TextEditingController();
+    final category = TextEditingController(text: 'Groceries');
+    final unit = TextEditingController(text: 'piece');
+    final brand = TextEditingController();
+    final description = TextEditingController();
     final price = TextEditingController();
+    final mrp = TextEditingController();
     final stock = TextEditingController(text: '1');
-    final ok = await showDialog<bool>(context: context, builder: (dialogContext) => StatefulBuilder(builder: (dialogContext, setDialogState) => AlertDialog(
-      title: Text('Add product to ${store.name}'),
-      content: SizedBox(width: 460, child: Column(mainAxisSize: MainAxisSize.min, children: [
-        DropdownButtonFormField<String>(initialValue: productId, isExpanded: true, items: products.map((item) => DropdownMenuItem(value: item.id, child: Text('${item.name} • ${item.unit}', overflow: TextOverflow.ellipsis))).toList(), onChanged: (value) { if (value != null) setDialogState(() => productId = value); }, decoration: const InputDecoration(labelText: 'Product')),
-        const SizedBox(height: 10),
-        TextField(controller: price, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Selling price')),
-        TextField(controller: stock, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Opening stock')),
-      ])),
-      actions: [TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Add product'))],
-    )));
-    if (ok == true) {
+    try {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text('Add product to ${store.name}'),
+          content: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                TextField(controller: name, maxLength: 180, decoration: const InputDecoration(labelText: 'Product name *')),
+                TextField(controller: category, maxLength: 100, decoration: const InputDecoration(labelText: 'Category *')),
+                TextField(controller: unit, maxLength: 40, decoration: const InputDecoration(labelText: 'Unit / pack size *')),
+                TextField(controller: brand, maxLength: 120, decoration: const InputDecoration(labelText: 'Brand (optional)')),
+                TextField(controller: description, maxLength: 2000, maxLines: 2, decoration: const InputDecoration(labelText: 'Description (optional)')),
+                TextField(controller: price, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Selling price *')),
+                TextField(controller: mrp, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'MRP (optional)')),
+                TextField(controller: stock, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Opening stock *')),
+              ]),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Add product')),
+          ],
+        ),
+      );
+      if (ok != true) return;
       final quantity = int.tryParse(stock.text.trim());
-      if (double.tryParse(price.text.trim()) == null || quantity == null || quantity < 0) { snack('Enter a valid price and stock quantity.'); return; }
-      try { await GaonApi.upsertStoreProduct(storeId: store.id, productId: productId, price: price.text.trim(), stockQuantity: quantity); if (mounted) Navigator.pop(context); await manageInventory(store); } catch (e) { snack('$e'); }
+      final sellingPrice = double.tryParse(price.text.trim());
+      final mrpValue = mrp.text.trim().isEmpty ? null : double.tryParse(mrp.text.trim());
+      if (name.text.trim().length < 2 || category.text.trim().length < 2 ||
+          unit.text.trim().isEmpty || sellingPrice == null || !sellingPrice.isFinite ||
+          sellingPrice <= 0 || quantity == null || quantity < 0 ||
+          (mrp.text.trim().isNotEmpty && (mrpValue == null || !mrpValue.isFinite || mrpValue < sellingPrice))) {
+        snack('Check product name, category, unit, price, MRP and stock.');
+        return;
+      }
+      try {
+        await GaonApi.createMerchantProduct(
+          storeId: store.id,
+          name: name.text.trim(),
+          categoryName: category.text.trim(),
+          unit: unit.text.trim(),
+          brand: brand.text.trim().isEmpty ? null : brand.text.trim(),
+          description: description.text.trim().isEmpty ? null : description.text.trim(),
+          price: price.text.trim(),
+          mrp: mrp.text.trim().isEmpty ? null : mrp.text.trim(),
+          stockQuantity: quantity,
+        );
+        if (mounted) snack('Product created successfully.');
+        await manageInventory(store);
+      } catch (e) {
+        snack('$e');
+      }
+    } finally {
+      name.dispose();
+      category.dispose();
+      unit.dispose();
+      brand.dispose();
+      description.dispose();
+      price.dispose();
+      mrp.dispose();
+      stock.dispose();
     }
   }
 
