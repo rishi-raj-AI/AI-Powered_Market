@@ -73,3 +73,63 @@ def test_owner_upload_queues_private_asset_without_exposing_storage_key(monkeypa
     assert "source_object_key" not in result and "url" not in result
     assert len(storage.quarantine) == 1 and not storage.public
     db.commit.assert_called_once()
+
+
+def test_owner_upload_rejects_invalid_magic_before_storage(monkeypatch):
+    monkeypatch.setattr(media.settings, "PRODUCT_MEDIA_ENABLED", True)
+    monkeypatch.setattr(media.settings, "APP_ENV", "test")
+    monkeypatch.setattr(media.settings, "MEDIA_STORAGE_BACKEND", "local")
+    owner = uuid.uuid4()
+    db = MagicMock()
+    db.get.side_effect = [
+        SimpleNamespace(store_id=uuid.uuid4()),
+        SimpleNamespace(merchant_id=uuid.uuid4()),
+        SimpleNamespace(owner_user_id=owner),
+    ]
+    monkeypatch.setattr(media.rate_limiter, "enforce", lambda *args, **kwargs: None)
+    with pytest.raises(HTTPException) as exc:
+        call_upload(db, SimpleNamespace(id=owner, role=UserRole.MERCHANT), payload=b"not png")
+    assert exc.value.status_code == 415
+    db.commit.assert_not_called()
+
+
+def test_owner_upload_enforces_listing_image_limit(monkeypatch):
+    monkeypatch.setattr(media.settings, "PRODUCT_MEDIA_ENABLED", True)
+    monkeypatch.setattr(media.settings, "APP_ENV", "test")
+    monkeypatch.setattr(media.settings, "MEDIA_STORAGE_BACKEND", "local")
+    owner = uuid.uuid4()
+    db = MagicMock()
+    db.get.side_effect = [
+        SimpleNamespace(store_id=uuid.uuid4()),
+        SimpleNamespace(merchant_id=uuid.uuid4()),
+        SimpleNamespace(owner_user_id=owner),
+    ]
+    db.query.return_value.filter.return_value.count.return_value = media.settings.MEDIA_IMAGE_MAX_PER_LISTING
+    monkeypatch.setattr(media.rate_limiter, "enforce", lambda *args, **kwargs: None)
+    with pytest.raises(HTTPException) as exc:
+        call_upload(db, SimpleNamespace(id=owner, role=UserRole.MERCHANT))
+    assert exc.value.status_code == 409
+    db.commit.assert_not_called()
+
+
+def test_failed_database_write_removes_quarantine_object(monkeypatch):
+    from app.services.product_media_storage import FakeObjectStorage
+    monkeypatch.setattr(media.settings, "PRODUCT_MEDIA_ENABLED", True)
+    monkeypatch.setattr(media.settings, "APP_ENV", "test")
+    monkeypatch.setattr(media.settings, "MEDIA_STORAGE_BACKEND", "local")
+    owner = uuid.uuid4()
+    db = MagicMock()
+    db.get.side_effect = [
+        SimpleNamespace(store_id=uuid.uuid4()),
+        SimpleNamespace(merchant_id=uuid.uuid4()),
+        SimpleNamespace(owner_user_id=owner),
+    ]
+    db.query.return_value.filter.return_value.count.return_value = 0
+    db.flush.side_effect = RuntimeError("database failure")
+    storage = FakeObjectStorage()
+    monkeypatch.setattr(media, "LocalObjectStorage", lambda *args: storage)
+    monkeypatch.setattr(media.rate_limiter, "enforce", lambda *args, **kwargs: None)
+    with pytest.raises(RuntimeError, match="database failure"):
+        call_upload(db, SimpleNamespace(id=owner, role=UserRole.MERCHANT))
+    assert storage.quarantine == {}
+    db.rollback.assert_called_once()
