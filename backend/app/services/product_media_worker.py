@@ -58,8 +58,14 @@ def process_due_media_jobs(*, limit: int = 10) -> dict[str, int]:
                 complete_media_job(job, outcome=outcome, failure_code=result.reason)
                 counts["retried" if outcome == "retry" else outcome] += 1
             except MediaScanUnavailable:
-                complete_media_job(job, outcome="retry", failure_code="scanner_unavailable")
-                counts["retried"] += 1
+                db.rollback()
+                with SessionLocal() as retry_db:
+                    retry_job = retry_db.get(ProductMediaJob, job_id, with_for_update=True)
+                    if retry_job is not None and retry_job.state == "processing":
+                        complete_media_job(retry_job, outcome="retry", failure_code="scanner_unavailable")
+                        retry_db.commit()
+                        counts["retried"] += 1
+                continue
             except Exception:
                 # Roll back any partial asset changes, then record a durable retry.
                 db.rollback()
