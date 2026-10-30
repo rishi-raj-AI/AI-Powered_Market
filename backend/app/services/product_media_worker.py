@@ -53,6 +53,18 @@ def process_due_media_jobs(*, limit: int = 10) -> dict[str, int]:
                 db.commit()
                 counts["rejected"] += 1
                 continue
+            # Recover a committed publication if the worker crashed before
+            # committing the corresponding job completion.
+            if asset.state == "approved" and asset.public_object_key and asset.derivative_sha256:
+                complete_media_job(job, outcome="approved")
+                db.commit()
+                counts["approved"] += 1
+                continue
+            if asset.state in {"rejected", "retired"} or asset.retired_at is not None:
+                complete_media_job(job, outcome="rejected", failure_code="asset_not_eligible")
+                db.commit()
+                counts["rejected"] += 1
+                continue
             try:
                 result = process_quarantined_asset(
                     db, asset=asset, storage=storage, scanner=scanner,
