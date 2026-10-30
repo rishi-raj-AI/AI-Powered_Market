@@ -162,3 +162,13 @@ def test_local_storage_rejects_path_traversal(tmp_path):
     for key in ("../escape", "/absolute", "a//b", "a/../b", "a\\b", "a%2fb"):
         with pytest.raises(ValueError):
             storage.put_quarantine(key, b"payload", "image/png")
+
+
+@pytest.mark.parametrize("endpoint", [
+    "https://scanner.invalid/scan?token=secret",
+    "https://scanner.invalid/scan#fragment",
+    "https://user:password@scanner.invalid/scan",
+])
+def test_http_scanner_rejects_credential_leaking_url_forms(endpoint):
+    with pytest.raises(ValueError):
+        HttpContentScanner(endpoint, "token")
