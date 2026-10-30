@@ -60,7 +60,7 @@ def process_due_media_jobs(*, limit: int = 10) -> dict[str, int]:
                 db.commit()
                 counts["approved"] += 1
                 continue
-            if asset.state in {"rejected", "retired"} or asset.retired_at is not None:
+            if asset.state in {"rejected", "retired"} or getattr(asset, "retired_at", None) is not None:
                 complete_media_job(job, outcome="rejected", failure_code="asset_not_eligible")
                 db.commit()
                 counts["rejected"] += 1
