@@ -123,7 +123,7 @@ def test_worker_reconciles_already_approved_asset_without_republishing(monkeypat
         id=asset_id, state="approved", public_object_key="public/listings/ok.webp",
         derivative_sha256="a" * 64, retired_at=None,
     )
-    sessions = [MagicMock(), MagicMock()]
+    sessions = [MagicMock() for _ in range(3)]
     for db in sessions:
         db.__enter__.return_value = db
     sessions[2].get.side_effect = [job, asset]
@@ -203,7 +203,7 @@ def test_retired_approved_asset_is_not_reconciled_as_approved(monkeypatch):
         id=asset_id, state="approved", public_object_key="public/listings/a.webp",
         derivative_sha256="a" * 64, retired_at=datetime.now(timezone.utc),
     )
-    sessions = [MagicMock(), MagicMock()]
+    sessions = [MagicMock() for _ in range(3)]
     for db in sessions:
         db.__enter__.return_value = db
     sessions[2].get.side_effect = [job, asset]
