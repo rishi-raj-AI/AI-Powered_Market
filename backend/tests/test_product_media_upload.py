@@ -146,3 +146,29 @@ def test_legacy_public_upload_is_blocked_when_secure_pipeline_enabled(monkeypatc
             )
         )
     assert exc.value.status_code == 410
+
+
+def test_upload_preserves_db_error_if_quarantine_cleanup_fails(monkeypatch):
+    from app.services.product_media_storage import FakeObjectStorage
+
+    monkeypatch.setattr(media.settings, "PRODUCT_MEDIA_ENABLED", True)
+    monkeypatch.setattr(media.settings, "APP_ENV", "test")
+    monkeypatch.setattr(media.settings, "MEDIA_STORAGE_BACKEND", "local")
+    owner = uuid.uuid4()
+    db = MagicMock()
+    db.get.side_effect = [
+        SimpleNamespace(store_id=uuid.uuid4()),
+        SimpleNamespace(merchant_id=uuid.uuid4()),
+        SimpleNamespace(owner_user_id=owner),
+    ]
+    db.query.return_value.filter.return_value.count.return_value = 0
+    db.flush.side_effect = RuntimeError("database failure")
+    storage = FakeObjectStorage()
+    def cannot_delete(key):
+        raise OSError("object store unavailable")
+    monkeypatch.setattr(storage, "delete_quarantine", cannot_delete)
+    monkeypatch.setattr(media, "configured_media_storage", lambda: storage)
+    monkeypatch.setattr(media.rate_limiter, "enforce", lambda *args, **kwargs: None)
+    with pytest.raises(RuntimeError, match="database failure"):
+        call_upload(db, SimpleNamespace(id=owner, role=UserRole.MERCHANT))
+    db.rollback.assert_called_once()
