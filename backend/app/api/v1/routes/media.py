@@ -55,6 +55,10 @@ async def upload_image(
     file: UploadFile = File(...),
     user: User = Depends(require_roles(UserRole.MERCHANT, UserRole.ADMIN)),
 ) -> dict[str, str | int]:
+    if settings.PRODUCT_MEDIA_ENABLED:
+        # The legacy endpoint publishes unscanned bytes to a public volume.
+        # Once the safe pipeline is enabled, do not allow this bypass.
+        raise HTTPException(status_code=410, detail="Use listing-scoped quarantine uploads")
     if user.role == UserRole.ADMIN:
         ensure_capability(user, Capability.MEDIA_MODERATE)
     # Uploads write to a shared volume, so an unbounded endpoint is a disk
