@@ -46,7 +46,9 @@ def test_worker_claim_process_and_complete(monkeypatch):
         id=asset_id, state="approved", public_object_key="public/ok.webp",
         derivative_sha256="a" * 64,
     )
-    sessions = [MagicMock(), MagicMock(), MagicMock()]
+    sessions = [MagicMock(), MagicMock()]
+    for session in sessions:
+        session.__enter__.return_value = session
     sessions[1].get.side_effect = [job, asset]
     claims = iter([job, None])
     monkeypatch.setattr(worker, "SessionLocal", lambda: sessions.pop(0))
