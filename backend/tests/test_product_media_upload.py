@@ -133,3 +133,16 @@ def test_failed_database_write_removes_quarantine_object(monkeypatch):
         call_upload(db, SimpleNamespace(id=owner, role=UserRole.MERCHANT))
     assert storage.quarantine == {}
     db.rollback.assert_called_once()
+
+
+def test_legacy_public_upload_is_blocked_when_secure_pipeline_enabled(monkeypatch):
+    monkeypatch.setattr(media.settings, "PRODUCT_MEDIA_ENABLED", True)
+    upload = UploadFile(file=BytesIO(b"raw bytes"), filename="legacy.png")
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(
+            media.upload_image(
+                file=upload,
+                user=SimpleNamespace(id=uuid.uuid4(), role=UserRole.MERCHANT),
+            )
+        )
+    assert exc.value.status_code == 410
