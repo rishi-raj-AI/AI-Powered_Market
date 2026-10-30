@@ -147,3 +147,32 @@ def claim_due_media_job(db: Session, *, now=None) -> ProductMediaJob | None:
         job.lease_expires_at = now + timedelta(seconds=settings.MEDIA_JOB_LEASE_SECONDS)
         job.next_attempt_at = None
     return job
+
+
+def complete_media_job(job: ProductMediaJob, *, outcome: str, failure_code: str | None = None, now=None) -> None:
+    """Finish a lease or schedule bounded exponential retries.
+
+    The caller must hold the job row lock and commit the transition.
+    """
+    from datetime import datetime, timedelta, timezone
+    now = now or datetime.now(timezone.utc)
+    if outcome == "approved":
+        job.state = "completed"
+        job.failure_code = None
+        job.next_attempt_at = None
+    elif outcome == "rejected":
+        job.state = "failed"
+        job.failure_code = (failure_code or "rejected")[:80]
+        job.next_attempt_at = None
+    elif outcome == "retry":
+        if job.attempt_count >= settings.MEDIA_JOB_MAX_ATTEMPTS:
+            job.state = "failed"
+            job.failure_code = "max_attempts_exceeded"
+            job.next_attempt_at = None
+        else:
+            job.state = "queued"
+            job.failure_code = (failure_code or "transient_failure")[:80]
+            job.next_attempt_at = now + timedelta(seconds=min(3600, 30 * 2 ** (job.attempt_count - 1)))
+    else:
+        raise ValueError("Unknown media job outcome")
+    job.lease_expires_at = None
