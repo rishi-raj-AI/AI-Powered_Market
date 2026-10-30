@@ -55,7 +55,7 @@ def test_worker_claim_process_and_complete(monkeypatch):
     monkeypatch.setattr(worker, "expire_exhausted_media_jobs", lambda db, limit: 0)
     monkeypatch.setattr(worker, "claim_due_media_job", lambda db: next(claims))
     monkeypatch.setattr(worker, "process_quarantined_asset", lambda *a, **kw: SimpleNamespace(state="approved", reason=None))
-    monkeypatch.setattr(worker, "LocalObjectStorage", lambda *a: object())
+    monkeypatch.setattr(worker, "configured_media_storage", lambda: object())
     monkeypatch.setattr(worker, "HttpContentScanner", lambda *a: object())
     monkeypatch.setattr(worker, "complete_media_job", lambda job, **kw: setattr(job, "state", "completed"))
     result = worker.process_due_media_jobs(limit=1)
@@ -92,7 +92,7 @@ def test_publication_without_derivative_does_not_complete_job(monkeypatch):
     monkeypatch.setattr(worker, "expire_exhausted_media_jobs", lambda db, limit: 0)
     monkeypatch.setattr(worker, "claim_due_media_job", lambda db: job)
     monkeypatch.setattr(worker, "process_quarantined_asset", lambda *a, **kw: SimpleNamespace(state="approved", reason=None))
-    monkeypatch.setattr(worker, "LocalObjectStorage", lambda *a: object())
+    monkeypatch.setattr(worker, "configured_media_storage", lambda: object())
     monkeypatch.setattr(worker, "HttpContentScanner", lambda *a: object())
     outcomes = []
     monkeypatch.setattr(worker, "complete_media_job", lambda job, **kw: outcomes.append(kw["outcome"]))
@@ -130,7 +130,7 @@ def test_worker_reconciles_already_approved_asset_without_republishing(monkeypat
     monkeypatch.setattr(worker, "SessionLocal", lambda: sessions.pop(0))
     monkeypatch.setattr(worker, "expire_exhausted_media_jobs", lambda *a, **kw: 0)
     monkeypatch.setattr(worker, "claim_due_media_job", lambda db: job)
-    monkeypatch.setattr(worker, "LocalObjectStorage", lambda *a: object())
+    monkeypatch.setattr(worker, "configured_media_storage", lambda: object())
     monkeypatch.setattr(worker, "HttpContentScanner", lambda *a: object())
     publication = MagicMock(side_effect=AssertionError("must not republish"))
     monkeypatch.setattr(worker, "process_quarantined_asset", publication)
@@ -171,7 +171,7 @@ def test_expired_retry_lease_does_not_modify_job(monkeypatch):
     monkeypatch.setattr(worker, "SessionLocal", lambda: sessions.pop(0))
     monkeypatch.setattr(worker, "expire_exhausted_media_jobs", lambda *a, **kw: 0)
     monkeypatch.setattr(worker, "claim_due_media_job", lambda db: job)
-    monkeypatch.setattr(worker, "LocalObjectStorage", lambda *a: object())
+    monkeypatch.setattr(worker, "configured_media_storage", lambda: object())
     monkeypatch.setattr(worker, "HttpContentScanner", lambda *a: object())
     monkeypatch.setattr(worker, "process_quarantined_asset", MagicMock(side_effect=RuntimeError("scanner failed")))
     completed = MagicMock()
@@ -210,7 +210,7 @@ def test_retired_approved_asset_is_not_reconciled_as_approved(monkeypatch):
     monkeypatch.setattr(worker, "SessionLocal", lambda: sessions.pop(0))
     monkeypatch.setattr(worker, "expire_exhausted_media_jobs", lambda *a, **kw: 0)
     monkeypatch.setattr(worker, "claim_due_media_job", lambda db: job)
-    monkeypatch.setattr(worker, "LocalObjectStorage", lambda *a: object())
+    monkeypatch.setattr(worker, "configured_media_storage", lambda: object())
     monkeypatch.setattr(worker, "HttpContentScanner", lambda *a: object())
     monkeypatch.setattr(worker, "process_quarantined_asset", MagicMock(side_effect=AssertionError("unexpected publication")))
     outcomes = []
@@ -253,7 +253,7 @@ def test_public_derivative_is_deleted_when_database_commit_fails(monkeypatch):
     monkeypatch.setattr(worker, "expire_exhausted_media_jobs", lambda *a, **kw: 0)
     monkeypatch.setattr(worker, "claim_due_media_job", lambda db: job)
     storage = MagicMock()
-    monkeypatch.setattr(worker, "LocalObjectStorage", lambda *a: storage)
+    monkeypatch.setattr(worker, "configured_media_storage", lambda: storage)
     monkeypatch.setattr(worker, "HttpContentScanner", lambda *a: object())
 
     def publish(*args, **kwargs):
@@ -301,7 +301,7 @@ def test_expired_lease_after_publication_deletes_derivative(monkeypatch):
     monkeypatch.setattr(worker, "expire_exhausted_media_jobs", lambda *a, **kw: 0)
     monkeypatch.setattr(worker, "claim_due_media_job", lambda db: job)
     storage = MagicMock()
-    monkeypatch.setattr(worker, "LocalObjectStorage", lambda *a: storage)
+    monkeypatch.setattr(worker, "configured_media_storage", lambda: storage)
     monkeypatch.setattr(worker, "HttpContentScanner", lambda *a: object())
 
     def publish(*args, **kwargs):
