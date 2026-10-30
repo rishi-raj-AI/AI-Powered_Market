@@ -45,7 +45,7 @@ class ContentScanner(Protocol):
 
 def _safe_path(root: Path, key: str) -> Path:
     path = PurePosixPath(key)
-    if not key or path.is_absolute() or ".." in path.parts:
+    if (not key or path.is_absolute() or "\\" in key or any(part in {"", ".", ".."} for part in key.split("/")) or any(char in key for char in ("?", "#", "%", ":"))):
         raise ValueError("Object keys must be relative opaque paths")
     destination = root.joinpath(*path.parts)
     resolved_root, resolved_destination = root.resolve(), destination.resolve()
