@@ -34,12 +34,13 @@ def process_due_media_jobs(*, limit: int = 10) -> dict[str, int]:
                 break
             job_id = job.id
             asset_id = job.asset_id
+            claim_attempt = job.attempt_count
             db.commit()
         counts["considered"] += 1
         with SessionLocal() as db:
             job = db.get(ProductMediaJob, job_id, with_for_update=True)
             asset = db.get(ProductMediaAsset, asset_id, with_for_update=True)
-            if job is None or job.state != "processing":
+            if job is None or job.state != "processing" or job.attempt_count != claim_attempt:
                 continue
             if job.lease_expires_at is None or job.lease_expires_at <= datetime.now(timezone.utc):
                 # An expired claim must never publish an image.
@@ -61,7 +62,7 @@ def process_due_media_jobs(*, limit: int = 10) -> dict[str, int]:
                 db.rollback()
                 with SessionLocal() as retry_db:
                     retry_job = retry_db.get(ProductMediaJob, job_id, with_for_update=True)
-                    if retry_job is not None and retry_job.state == "processing":
+                    if retry_job is not None and retry_job.state == "processing" and retry_job.attempt_count == claim_attempt:
                         complete_media_job(retry_job, outcome="retry", failure_code="scanner_unavailable")
                         retry_db.commit()
                         counts["retried"] += 1
