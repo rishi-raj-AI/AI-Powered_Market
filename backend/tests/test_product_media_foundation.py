@@ -253,3 +253,14 @@ def test_public_derivative_urls_fail_closed(monkeypatch) -> None:
         assert product_media.public_derivative_url(key) is None
     monkeypatch.setattr(product_media.settings, "MEDIA_PUBLIC_BASE_URL", "http://media.example.invalid")
     assert product_media.public_derivative_url("public/a.webp") is None
+
+
+@pytest.mark.parametrize("unsafe_key", [
+    "../escape", "/absolute", "quarantine//duplicate", "quarantine/./same",
+    "quarantine/../escape", "quarantine\\\\windows", "quarantine/%2e%2e",
+    "quarantine/image.webp?token=secret", "quarantine/image.webp#fragment",
+])
+def test_local_storage_rejects_ambiguous_keys(tmp_path: Path, unsafe_key: str) -> None:
+    storage = LocalObjectStorage(tmp_path / "private", tmp_path / "public")
+    with pytest.raises(ValueError, match="relative opaque paths"):
+        storage.put_quarantine(unsafe_key, b"source", "image/webp")
