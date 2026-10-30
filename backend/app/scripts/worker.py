@@ -66,6 +66,13 @@ def tick() -> dict[str, dict]:
         # recovery or notification delivery.
         logger.exception("Banner generation flush failed")
         result["banners"] = {"error": 1}
+    if settings.PRODUCT_MEDIA_ENABLED:
+        try:
+            from app.services.product_media_worker import process_due_media_jobs
+            result['product_media'] = process_due_media_jobs(limit=settings.MEDIA_JOB_BATCH)
+        except Exception:
+            logger.exception('Product media worker failed')
+            result['product_media'] = {'error': 1}
     return result
 
 
