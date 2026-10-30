@@ -1,16 +1,9 @@
-import java.util.Properties
-import java.io.FileInputStream
+import java.io.File
 
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
-}
-
-val releaseKeystore = rootProject.file("key.properties")
-val releaseSigning = Properties()
-if (releaseKeystore.exists()) {
-    FileInputStream(releaseKeystore).use { releaseSigning.load(it) }
 }
 
 android {
@@ -38,25 +31,28 @@ android {
         versionName = flutter.versionName
     }
 
+    val releaseSigningRequested = gradle.startParameter.taskNames.any { task ->
+        task.contains("Release", ignoreCase = true) || task.contains("bundle", ignoreCase = true)
+    }
     signingConfigs {
-        if (releaseKeystore.exists()) {
-            create("release") {
-                storeFile = file(releaseSigning.getProperty("storeFile"))
-                storePassword = releaseSigning.getProperty("storePassword")
-                keyAlias = releaseSigning.getProperty("keyAlias")
-                keyPassword = releaseSigning.getProperty("keyPassword")
-            }
+        if (releaseSigningRequested) create("gaononeRelease") {
+            val keyStorePath = System.getenv("GAONONE_ANDROID_KEYSTORE_PATH")
+                ?: error("GAONONE_ANDROID_KEYSTORE_PATH is required for release signing")
+            storeFile = File(keyStorePath)
+            storePassword = System.getenv("GAONONE_ANDROID_KEYSTORE_PASSWORD")
+                ?: error("GAONONE_ANDROID_KEYSTORE_PASSWORD is required")
+            keyAlias = System.getenv("GAONONE_ANDROID_KEY_ALIAS")
+                ?: error("GAONONE_ANDROID_KEY_ALIAS is required")
+            keyPassword = System.getenv("GAONONE_ANDROID_KEY_PASSWORD")
+                ?: error("GAONONE_ANDROID_KEY_PASSWORD is required")
         }
     }
 
     buildTypes {
         release {
-            // Never distribute a release APK signed with the debug key.
-            if (releaseKeystore.exists()) {
-                signingConfig = signingConfigs.getByName("release")
-            } else {
-                throw GradleException("Release signing requires android/key.properties and a private keystore")
-            }
+            // Debug builds must not require production secrets. Release tasks fail
+            // closed when the permanent signing credentials are absent.
+            if (releaseSigningRequested) signingConfig = signingConfigs.getByName("gaononeRelease")
         }
     }
 }
