@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -19,6 +20,14 @@ class _MarketScreenState extends State<MarketScreen> {
   List<StoreModel> stores = [];
   String? selectedVillageId;
   String searchQuery = '';
+  double? searchLatitude;
+  double? searchLongitude;
+  Timer? searchDebounce;
+  int searchGeneration = 0;
+  bool searchingProducts = false;
+  String? searchError;
+  List<Map<String, dynamic>> matchedProducts = [];
+  List<Map<String, dynamic>> matchedStores = [];
   String selectedCategory = 'All';
   bool loading = true;
   bool locating = false;
@@ -29,6 +38,35 @@ class _MarketScreenState extends State<MarketScreen> {
   void initState() {
     super.initState();
     load();
+  }
+
+  @override
+  void dispose() {
+    searchDebounce?.cancel();
+    super.dispose();
+  }
+
+  void updateSearch(String value) {
+    searchDebounce?.cancel();
+    final generation = ++searchGeneration;
+    setState(() { searchQuery = value; searchError = null; matchedProducts = []; matchedStores = []; searchingProducts = false; });
+    if (value.trim().isEmpty || searchLatitude == null || searchLongitude == null) return;
+    searchDebounce = Timer(const Duration(milliseconds: 350), () async {
+      if (!mounted || generation != searchGeneration) return;
+      setState(() => searchingProducts = true);
+      try {
+        final result = await GaonApi.discoverySearch(value.trim(), latitude: searchLatitude!, longitude: searchLongitude!);
+        if (!mounted || generation != searchGeneration) return;
+        setState(() {
+          matchedProducts = (result['products'] as List? ?? []).map((item) => Map<String, dynamic>.from(item as Map)).toList();
+          matchedStores = (result['stores'] as List? ?? []).map((item) => Map<String, dynamic>.from(item as Map)).toList();
+          searchingProducts = false;
+        });
+      } catch (exception) {
+        if (!mounted || generation != searchGeneration) return;
+        setState(() { searchingProducts = false; searchError = exception.toString(); });
+      }
+    });
   }
 
   Future<void> load() async {
@@ -75,10 +113,13 @@ class _MarketScreenState extends State<MarketScreen> {
       if (!mounted) return;
       setState(() {
         stores = nearby;
+        searchLatitude = position.latitude;
+        searchLongitude = position.longitude;
         selectedVillageId = null;
         usingLocation = true;
         locating = false;
       });
+      if (searchQuery.trim().isNotEmpty) updateSearch(searchQuery);
     } catch (exception) {
       if (!mounted) return;
       setState(() {
@@ -145,13 +186,13 @@ class _MarketScreenState extends State<MarketScreen> {
                   ),
                   const SizedBox(height: 18),
                   TextField(
-                    onChanged: (value) => setState(() => searchQuery = value),
+                    onChanged: updateSearch,
                     decoration: InputDecoration(
                       hintText: 'Search nearby stores or essentials',
                       prefixIcon: const Icon(Icons.search_rounded),
                       suffixIcon: searchQuery.isEmpty ? null : IconButton(
                         tooltip: 'Clear search',
-                        onPressed: () => setState(() => searchQuery = ''),
+                        onPressed: () => updateSearch(''),
                         icon: const Icon(Icons.close_rounded),
                       ),
                       filled: true,
@@ -159,6 +200,25 @@ class _MarketScreenState extends State<MarketScreen> {
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
                     ),
                   ),
+                  if (searchQuery.trim().isNotEmpty && searchLatitude == null)
+                    const Padding(padding: EdgeInsets.only(top: 10), child: Text('Select “Use my current location” to search products across nearby stores. Store names can be filtered without GPS.')),
+                  if (searchingProducts) const Padding(padding: EdgeInsets.only(top: 10), child: LinearProgressIndicator()),
+                  if (searchError != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(searchError!, style: const TextStyle(color: Color(0xFFB42318)))),
+                  if (searchQuery.trim().isNotEmpty && searchLatitude != null && !searchingProducts && searchError == null) ...[
+                    const SizedBox(height: 16),
+                    Text('Matching products', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                    if (matchedProducts.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('No nearby products match this search.')),
+                    ...matchedProducts.map((product) => Card(child: ListTile(
+                      leading: const Icon(Icons.shopping_basket_rounded, color: Color(0xFF1F7A45)),
+                      title: Text('${product['name']}'),
+                      subtitle: Text('${product['store_name']} · ${product['unit']}'),
+                      trailing: Text('₹${product['price']}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                      onTap: () async {
+                        final store = stores.where((item) => item.id == product['store_id']).firstOrNull;
+                        if (store != null) await Navigator.push(context, MaterialPageRoute(builder: (_) => StoreScreen(store: store)));
+                      },
+                    ))),
+                  ],
                   const SizedBox(height: 18),
                   Text('Explore categories', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
                   const SizedBox(height: 12),
@@ -206,7 +266,9 @@ class _MarketScreenState extends State<MarketScreen> {
                     decoration: const InputDecoration(labelText: 'Or choose area / locality'),
                     items: villages.map((v) => DropdownMenuItem(value: v.id, child: Text('${v.name}, ${v.district}'))).toList(),
                     onChanged: (value) {
-                      setState(() { selectedVillageId = value; usingLocation = false; });
+                      searchDebounce?.cancel();
+                      searchGeneration++;
+                      setState(() { selectedVillageId = value; usingLocation = false; searchLatitude = null; searchLongitude = null; matchedProducts = []; matchedStores = []; searchingProducts = false; });
                       load();
                     },
                   ),
