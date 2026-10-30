@@ -51,3 +51,28 @@ def test_owner_gets_only_safe_metadata():
     assert result[0]["state"] == "quarantined"
     assert "source_object_key" not in result[0]
     assert "public_object_key" not in result[0]
+
+
+def test_public_images_require_available_listing():
+    from app.api.v1.routes.media import public_approved_listing_images
+    db = MagicMock()
+    db.get.return_value = SimpleNamespace(is_available=False, stock_quantity=0)
+    with pytest.raises(HTTPException) as exc:
+        public_approved_listing_images(uuid.uuid4(), db=db)
+    assert exc.value.status_code == 404
+    db.scalars.assert_not_called()
+
+
+def test_public_images_require_active_approved_merchant():
+    from app.api.v1.routes.media import public_approved_listing_images
+    listing_id, store_id, merchant_id = (uuid.uuid4() for _ in range(3))
+    db = MagicMock()
+    db.get.side_effect = [
+        SimpleNamespace(is_available=True, stock_quantity=4, store_id=store_id),
+        SimpleNamespace(is_active=True, merchant_id=merchant_id),
+        SimpleNamespace(status=SimpleNamespace(value="pending")),
+    ]
+    with pytest.raises(HTTPException) as exc:
+        public_approved_listing_images(listing_id, db=db)
+    assert exc.value.status_code == 404
+    db.scalars.assert_not_called()
