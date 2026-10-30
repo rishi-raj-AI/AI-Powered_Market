@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+import hashlib
 from pathlib import Path
 
 from sqlalchemy import select
@@ -8,6 +9,8 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.models.commerce import Merchant, Store, StoreProduct
 from app.models.product_media import ProductMediaAsset
+from app.services.product_media import new_quarantined_asset, create_media_job, audit_media_event
+from app.services.product_media_storage import LocalObjectStorage
 from app.services.product_media import approved_listing_media
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -97,6 +100,72 @@ async def upload_image(
         "filename": filename,
         "size": len(content),
     }
+
+
+@router.post("/store-products/{listing_id}/images", status_code=202)
+async def queue_listing_image(
+    listing_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles(UserRole.MERCHANT, UserRole.ADMIN)),
+) -> dict:
+    """Quarantine a listing-owned image; never expose its private object key."""
+    if not settings.PRODUCT_MEDIA_ENABLED:
+        raise HTTPException(status_code=503, detail="Product image processing is unavailable")
+    if settings.APP_ENV not in {"development", "test"} or settings.MEDIA_STORAGE_BACKEND != "local":
+        raise HTTPException(status_code=503, detail="Secure production upload adapter is unavailable")
+    listing = db.get(StoreProduct, listing_id)
+    store = db.get(Store, listing.store_id) if listing else None
+    merchant = db.get(Merchant, store.merchant_id) if store else None
+    if listing is None or merchant is None:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    if user.role == UserRole.ADMIN:
+        ensure_capability(user, Capability.MEDIA_MODERATE)
+    elif merchant.owner_user_id != user.id:
+        raise HTTPException(status_code=403, detail="You do not own this listing")
+    try:
+        rate_limiter.enforce("product-media-upload", str(user.id), limit=UPLOAD_RATE_LIMIT, window_seconds=UPLOAD_RATE_WINDOW_SECONDS)
+    except RateLimitExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except RateLimitUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    mime = (file.content_type or "").split(";")[0].strip().lower()
+    if mime not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=415, detail="Unsupported image format")
+    content = await file.read(settings.MEDIA_UPLOAD_MAX_BYTES + 1)
+    if not content or len(content) > settings.MEDIA_UPLOAD_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Image exceeds configured size limit")
+    if not _looks_like(content, mime):
+        raise HTTPException(status_code=415, detail="Image signature mismatch")
+    count = db.query(ProductMediaAsset).filter(
+        ProductMediaAsset.store_product_id == listing_id,
+        ProductMediaAsset.retired_at.is_(None),
+        ProductMediaAsset.state != "rejected",
+    ).count()
+    if count >= settings.MEDIA_IMAGE_MAX_PER_LISTING:
+        raise HTTPException(status_code=409, detail="Listing image limit reached")
+    asset_id = uuid.uuid4()
+    key = f"quarantine/listings/{listing_id}/{asset_id.hex}"
+    storage = LocalObjectStorage(Path("data/media/quarantine"), Path("data/media/public"))
+    stored = storage.put_quarantine(key, content, mime)
+    asset = new_quarantined_asset(
+        store_product_id=listing_id, uploader=user, source_object_key=key,
+        source_sha256=stored.sha256, position=count,
+    )
+    asset.id = asset_id
+    asset.detected_mime = mime
+    asset.byte_size = stored.byte_size
+    try:
+        db.add(asset)
+        db.flush()
+        create_media_job(db, asset=asset)
+        audit_media_event(db, asset=asset, action="media.upload_queued", request_id=str(asset_id), actor=user)
+        db.commit()
+    except Exception:
+        db.rollback()
+        storage.delete_quarantine(key)
+        raise
+    return {"id": str(asset.id), "state": "quarantined"}
 
 
 @router.get("/store-products/{listing_id}/images")
