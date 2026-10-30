@@ -31,8 +31,11 @@ android {
         versionName = flutter.versionName
     }
 
+    val releaseSigningRequested = gradle.startParameter.taskNames.any { task ->
+        task.contains("Release", ignoreCase = true) || task.contains("bundle", ignoreCase = true)
+    }
     signingConfigs {
-        create("gaononeRelease") {
+        if (releaseSigningRequested) create("gaononeRelease") {
             val keyStorePath = System.getenv("GAONONE_ANDROID_KEYSTORE_PATH")
                 ?: error("GAONONE_ANDROID_KEYSTORE_PATH is required for release signing")
             storeFile = File(keyStorePath)
@@ -47,7 +50,9 @@ android {
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("gaononeRelease")
+            // Debug builds must not require production secrets. Release tasks fail
+            // closed when the permanent signing credentials are absent.
+            if (releaseSigningRequested) signingConfig = signingConfigs.getByName("gaononeRelease")
         }
     }
 }
