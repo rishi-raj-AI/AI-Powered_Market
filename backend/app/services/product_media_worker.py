@@ -9,7 +9,7 @@ from pathlib import Path
 
 from app.core.config import settings
 from app.db.session import SessionLocal
-from app.models.product_media import ProductMediaAsset
+from app.models.product_media import ProductMediaAsset, ProductMediaJob
 from app.services.product_media import claim_due_media_job, complete_media_job
 from app.services.product_media_processing import MediaScanUnavailable
 from app.services.product_media_publication import process_quarantined_asset
@@ -36,9 +36,14 @@ def process_due_media_jobs(*, limit: int = 10) -> dict[str, int]:
             db.commit()
         counts["considered"] += 1
         with SessionLocal() as db:
-            job = db.get(type(job), job_id, with_for_update=True)
+            job = db.get(ProductMediaJob, job_id, with_for_update=True)
             asset = db.get(ProductMediaAsset, asset_id, with_for_update=True)
-            if asset is None or job is None or job.state != "processing":
+            if job is None or job.state != "processing":
+                continue
+            if asset is None:
+                complete_media_job(job, outcome="rejected", failure_code="asset_missing")
+                db.commit()
+                counts["rejected"] += 1
                 continue
             try:
                 result = process_quarantined_asset(
