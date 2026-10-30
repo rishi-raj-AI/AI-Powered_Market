@@ -99,3 +99,43 @@ def test_publication_without_derivative_does_not_complete_job(monkeypatch):
     result = worker.process_due_media_jobs(limit=1)
     assert result["approved"] == 0 and result["retried"] == 1
     assert outcomes == ["retry"]
+
+
+def test_worker_reconciles_already_approved_asset_without_republishing(monkeypatch):
+    import uuid
+    from datetime import datetime, timedelta, timezone
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+    from app.services import product_media_worker as worker
+
+    monkeypatch.setattr(worker.settings, "PRODUCT_MEDIA_ENABLED", True)
+    monkeypatch.setattr(worker.settings, "APP_ENV", "test")
+    monkeypatch.setattr(worker.settings, "MEDIA_STORAGE_BACKEND", "local")
+    monkeypatch.setattr(worker.settings, "MEDIA_SCAN_PROVIDER", "http")
+    monkeypatch.setattr(worker.settings, "MEDIA_SCAN_ENDPOINT_URL", "https://scanner.example.test/scan")
+    monkeypatch.setattr(worker.settings, "MEDIA_SCAN_AUTH_TOKEN", "test-token")
+    asset_id = uuid.uuid4()
+    job = SimpleNamespace(
+        id=uuid.uuid4(), asset_id=asset_id, attempt_count=2, state="processing",
+        lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+    )
+    asset = SimpleNamespace(
+        id=asset_id, state="approved", public_object_key="public/listings/ok.webp",
+        derivative_sha256="a" * 64, retired_at=None,
+    )
+    sessions = [MagicMock(), MagicMock()]
+    for db in sessions:
+        db.__enter__.return_value = db
+    sessions[1].get.side_effect = [job, asset]
+    monkeypatch.setattr(worker, "SessionLocal", lambda: sessions.pop(0))
+    monkeypatch.setattr(worker, "expire_exhausted_media_jobs", lambda *a, **kw: 0)
+    monkeypatch.setattr(worker, "claim_due_media_job", lambda db: job)
+    monkeypatch.setattr(worker, "LocalObjectStorage", lambda *a: object())
+    monkeypatch.setattr(worker, "HttpContentScanner", lambda *a: object())
+    publication = MagicMock(side_effect=AssertionError("must not republish"))
+    monkeypatch.setattr(worker, "process_quarantined_asset", publication)
+    outcomes = []
+    monkeypatch.setattr(worker, "complete_media_job", lambda job, **kw: outcomes.append(kw["outcome"]))
+    counts = worker.process_due_media_jobs(limit=1)
+    assert counts["approved"] == 1 and outcomes == ["approved"]
+    publication.assert_not_called()
