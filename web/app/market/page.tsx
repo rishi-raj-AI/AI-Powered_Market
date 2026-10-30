@@ -1,5 +1,5 @@
-import './marketplace.css';
 'use client';
+import './marketplace.css';
 
 import {Suspense, useEffect, useMemo, useRef, useState} from 'react';
 import Link from 'next/link';
