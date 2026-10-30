@@ -69,13 +69,13 @@ class S3ObjectStorage:
         if content_type is not None:
             headers["content-type"] = content_type
         names = sorted(headers)
-        canonical_headers = "".join(f"{name}:{headers[name]}\\n" for name in names)
+        canonical_headers = "".join(f"{name}:{headers[name]}\n" for name in names)
         signed_headers = ";".join(names)
-        canonical = "\\n".join([
+        canonical = "\n".join([
             method, path, "", canonical_headers, signed_headers, payload_hash,
         ])
         scope = f"{day}/{self.region}/s3/aws4_request"
-        string_to_sign = "\\n".join([
+        string_to_sign = "\n".join([
             "AWS4-HMAC-SHA256", timestamp, scope,
             hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
         ])
