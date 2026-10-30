@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.models.commerce import Merchant, Store, StoreProduct
 from app.models.product_media import ProductMediaAsset
+from app.services.product_media import approved_listing_media
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
@@ -131,3 +132,19 @@ def list_merchant_listing_images(
         }
         for asset in assets
     ]
+
+
+@router.get("/store-products/{listing_id}/approved-images")
+def public_approved_listing_images(
+    listing_id: uuid.UUID,
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    """Return only approved derivative descriptors for a publicly available listing."""
+    listing = db.get(StoreProduct, listing_id)
+    if listing is None or not listing.is_available or listing.stock_quantity <= 0:
+        raise HTTPException(status_code=404, detail="Listing not available")
+    store = db.get(Store, listing.store_id)
+    merchant = db.get(Merchant, store.merchant_id) if store else None
+    if store is None or not store.is_active or merchant is None or merchant.status.value != "approved":
+        raise HTTPException(status_code=404, detail="Listing not available")
+    return approved_listing_media(db, [listing_id]).get(listing_id, [])
