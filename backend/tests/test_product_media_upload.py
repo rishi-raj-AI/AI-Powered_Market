@@ -50,3 +50,26 @@ def test_upload_denies_other_merchants_before_reading_file(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         call_upload(db, SimpleNamespace(id=uuid.uuid4(), role=UserRole.MERCHANT))
     assert exc.value.status_code == 403
+
+
+def test_owner_upload_queues_private_asset_without_exposing_storage_key(monkeypatch):
+    from app.services.product_media_storage import FakeObjectStorage
+    monkeypatch.setattr(media.settings, "PRODUCT_MEDIA_ENABLED", True)
+    monkeypatch.setattr(media.settings, "APP_ENV", "test")
+    monkeypatch.setattr(media.settings, "MEDIA_STORAGE_BACKEND", "local")
+    owner_id = uuid.uuid4()
+    db = MagicMock()
+    db.get.side_effect = [
+        SimpleNamespace(store_id=uuid.uuid4()),
+        SimpleNamespace(merchant_id=uuid.uuid4()),
+        SimpleNamespace(owner_user_id=owner_id),
+    ]
+    db.query.return_value.filter.return_value.count.return_value = 0
+    storage = FakeObjectStorage()
+    monkeypatch.setattr(media, "LocalObjectStorage", lambda *args: storage)
+    monkeypatch.setattr(media.rate_limiter, "enforce", lambda *args, **kwargs: None)
+    result = call_upload(db, SimpleNamespace(id=owner_id, role=UserRole.MERCHANT))
+    assert result["state"] == "quarantined"
+    assert "source_object_key" not in result and "url" not in result
+    assert len(storage.quarantine) == 1 and not storage.public
+    db.commit.assert_called_once()
