@@ -59,6 +59,9 @@ def process_due_media_jobs(*, limit: int = 10) -> dict[str, int]:
                     request_id=f"media-job-{job_id}",
                 )
                 outcome = result.state if result.state in {"approved", "rejected"} else "retry"
+                if job.lease_expires_at is None or job.lease_expires_at <= datetime.now(timezone.utc):
+                    db.rollback()
+                    continue
                 complete_media_job(job, outcome=outcome, failure_code=result.reason)
                 counts["retried" if outcome == "retry" else outcome] += 1
             except MediaScanUnavailable:
@@ -75,7 +78,7 @@ def process_due_media_jobs(*, limit: int = 10) -> dict[str, int]:
                 db.rollback()
                 with SessionLocal() as retry_db:
                     retry_job = retry_db.get(ProductMediaJob, job_id, with_for_update=True)
-                    if retry_job is not None and retry_job.state == "processing":
+                    if retry_job is not None and retry_job.state == "processing" and retry_job.attempt_count == claim_attempt:
                         complete_media_job(retry_job, outcome="retry", failure_code="processing_error")
                         retry_db.commit()
                         counts["retried"] += 1
