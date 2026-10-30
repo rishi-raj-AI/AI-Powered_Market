@@ -138,3 +138,48 @@ class FailClosedScanner:
     def scan(self, item: StoredMediaObject) -> ScanResult:
         del item
         return ScanResult(verdict="unavailable", reason_code="scanner_not_configured")
+
+
+class HttpContentScanner:
+    """Synchronous private byte-stream scanner; a malformed response fails closed.
+
+    The configured HTTPS service must return JSON {"verdict": "clean"}.
+    Network errors are surfaced as unavailable rather than approval.
+    """
+
+    def __init__(self, endpoint: str, token: str, *, timeout_seconds: float = 15.0):
+        from urllib.parse import urlsplit
+        parsed = urlsplit(endpoint)
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+            raise ValueError("Scanner endpoint must use HTTPS without URL credentials")
+        if not token:
+            raise ValueError("Scanner authentication token is required")
+        self.endpoint = endpoint
+        self.token = token
+        self.timeout_seconds = timeout_seconds
+
+    def scan_bytes(self, item: StoredMediaObject, content: bytes) -> ScanResult:
+        import httpx
+        try:
+            response = httpx.post(
+                self.endpoint,
+                content=content,
+                headers={
+                    "Authorization": f"Bearer {self.token}",
+                    "Content-Type": "application/octet-stream",
+                    "X-Media-Sha256": item.sha256,
+                },
+                timeout=self.timeout_seconds,
+                follow_redirects=False,
+            )
+            response.raise_for_status()
+            data = response.json()
+            if not isinstance(data, dict) or data.get("verdict") not in {"clean", "infected", "rejected"}:
+                return ScanResult(verdict="unavailable", reason_code="invalid_scan_response")
+            return ScanResult(verdict=data["verdict"], reason_code=data.get("reason_code"))
+        except (httpx.HTTPError, ValueError, TypeError):
+            return ScanResult(verdict="unavailable", reason_code="scanner_unavailable")
+
+    def scan(self, item: StoredMediaObject) -> ScanResult:
+        # Metadata-only scanning is never sufficient for publication.
+        return ScanResult(verdict="unavailable", reason_code="source_bytes_required")
