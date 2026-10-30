@@ -72,6 +72,7 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   Future<void> load() async {
+    if (mounted) setState(() { loading = stores.isEmpty; error = null; });
     try {
       final loadedVillages = await GaonApi.villages();
       final loadedStores = await GaonApi.stores(selectedVillageId);
@@ -298,7 +299,13 @@ class _MarketScreenState extends State<MarketScreen> {
                   ]),
                   const SizedBox(height: 12),
                   if (error != null)
-                    Padding(padding: const EdgeInsets.only(bottom: 12), child: Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
+                    Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                        TextButton.icon(onPressed: load, icon: const Icon(Icons.refresh), label: const Text("Retry loading shops")),
+                      ],
+                    ))),
                   ...filtered.map((store) => Card(
                     margin: const EdgeInsets.only(bottom: 12),
                     clipBehavior: Clip.antiAlias,
