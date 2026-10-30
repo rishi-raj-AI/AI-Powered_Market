@@ -59,6 +59,8 @@ def process_due_media_jobs(*, limit: int = 10) -> dict[str, int]:
                     request_id=f"media-job-{job_id}",
                 )
                 outcome = result.state if result.state in {"approved", "rejected"} else "retry"
+                if outcome == "approved" and (asset.public_object_key is None or asset.derivative_sha256 is None):
+                    raise RuntimeError("Approved asset has no verified public derivative")
                 if job.lease_expires_at is None or job.lease_expires_at <= datetime.now(timezone.utc):
                     db.rollback()
                     continue
