@@ -218,3 +218,54 @@ def test_retired_approved_asset_is_not_reconciled_as_approved(monkeypatch):
     counts = worker.process_due_media_jobs(limit=1)
     assert counts["approved"] == 0 and counts["rejected"] == 1
     assert outcomes == ["rejected"]
+
+
+def test_public_derivative_is_deleted_when_database_commit_fails(monkeypatch):
+    """A successful object-store write must not survive a failed SQL approval."""
+    import uuid
+    from datetime import datetime, timedelta, timezone
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+    from app.services import product_media_worker as worker
+
+    monkeypatch.setattr(worker.settings, "PRODUCT_MEDIA_ENABLED", True)
+    monkeypatch.setattr(worker.settings, "APP_ENV", "test")
+    monkeypatch.setattr(worker.settings, "MEDIA_STORAGE_BACKEND", "local")
+    monkeypatch.setattr(worker.settings, "MEDIA_SCAN_PROVIDER", "http")
+    monkeypatch.setattr(worker.settings, "MEDIA_SCAN_ENDPOINT_URL", "https://scanner.example.test/scan")
+    monkeypatch.setattr(worker.settings, "MEDIA_SCAN_AUTH_TOKEN", "test-token")
+    asset_id = uuid.uuid4()
+    job = SimpleNamespace(
+        id=uuid.uuid4(), asset_id=asset_id, attempt_count=1, state="processing",
+        lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+    )
+    asset = SimpleNamespace(
+        id=asset_id, state="quarantined", public_object_key=None,
+        derivative_sha256=None, retired_at=None,
+    )
+    sessions = [MagicMock() for _ in range(4)]
+    for db in sessions:
+        db.__enter__.return_value = db
+    sessions[2].get.side_effect = [job, asset]
+    sessions[2].commit.side_effect = RuntimeError("commit failed")
+    sessions[3].get.return_value = job
+    monkeypatch.setattr(worker, "SessionLocal", lambda: sessions.pop(0))
+    monkeypatch.setattr(worker, "expire_exhausted_media_jobs", lambda *a, **kw: 0)
+    monkeypatch.setattr(worker, "claim_due_media_job", lambda db: job)
+    storage = MagicMock()
+    monkeypatch.setattr(worker, "LocalObjectStorage", lambda *a: storage)
+    monkeypatch.setattr(worker, "HttpContentScanner", lambda *a: object())
+
+    def publish(*args, **kwargs):
+        asset.public_object_key = "public/listings/derivative.webp"
+        asset.derivative_sha256 = "a" * 64
+        asset.state = "approved"
+        return SimpleNamespace(state="approved", reason=None)
+
+    monkeypatch.setattr(worker, "process_quarantined_asset", publish)
+    outcomes = []
+    monkeypatch.setattr(worker, "complete_media_job", lambda job, **kw: outcomes.append(kw["outcome"]))
+    result = worker.process_due_media_jobs(limit=1)
+    assert result["approved"] == 0 and result["retried"] == 1
+    assert outcomes == ["approved", "retry"]
+    storage.delete_public_derivative.assert_called_once_with("public/listings/derivative.webp")
