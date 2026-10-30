@@ -98,6 +98,8 @@ class S3ObjectStorage:
         return response.content
 
     def put_quarantine(self, key: str, content: bytes, content_type: str) -> StoredMediaObject:
+        if not key.startswith("quarantine/listings/") or content_type not in {"image/jpeg", "image/png", "image/webp"}:
+            raise ValueError("Only listing image sources may enter quarantine")
         self._request("PUT", self.quarantine_bucket, key, content=content, content_type=content_type)
         return StoredMediaObject(key, content_type, len(content), hashlib.sha256(content).hexdigest())
 
@@ -105,7 +107,8 @@ class S3ObjectStorage:
         return self._request("GET", self.quarantine_bucket, key)
 
     def put_public_derivative(self, key: str, content: bytes, content_type: str) -> StoredMediaObject:
-        if content_type != "image/webp" or not key.startswith("public/listings/") or not key.endswith(".webp"):
+        if (content_type != "image/webp" or not key.startswith("public/listings/")
+                or not key.endswith(".webp") or not content):
             raise ValueError("Only safe listing WebP derivatives may be published")
         self._request("PUT", self.public_bucket, key, content=content, content_type=content_type)
         return StoredMediaObject(key, content_type, len(content), hashlib.sha256(content).hexdigest())
