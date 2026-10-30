@@ -21,6 +21,7 @@ from app.db.session import SessionLocal
 from app.services.fcm import flush_pending
 from app.services.refunds import dispatch_due_refunds
 from app.services.store_banners import process_due_banner_jobs
+from app.core.config import settings
 
 logging.basicConfig(
     level=os.environ.get("WORKER_LOG_LEVEL", "INFO"),
