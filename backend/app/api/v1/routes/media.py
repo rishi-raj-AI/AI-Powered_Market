@@ -3,6 +3,12 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+from app.api.deps import get_db
+from app.models.commerce import Merchant, Store, StoreProduct
+from app.models.product_media import ProductMediaAsset
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
 from app.api.deps import ensure_capability, require_roles
@@ -90,3 +96,38 @@ async def upload_image(
         "filename": filename,
         "size": len(content),
     }
+
+
+@router.get("/store-products/{listing_id}/images")
+def list_merchant_listing_images(
+    listing_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles(UserRole.MERCHANT, UserRole.ADMIN)),
+) -> list[dict]:
+    """Private listing-image status; never expose quarantine object keys or raw uploads."""
+    listing = db.get(StoreProduct, listing_id)
+    if listing is None:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    store = db.get(Store, listing.store_id)
+    merchant = db.get(Merchant, store.merchant_id) if store else None
+    if user.role == UserRole.ADMIN:
+        ensure_capability(user, Capability.MEDIA_MODERATE)
+    elif merchant is None or merchant.owner_user_id != user.id:
+        raise HTTPException(status_code=403, detail="You do not own this listing")
+    assets = db.scalars(
+        select(ProductMediaAsset)
+        .where(ProductMediaAsset.store_product_id == listing_id)
+        .order_by(ProductMediaAsset.position, ProductMediaAsset.created_at)
+        .limit(50)
+    ).all()
+    return [
+        {
+            "id": str(asset.id),
+            "state": asset.state,
+            "alt_text": asset.alt_text,
+            "position": asset.position,
+            "is_primary": asset.is_primary,
+            "created_at": asset.created_at.isoformat(),
+        }
+        for asset in assets
+    ]
