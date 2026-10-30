@@ -75,7 +75,8 @@ def process_quarantined_asset(
     key = f"public/listings/{asset.store_product_id}/{asset.id}.webp"
     stored = storage.put_public_derivative(key, derivative.content, derivative.content_type)
     expected_hash = hashlib.sha256(derivative.content).hexdigest()
-    if stored.sha256 != expected_hash or stored.byte_size != len(derivative.content) or stored.key != key:
+    if (stored.sha256 != expected_hash or stored.byte_size != len(derivative.content)
+            or stored.key != key or stored.content_type != "image/webp"):
         # Do not approve an unverified object. Cleanup failure must not
         # override the original publication error.
         try:
