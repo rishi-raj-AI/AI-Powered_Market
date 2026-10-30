@@ -49,7 +49,7 @@ def test_s3_put_get_delete_use_separate_signed_buckets(monkeypatch, adapter):
         assert "SignedHeaders=" in headers["authorization"]
         calls.append((method, url))
         return httpx.Response(
-            200, content=payload if method == "GET" else b"",
+            200, content=(b"RIFFwebp" if "media-public" in url else payload) if method == "GET" else b"",
             request=httpx.Request(method, url),
         )
 
@@ -65,6 +65,7 @@ def test_s3_put_get_delete_use_separate_signed_buckets(monkeypatch, adapter):
         ("PUT", "https://objects.example.test/media-private/quarantine/listings/1/source"),
         ("GET", "https://objects.example.test/media-private/quarantine/listings/1/source"),
         ("PUT", "https://objects.example.test/media-public/public/listings/1/derivative.webp"),
+        ("GET", "https://objects.example.test/media-public/public/listings/1/derivative.webp"),
         ("DELETE", "https://objects.example.test/media-private/quarantine/listings/1/source"),
         ("DELETE", "https://objects.example.test/media-public/public/listings/1/derivative.webp"),
     ]
@@ -110,3 +111,34 @@ def test_s3_http_failure_never_returns_successful_storage_metadata(adapter, monk
         adapter.put_quarantine("quarantine/listings/1/source", b"image", "image/png")
     with pytest.raises(httpx.HTTPStatusError):
         adapter.put_public_derivative("public/listings/1/a.webp", b"webp", "image/webp")
+
+
+def test_s3_corrupt_public_readback_is_deleted_and_never_approved(adapter, monkeypatch):
+    calls = []
+
+    def corrupt(method, url, **kwargs):
+        calls.append(method)
+        return httpx.Response(
+            200, content=b"corrupted" if method == "GET" else b"",
+            request=httpx.Request(method, url),
+        )
+
+    monkeypatch.setattr(httpx, "request", corrupt)
+    with pytest.raises(RuntimeError, match="checksum mismatch"):
+        adapter.put_public_derivative("public/listings/1/a.webp", b"RIFFwebp", "image/webp")
+    assert calls == ["PUT", "GET", "DELETE"]
+
+
+def test_s3_public_readback_network_error_attempts_cleanup(adapter, monkeypatch):
+    calls = []
+
+    def unavailable(method, url, **kwargs):
+        calls.append(method)
+        if method == "GET":
+            raise httpx.ConnectError("unavailable")
+        return httpx.Response(200, request=httpx.Request(method, url))
+
+    monkeypatch.setattr(httpx, "request", unavailable)
+    with pytest.raises(httpx.ConnectError):
+        adapter.put_public_derivative("public/listings/1/a.webp", b"RIFFwebp", "image/webp")
+    assert calls == ["PUT", "GET", "DELETE"]
