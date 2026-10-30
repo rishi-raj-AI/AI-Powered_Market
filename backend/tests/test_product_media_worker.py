@@ -139,3 +139,82 @@ def test_worker_reconciles_already_approved_asset_without_republishing(monkeypat
     counts = worker.process_due_media_jobs(limit=1)
     assert counts["approved"] == 1 and outcomes == ["approved"]
     publication.assert_not_called()
+
+
+def test_expired_retry_lease_does_not_modify_job(monkeypatch):
+    import uuid
+    from datetime import datetime, timedelta, timezone
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+    from app.services import product_media_worker as worker
+
+    monkeypatch.setattr(worker.settings, "PRODUCT_MEDIA_ENABLED", True)
+    monkeypatch.setattr(worker.settings, "APP_ENV", "test")
+    monkeypatch.setattr(worker.settings, "MEDIA_STORAGE_BACKEND", "local")
+    monkeypatch.setattr(worker.settings, "MEDIA_SCAN_PROVIDER", "http")
+    monkeypatch.setattr(worker.settings, "MEDIA_SCAN_ENDPOINT_URL", "https://scanner.example.test/scan")
+    monkeypatch.setattr(worker.settings, "MEDIA_SCAN_AUTH_TOKEN", "test-token")
+    asset_id = uuid.uuid4()
+    job = SimpleNamespace(
+        id=uuid.uuid4(), asset_id=asset_id, attempt_count=1, state="processing",
+        lease_expires_at=datetime.now(timezone.utc) + timedelta(seconds=60),
+    )
+    asset = SimpleNamespace(id=asset_id, state="quarantined", retired_at=None)
+    sessions = [MagicMock() for _ in range(3)]
+    for db in sessions:
+        db.__enter__.return_value = db
+    sessions[1].get.side_effect = [job, asset]
+    sessions[2].get.return_value = SimpleNamespace(
+        state="processing", attempt_count=1,
+        lease_expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+    )
+    monkeypatch.setattr(worker, "SessionLocal", lambda: sessions.pop(0))
+    monkeypatch.setattr(worker, "expire_exhausted_media_jobs", lambda *a, **kw: 0)
+    monkeypatch.setattr(worker, "claim_due_media_job", lambda db: job)
+    monkeypatch.setattr(worker, "LocalObjectStorage", lambda *a: object())
+    monkeypatch.setattr(worker, "HttpContentScanner", lambda *a: object())
+    monkeypatch.setattr(worker, "process_quarantined_asset", MagicMock(side_effect=RuntimeError("scanner failed")))
+    completed = MagicMock()
+    monkeypatch.setattr(worker, "complete_media_job", completed)
+    counts = worker.process_due_media_jobs(limit=1)
+    assert counts["considered"] == 1 and counts["retried"] == 0
+    completed.assert_not_called()
+
+
+def test_retired_approved_asset_is_not_reconciled_as_approved(monkeypatch):
+    import uuid
+    from datetime import datetime, timedelta, timezone
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+    from app.services import product_media_worker as worker
+
+    monkeypatch.setattr(worker.settings, "PRODUCT_MEDIA_ENABLED", True)
+    monkeypatch.setattr(worker.settings, "APP_ENV", "test")
+    monkeypatch.setattr(worker.settings, "MEDIA_STORAGE_BACKEND", "local")
+    monkeypatch.setattr(worker.settings, "MEDIA_SCAN_PROVIDER", "http")
+    monkeypatch.setattr(worker.settings, "MEDIA_SCAN_ENDPOINT_URL", "https://scanner.example.test/scan")
+    monkeypatch.setattr(worker.settings, "MEDIA_SCAN_AUTH_TOKEN", "test-token")
+    asset_id = uuid.uuid4()
+    job = SimpleNamespace(
+        id=uuid.uuid4(), asset_id=asset_id, attempt_count=1, state="processing",
+        lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+    )
+    asset = SimpleNamespace(
+        id=asset_id, state="approved", public_object_key="public/listings/a.webp",
+        derivative_sha256="a" * 64, retired_at=datetime.now(timezone.utc),
+    )
+    sessions = [MagicMock(), MagicMock()]
+    for db in sessions:
+        db.__enter__.return_value = db
+    sessions[1].get.side_effect = [job, asset]
+    monkeypatch.setattr(worker, "SessionLocal", lambda: sessions.pop(0))
+    monkeypatch.setattr(worker, "expire_exhausted_media_jobs", lambda *a, **kw: 0)
+    monkeypatch.setattr(worker, "claim_due_media_job", lambda db: job)
+    monkeypatch.setattr(worker, "LocalObjectStorage", lambda *a: object())
+    monkeypatch.setattr(worker, "HttpContentScanner", lambda *a: object())
+    monkeypatch.setattr(worker, "process_quarantined_asset", MagicMock(side_effect=AssertionError("unexpected publication")))
+    outcomes = []
+    monkeypatch.setattr(worker, "complete_media_job", lambda job, **kw: outcomes.append(kw["outcome"]))
+    counts = worker.process_due_media_jobs(limit=1)
+    assert counts["approved"] == 0 and counts["rejected"] == 1
+    assert outcomes == ["rejected"]
