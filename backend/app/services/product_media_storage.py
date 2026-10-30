@@ -40,7 +40,7 @@ class ObjectStorage(Protocol):
 
 
 class ContentScanner(Protocol):
-    def scan(self, item: StoredMediaObject) -> ScanResult: ...
+    def scan_bytes(self, item: StoredMediaObject, content: bytes) -> ScanResult: ...
 
 
 def _safe_path(root: Path, key: str) -> Path:
