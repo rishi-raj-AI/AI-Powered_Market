@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 
 API_URL = "https://gaonone.in/api/v1"
+MAPS_KEY = "GAONONE_GOOGLE_MAPS_ANDROID_API_KEY"
 PUBLIC_KEYS = (
     "GAONONE_FIREBASE_ANDROID_API_KEY",
     "GAONONE_FIREBASE_ANDROID_APP_ID",
@@ -20,6 +21,9 @@ def configuration(environment):
     values = {key: environment.get(key, "").strip() for key in PUBLIC_KEYS}
     missing = [key for key, value in values.items() if not value]
     values.update(API_URL=API_URL, GAONONE_LEGACY_OTP_ENABLED="false", GAONONE_QA_BUILD="true")
+    maps_key = environment.get(MAPS_KEY, "").strip()
+    values[MAPS_KEY] = maps_key
+    values["GAONONE_ANDROID_MAPS_ENABLED"] = "true" if maps_key else "false"
     report = {
         "api_url": API_URL,
         "legacy_otp_enabled": False,
@@ -27,6 +31,7 @@ def configuration(environment):
         "missing_public_variables": missing,
         "physical_device_tested": False,
         "production_release": False,
+        "android_maps": "google_configured_unverified" if maps_key else "openstreetmap_fallback",
     }
     return values, report
 

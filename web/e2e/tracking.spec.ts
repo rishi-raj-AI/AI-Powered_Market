@@ -15,6 +15,26 @@ async function mockTracking(page:Page,{delivered=false,stale=false,expired=false
   await page.route(`http://localhost:8000/api/v1/orders/${order.id}/route`,r=>r.fulfill({json:delivered?{...route,available:false,provider:'none'}:route}));
 }
 
+test('tracking synchronizes initial coordinates after asynchronous map creation',async({page})=>{
+  await mockTracking(page);
+  await page.addInitScript(()=>{
+    const state={panCalls:[] as any[]};
+    (window as any).__mapsTest=state;
+    (window as any).google={maps:{
+      Map:class{panTo(point:any){state.panCalls.push(point)} fitBounds(){}},
+      LatLngBounds:class{extend(){}},
+      importLibrary:async()=>({AdvancedMarkerElement:class{map:any;constructor(options:any){this.map=options.map}}}),
+    }};
+  });
+  // Never load provider scripts/tiles in this regression.
+  await page.route('https://maps.googleapis.com/**',r=>r.abort());
+  await page.route('https://maps.gstatic.com/**',r=>r.abort());
+  await page.goto('/orders');
+  await page.getByRole('button',{name:'Toggle order detail'}).click();
+  await expect.poll(()=>page.evaluate(()=>(window as any).__mapsTest.panCalls.length)).toBeGreaterThan(0);
+  expect(await page.evaluate(()=>(window as any).__mapsTest.panCalls.at(-1))).toEqual({lat:tracking.rider.latitude,lng:tracking.rider.longitude});
+});
+
 test('customer cannot start a second payment intent while the first is pending',async({page})=>{
   const upiOrder={...order,status:'placed',payment_method:'upi',payment_status:'pending'};let attempts=0;let releaseIntent!:()=>void;let intentStarted!:()=>void;
   const intentGate=new Promise<void>(resolve=>{releaseIntent=resolve});const firstIntent=new Promise<void>(resolve=>{intentStarted=resolve});

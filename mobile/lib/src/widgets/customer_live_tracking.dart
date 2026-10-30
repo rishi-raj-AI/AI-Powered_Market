@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' as google;
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../api/gaon_api.dart';
+import 'delivery_map.dart';
 
 class CustomerLiveTracking extends StatefulWidget {
   final String orderId;
@@ -126,10 +128,29 @@ class _CustomerLiveTrackingState extends State<CustomerLiveTracking> {
     final store = data['store'] as Map<String, dynamic>?;
     final customer = data['customer'] as Map<String, dynamic>?;
     final markers = <Marker>[];
+    final googleMarkers = <google.Marker>{};
     void addMarker(Map<String, dynamic>? point, IconData icon, Color color) {
       final latitude = point?['latitude'];
       final longitude = point?['longitude'];
       if (latitude is num && longitude is num) {
+        googleMarkers.add(google.Marker(
+          markerId: google.MarkerId(icon.codePoint.toString()),
+          position: google.LatLng(latitude.toDouble(), longitude.toDouble()),
+          infoWindow: google.InfoWindow(
+              title: icon == Icons.storefront
+                  ? 'Store'
+                  : icon == Icons.home
+                      ? 'Delivery address'
+                      : stale
+                          ? 'Rider (location delayed)'
+                          : 'Rider'),
+          icon: google.BitmapDescriptor.defaultMarkerWithHue(
+              icon == Icons.storefront
+                  ? google.BitmapDescriptor.hueOrange
+                  : icon == Icons.home
+                      ? google.BitmapDescriptor.hueGreen
+                      : google.BitmapDescriptor.hueAzure),
+        ));
         markers.add(Marker(
           point: LatLng(latitude.toDouble(), longitude.toDouble()),
           width: 44,
@@ -191,28 +212,35 @@ class _CustomerLiveTrackingState extends State<CustomerLiveTracking> {
               height: 240,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: FlutterMap(
-                  options: MapOptions(initialCenter: center, initialZoom: 15),
-                  children: [
-                    TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'in.gaonone.mobile',
-                    ),
-                    if (routePolyline.isNotEmpty)
-                      PolylineLayer(polylines: [
-                        Polyline(
-                            points: routePolyline,
-                            color: Colors.blue,
-                            strokeWidth: 5)
-                      ]),
-                    MarkerLayer(markers: markers),
-                    const RichAttributionWidget(
-                      attributions: [
-                        TextSourceAttribution('OpenStreetMap contributors')
-                      ],
-                    ),
-                  ],
+                child: DeliveryMap(
+                  center: google.LatLng(center.latitude, center.longitude),
+                  markers: googleMarkers,
+                  path: routePolyline
+                      .map((p) => google.LatLng(p.latitude, p.longitude))
+                      .toList(),
+                  fallback: FlutterMap(
+                    options: MapOptions(initialCenter: center, initialZoom: 15),
+                    children: [
+                      TileLayer(
+                        urlTemplate:
+                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        userAgentPackageName: 'in.gaonone.mobile',
+                      ),
+                      if (routePolyline.isNotEmpty)
+                        PolylineLayer(polylines: [
+                          Polyline(
+                              points: routePolyline,
+                              color: Colors.blue,
+                              strokeWidth: 5)
+                        ]),
+                      MarkerLayer(markers: markers),
+                      const RichAttributionWidget(
+                        attributions: [
+                          TextSourceAttribution('OpenStreetMap contributors')
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

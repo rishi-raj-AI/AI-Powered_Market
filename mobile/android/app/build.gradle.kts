@@ -1,3 +1,5 @@
+import java.util.Base64
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
@@ -37,6 +39,19 @@ android {
     }
 
     defaultConfig {
+        // Flutter encodes --dart-define-from-file entries for Gradle. Reuse
+        // that allowlisted public configuration; never log the decoded values.
+        val defines = (project.findProperty("dart-defines") as? String).orEmpty()
+            .split(",").filter { it.isNotEmpty() }.associate {
+                val pair = String(Base64.getDecoder().decode(it), Charsets.UTF_8)
+                    .split("=", limit = 2)
+                pair[0] to pair.getOrElse(1) { "" }
+            }
+        val mapsKey = defines["GAONONE_GOOGLE_MAPS_ANDROID_API_KEY"].orEmpty().trim()
+        check(defines["GAONONE_ANDROID_MAPS_ENABLED"] != "true" || mapsKey.isNotEmpty()) {
+            "Android Maps enabled without GAONONE_GOOGLE_MAPS_ANDROID_API_KEY"
+        }
+        manifestPlaceholders["gaononeMapsApiKey"] = mapsKey
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "in.gaonone.gaonone_mobile"
         // You can update the following values to match your application needs.
