@@ -132,10 +132,14 @@ def claim_due_media_job(db: Session, *, now=None) -> ProductMediaJob | None:
     job = db.scalar(
         select(ProductMediaJob)
         .where(
-            ProductMediaJob.state.in_(("queued", "processing")),
             ProductMediaJob.attempt_count < settings.MEDIA_JOB_MAX_ATTEMPTS,
-            or_(ProductMediaJob.next_attempt_at.is_(None), ProductMediaJob.next_attempt_at <= now),
-            or_(ProductMediaJob.lease_expires_at.is_(None), ProductMediaJob.lease_expires_at <= now),
+            or_(
+                (ProductMediaJob.state == "queued") &
+                or_(ProductMediaJob.next_attempt_at.is_(None), ProductMediaJob.next_attempt_at <= now),
+                (ProductMediaJob.state == "processing") &
+                ProductMediaJob.lease_expires_at.is_not(None) &
+                (ProductMediaJob.lease_expires_at <= now),
+            ),
         )
         .order_by(ProductMediaJob.created_at, ProductMediaJob.id)
         .with_for_update(skip_locked=True)
