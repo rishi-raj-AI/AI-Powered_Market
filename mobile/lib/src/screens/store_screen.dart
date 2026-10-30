@@ -16,6 +16,7 @@ class _StoreScreenState extends State<StoreScreen> {
   List<StoreProduct> products = [];
   bool loading = true;
   String? error;
+  String query = '';
 
   @override
   void initState() {
@@ -71,43 +72,84 @@ class _StoreScreenState extends State<StoreScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final visibleProducts = products.where((product) => product.name.toLowerCase().contains(query.trim().toLowerCase())).toList();
     return Scaffold(
       appBar: AppBar(title: Text(widget.store.name)),
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: load,
-              child: ListView.separated(
+              child: ListView(
                 padding: const EdgeInsets.all(16),
-                itemCount: error == null ? products.length : products.length + 1,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemBuilder: (context, index) {
-                  if (error != null && index == 0) {
-                    return Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text(
-                          error!,
-                          style: const TextStyle(color: Colors.red),
-                        ),
-                      ),
-                    );
-                  }
-
-                  final productIndex = error == null ? index : index - 1;
-                  final product = products[productIndex];
-
-                  return Card(
-                    child: ListTile(
-                      title: Text(
-                        product.name,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      subtitle: Text('${product.unit} • ${product.stock} in stock'),
-                      trailing: Wrap(spacing: 6, children: [if (product.stock <= 5) OutlinedButton(onPressed: () => alternatives(product), child: const Text('Alternatives')),FilledButton(onPressed: product.stock <= 0 ? null : () => addToCart(product), child: Text('₹${product.price} +'))]),
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(22),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(colors: [Color(0xFF145B33), Color(0xFF288E53)]),
+                      borderRadius: BorderRadius.circular(22),
                     ),
-                  );
-                },
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Icon(Icons.storefront_rounded, size: 38, color: Colors.white),
+                      const SizedBox(height: 12),
+                      Text(widget.store.name, style: const TextStyle(color: Colors.white, fontSize: 25, fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 7),
+                      Text(widget.store.landmark ?? widget.store.description ?? 'Your local neighbourhood store', style: const TextStyle(color: Colors.white70)),
+                      const SizedBox(height: 12),
+                      Text(widget.store.isOpenNow ? '● Open now' : '● Closed now', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                    ]),
+                  ),
+                  const SizedBox(height: 18),
+                  TextField(
+                    onChanged: (value) => setState(() => query = value),
+                    decoration: InputDecoration(
+                      hintText: 'Search products in this store',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  Row(children: [
+                    Expanded(child: Text('Shop products', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800))),
+                    Text('${visibleProducts.length} items', style: const TextStyle(color: Color(0xFF667069))),
+                  ]),
+                  const SizedBox(height: 12),
+                  if (error != null) Padding(padding: const EdgeInsets.only(bottom: 12), child: Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
+                  ...visibleProducts.map((product) => Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    clipBehavior: Clip.antiAlias,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(children: [
+                        Container(
+                          width: 80, height: 92,
+                          decoration: BoxDecoration(color: const Color(0xFFEAF4ED), borderRadius: BorderRadius.circular(14)),
+                          child: const Icon(Icons.shopping_basket_rounded, color: Color(0xFF1F7A45), size: 34),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(product.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                          const SizedBox(height: 4),
+                          Text('${product.unit} · ${product.stock > 0 ? 'In stock' : 'Out of stock'}', style: TextStyle(color: product.stock > 0 ? const Color(0xFF1F7A45) : const Color(0xFFB42318))),
+                          const SizedBox(height: 6),
+                          Text('₹${product.price}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
+                        ])),
+                        const SizedBox(width: 8),
+                        Column(mainAxisSize: MainAxisSize.min, children: [
+                          FilledButton.tonal(
+                            onPressed: product.stock <= 0 ? null : () => addToCart(product),
+                            child: const Text('ADD'),
+                          ),
+                          if (product.stock <= 5)
+                            TextButton(onPressed: () => alternatives(product), child: const Text('Alternatives')),
+                        ]),
+                      ]),
+                    ),
+                  )),
+                  if (visibleProducts.isEmpty && error == null)
+                    const Padding(padding: EdgeInsets.all(28), child: Center(child: Text('No matching products. Try another search.', textAlign: TextAlign.center))),
+                ],
               ),
             ),
     );
