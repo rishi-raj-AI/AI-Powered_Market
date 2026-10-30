@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.product_media import ProductMediaAsset, ProductMediaJob
-from app.services.product_media import claim_due_media_job, complete_media_job
+from app.services.product_media import claim_due_media_job, complete_media_job, expire_exhausted_media_jobs
 from app.services.product_media_processing import MediaScanUnavailable
 from app.services.product_media_publication import process_quarantined_asset
 from app.services.product_media_storage import HttpContentScanner, LocalObjectStorage
@@ -26,7 +26,10 @@ def process_due_media_jobs(*, limit: int = 10) -> dict[str, int]:
         raise RuntimeError("A mandatory HTTP scanner is required")
     storage = LocalObjectStorage(Path("data/media/quarantine"), Path("data/media/public"))
     scanner = HttpContentScanner(settings.MEDIA_SCAN_ENDPOINT_URL, settings.MEDIA_SCAN_AUTH_TOKEN)
-    counts = {"considered": 0, "approved": 0, "rejected": 0, "retried": 0}
+    counts = {"considered": 0, "approved": 0, "rejected": 0, "retried": 0, "expired": 0}
+    with SessionLocal() as db:
+        counts["expired"] = expire_exhausted_media_jobs(db, limit=max(1, limit))
+        db.commit()
     for _ in range(max(0, min(limit, settings.MEDIA_JOB_BATCH))):
         with SessionLocal() as db:
             job = claim_due_media_job(db)
