@@ -139,3 +139,26 @@ def test_http_scanner_rejects_malformed_reason_code(monkeypatch, reason):
 
     monkeypatch.setattr(httpx, "post", mock_post)
     assert scanner.scan_bytes(item, b"source").verdict == "unavailable"
+
+
+def test_local_storage_write_is_atomic_and_round_trips(tmp_path):
+    from app.services.product_media_storage import LocalObjectStorage
+    private, public = tmp_path / "private", tmp_path / "public"
+    storage = LocalObjectStorage(private, public)
+    source = source_image()
+    original = storage.put_quarantine("quarantine/listing/a", source, "image/png")
+    assert storage.read_quarantine(original.key) == source
+    assert original.byte_size == len(source)
+    assert not list(private.rglob(".media-*"))
+    derivative = storage.put_public_derivative("public/listing/a.webp", b"webp", "image/webp")
+    assert derivative.byte_size == 4
+    assert (public / derivative.key).read_bytes() == b"webp"
+    assert not list(public.rglob(".media-*"))
+
+
+def test_local_storage_rejects_path_traversal(tmp_path):
+    from app.services.product_media_storage import LocalObjectStorage
+    storage = LocalObjectStorage(tmp_path / "private", tmp_path / "public")
+    for key in ("../escape", "/absolute", "a//b", "a/../b", "a\\b", "a%2fb"):
+        with pytest.raises(ValueError):
+            storage.put_quarantine(key, b"payload", "image/png")
