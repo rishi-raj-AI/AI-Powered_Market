@@ -66,6 +66,7 @@ class _CartScreenState extends State<CartScreen> {
   List<Village> villages = [];
   bool loading = true;
   bool locating = false;
+  String? changingProductId;
   String? error;
   late final CheckoutAttemptCoordinator checkoutCoordinator;
 
@@ -98,11 +99,32 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   Future<void> remove(String storeProductId) async {
+    if (changingProductId != null || checkoutCoordinator.busy || checkoutCoordinator.hasUnresolvedAttempt) return;
+    setState(() => changingProductId = storeProductId);
     try {
-      cart = await GaonApi.removeCartItem(storeProductId);
-      if (mounted) setState(() {});
+      final updated = await GaonApi.removeCartItem(storeProductId);
+      if (mounted) setState(() => cart = updated);
     } catch (e) {
       _snack(e.toString());
+    } finally {
+      if (mounted) setState(() => changingProductId = null);
+    }
+  }
+
+  Future<void> addOne(CartItemModel item) async {
+    if (changingProductId != null || checkoutCoordinator.busy || checkoutCoordinator.hasUnresolvedAttempt) return;
+    if (item.quantity >= item.product.stock) {
+      _snack("Only ${item.product.stock} available. Refresh for current stock.");
+      return;
+    }
+    setState(() => changingProductId = item.product.id);
+    try {
+      final updated = await GaonApi.addToCart(item.product.id);
+      if (mounted) setState(() => cart = updated);
+    } catch (e) {
+      _snack(e.toString());
+    } finally {
+      if (mounted) setState(() => changingProductId = null);
     }
   }
 
@@ -120,7 +142,7 @@ class _CartScreenState extends State<CartScreen> {
       return null;
     }
     return Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium, timeLimit: Duration(seconds: 12)),
     );
   }
 
@@ -199,7 +221,7 @@ class _CartScreenState extends State<CartScreen> {
 
   Future<void> checkout(AddressModel address, String payment) async {
     try {
-      if(checkoutCoordinator.busy)return;setState((){});final currentCart=cart;final result=await checkoutCoordinator.place(addressId:address.id,paymentMethod:payment,cartFingerprint:currentCart==null?'unknown':'${currentCart.id}|${currentCart.items.map((item)=>'${item.product.id}:${item.quantity}').join(',')}',confirm:(quote)=>_confirmQuote(quote,payment));if(result==null||!mounted)return;final order=result.order;final resolvedPayment=result.paymentMethod;
+      if(checkoutCoordinator.busy || changingProductId != null)return;setState((){});final currentCart=cart;final result=await checkoutCoordinator.place(addressId:address.id,paymentMethod:payment,cartFingerprint:currentCart==null?'unknown':'${currentCart.id}|${currentCart.items.map((item)=>'${item.product.id}:${item.quantity}').join(',')}',confirm:(quote)=>_confirmQuote(quote,payment));if(result==null||!mounted)return;final order=result.order;final resolvedPayment=result.paymentMethod;
       await _completeCheckout(order,resolvedPayment);
     } catch (e) {
       _snack(checkoutCoordinator.hasUnresolvedAttempt?'The previous order result is not confirmed. Retry checkout to safely check the same order attempt.':e.toString());
@@ -250,10 +272,10 @@ class _CartScreenState extends State<CartScreen> {
         children: [
           Text('Your cart', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
           if (error != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            ),
+            Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(children: [
+              Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              TextButton.icon(onPressed: load, icon: const Icon(Icons.refresh), label: const Text("Retry cart")),
+            ]))),
           if(checkoutCoordinator.hasUnresolvedAttempt) Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[const Text('An earlier order needs confirmation before another checkout.',style:TextStyle(fontWeight:FontWeight.w700)),const SizedBox(height:8),FilledButton(onPressed:checkoutCoordinator.busy?null:recoverCheckout,child:Text(checkoutCoordinator.busy?'Checking…':'Recover order'))]))),
           if (c == null || c.items.isEmpty)
             const Padding(padding: EdgeInsets.all(40), child: Center(child: Text('Your cart is empty.'))),
@@ -263,10 +285,18 @@ class _CartScreenState extends State<CartScreen> {
                 child: ListTile(
                   title: Text(item.product.name),
                   subtitle: Text('${item.quantity} × ₹${item.product.price}'),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: () => remove(item.product.id),
-                  ),
+                  trailing: Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 2, children: [
+                    IconButton(
+                      tooltip: "Add one ${item.product.name}",
+                      icon: const Icon(Icons.add_circle_outline),
+                      onPressed: changingProductId != null || checkoutCoordinator.busy || checkoutCoordinator.hasUnresolvedAttempt || item.quantity >= item.product.stock ? null : () => addOne(item),
+                    ),
+                    IconButton(
+                      tooltip: "Remove ${item.product.name}",
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: changingProductId != null || checkoutCoordinator.busy || checkoutCoordinator.hasUnresolvedAttempt ? null : () => remove(item.product.id),
+                    ),
+                  ]),
                 ),
               ),
             ),
@@ -288,7 +318,7 @@ class _CartScreenState extends State<CartScreen> {
                   title: Text(a.label),
                   subtitle: Text('${a.houseDetails ?? ''} • ${a.landmark}'),
                   trailing: PopupMenuButton<String>(
-                    enabled: !checkoutCoordinator.busy,
+                    enabled: !checkoutCoordinator.busy && changingProductId == null && !checkoutCoordinator.hasUnresolvedAttempt,
                     onSelected: (p) => checkout(a, p),
                     itemBuilder: (_) => const [
                       PopupMenuItem(value: 'cod', child: Text('Cash on delivery')),
