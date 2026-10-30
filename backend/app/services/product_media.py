@@ -121,6 +121,8 @@ def public_derivative_url(key: str | None) -> str | None:
         return None
     if key.startswith("/") or "\\" in key or "?" in key or "#" in key or "%" in key or ":" in key:
         return None
+    if not key.startswith("public/listings/") or not key.endswith(".webp"):
+        return None
     return base.rstrip("/") + "/" + "/".join(quote(part, safe="-_.~") for part in key.split("/"))
 
 
