@@ -1,4 +1,5 @@
 import math
+import re
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -23,6 +24,7 @@ from app.schemas.commerce import (
     CategoryRead,
     MerchantCreate,
     MerchantRead,
+    MerchantProductListingCreate,
     MerchantStatusUpdate,
     NearbyStoreRead,
     ProductCreate,
@@ -481,6 +483,81 @@ def list_products(
     if q:
         stmt = stmt.where(Product.name.ilike(f"%{q}%"))
     return db.scalars(stmt.offset(offset).limit(limit)).all()
+
+
+@router.post(
+    "/stores/{store_id}/products/custom",
+    response_model=StoreProductRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_merchant_product_listing(
+    store_id: uuid.UUID,
+    payload: MerchantProductListingCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles(UserRole.MERCHANT, UserRole.ADMIN)),
+):
+    """Create a merchant-named product and its listing in one transaction.
+
+    Catalog entries are shared, but a new entry never exposes another store's
+    stock or prices. Category names are normalized to reuse existing categories.
+    """
+    store = db.get(Store, store_id)
+    if store is None:
+        raise HTTPException(status_code=404, detail="Store not found")
+    merchant = _require_store_owner(db, store, user, admin_capability=Capability.CATALOG_MANAGE)
+    if merchant is None or merchant.status != MerchantStatus.APPROVED:
+        raise HTTPException(status_code=403, detail="Merchant is not approved")
+    name = payload.name.strip()
+    category_name = payload.category_name.strip()
+    unit = payload.unit.strip()
+    if not name or not category_name or not unit:
+        raise HTTPException(status_code=422, detail="Name, category and unit are required")
+    if payload.mrp is not None and payload.mrp < payload.price:
+        raise HTTPException(status_code=422, detail="MRP must not be below selling price")
+    slug = re.sub(r"[^a-z0-9]+", "-", category_name.casefold()).strip("-")
+    if not slug:
+        raise HTTPException(status_code=422, detail="Category must contain Latin letters or digits")
+    category = db.scalar(select(Category).where(Category.slug == slug))
+    if category is None:
+        category = Category(name=category_name, slug=slug, is_active=True)
+        db.add(category)
+        db.flush()
+    elif not category.is_active:
+        raise HTTPException(status_code=422, detail="This category is unavailable")
+    # Avoid duplicate merchant listings for the same named item and pack size.
+    existing = db.scalar(
+        select(StoreProduct)
+        .join(Product, StoreProduct.product_id == Product.id)
+        .where(
+            StoreProduct.store_id == store.id,
+            Product.category_id == category.id,
+            Product.unit == unit,
+            Product.name.ilike(name),
+        )
+    )
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="This product is already listed in your store; update its inventory instead")
+    product = Product(
+        category_id=category.id,
+        name=name,
+        description=payload.description.strip() if payload.description else None,
+        brand=payload.brand.strip() if payload.brand else None,
+        unit=unit,
+    )
+    db.add(product)
+    db.flush()
+    listing = StoreProduct(
+        store_id=store.id,
+        product_id=product.id,
+        price=payload.price,
+        mrp=payload.mrp,
+        stock_quantity=payload.stock_quantity,
+        is_available=payload.stock_quantity > 0,
+    )
+    db.add(listing)
+    db.commit()
+    db.refresh(listing)
+    return listing
 
 
 @router.post(
