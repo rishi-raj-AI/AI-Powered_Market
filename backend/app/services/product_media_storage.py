@@ -1,9 +1,4 @@
-"""Provider-neutral product-media boundaries.
-
-Only explicit test/development adapters exist in B1.  Production S3/R2 and
-scan implementations are intentionally deferred until their credentials and
-operational dependencies are provisioned; settings reject enabling them early.
-"""
+"""Provider-neutral product-media storage and scanner boundaries."""
 
 from __future__ import annotations
 
@@ -171,8 +166,9 @@ class HttpContentScanner:
     def __init__(self, endpoint: str, token: str, *, timeout_seconds: float = 15.0):
         from urllib.parse import urlsplit
         parsed = urlsplit(endpoint)
-        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
-            raise ValueError("Scanner endpoint must use HTTPS without URL credentials")
+        if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
+                or parsed.fragment or parsed.query):
+            raise ValueError("Scanner endpoint must use HTTPS without URL credentials, query or fragment")
         if not token:
             raise ValueError("Scanner authentication token is required")
         self.endpoint = endpoint
