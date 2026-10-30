@@ -45,7 +45,7 @@ def render(content, scanner=None, **limits):
 def test_clean_image_is_reencoded_without_source_format_or_metadata():
     scanner = ByteScanner()
     result = render(source_image(), scanner)
-    assert scanner.seen and scanner.seen[0].startswith(b"\\x89PNG")
+    assert scanner.seen and scanner.seen[0].startswith(bytes([137, 80, 78, 71]))
     assert result.content_type == "image/webp"
     assert (result.width, result.height) == (80, 60)
     with Image.open(BytesIO(result.content)) as image:
