@@ -1,7 +1,7 @@
-"""Bounded media queue processing for local development and tests.
+"""Bounded media queue processing with leased jobs and configured storage.
 
-Production storage is deliberately unsupported until an authenticated
-private/public object-store adapter is configured and validated.
+Production activation requires validated private/public object storage,
+scanner credentials, and operational cleanup for abandoned objects.
 """
 from __future__ import annotations
 
