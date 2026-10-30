@@ -85,7 +85,7 @@ jobs:
           "$SIGNER_TOOL" verify --print-certs "$APK"
           # apksigner labels certificates as "V2 Signer" on recent Android build-tools.
           # Accept both legacy and versioned labels, but reject ambiguous fingerprints.
-          ACTUAL_SHA256=$("$SIGNER_TOOL" verify --print-certs "$APK" | sed -nE 's/^(V[0-9]+ Signer|Signer #[0-9]+):? certificate SHA-256 digest: ([[:xdigit:]]{64})$/\\2/p' | tr '[:upper:]' '[:lower:]' | sort -u)
+          ACTUAL_SHA256=$("$SIGNER_TOOL" verify --print-certs "$APK" | sed -nE 's/^(V[0-9]+ Signer|Signer #[0-9]+):? certificate SHA-256 digest: ([[:xdigit:]]{64})$/\2/p' | tr '[:upper:]' '[:lower:]' | sort -u)
           if ! [[ "$ACTUAL_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
             echo "::error::Could not extract exactly one APK signing certificate SHA-256 digest"
             exit 1
