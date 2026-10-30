@@ -113,7 +113,7 @@ async def queue_listing_image(
         raise HTTPException(status_code=503, detail="Product image processing is unavailable")
     if settings.APP_ENV not in {"development", "test"} or settings.MEDIA_STORAGE_BACKEND != "local":
         raise HTTPException(status_code=503, detail="Secure production upload adapter is unavailable")
-    listing = db.get(StoreProduct, listing_id)
+    listing = db.get(StoreProduct, listing_id, with_for_update=True)
     store = db.get(Store, listing.store_id) if listing else None
     merchant = db.get(Merchant, store.merchant_id) if store else None
     if listing is None or merchant is None:
