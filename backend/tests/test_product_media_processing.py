@@ -94,3 +94,32 @@ def test_http_scanner_fails_closed_on_malformed_reply(monkeypatch):
     monkeypatch.setattr(httpx, "post", mock_post)
     item = FakeObjectStorage().put_quarantine("private/a", b"source", "image/png")
     assert scanner.scan_bytes(item, b"source").verdict == "unavailable"
+
+
+def test_http_scanner_sends_source_bytes_and_accepts_explicit_clean(monkeypatch):
+    import httpx
+    scanner = HttpContentScanner("https://scanner.invalid/scan", "test-token")
+    source = source_image()
+    item = FakeObjectStorage().put_quarantine("private/a", source, "image/png")
+
+    def mock_post(*args, **kwargs):
+        assert kwargs["content"] == source
+        assert kwargs["headers"]["Authorization"] == "Bearer test-token"
+        assert kwargs["headers"]["X-Media-Sha256"] == item.sha256
+        assert kwargs["follow_redirects"] is False
+        return httpx.Response(200, json={"verdict": "clean"}, request=httpx.Request("POST", args[0]))
+
+    monkeypatch.setattr(httpx, "post", mock_post)
+    assert scanner.scan_bytes(item, source).verdict == "clean"
+
+
+def test_http_scanner_network_errors_are_unavailable(monkeypatch):
+    import httpx
+    scanner = HttpContentScanner("https://scanner.invalid/scan", "test-token")
+    item = FakeObjectStorage().put_quarantine("private/a", b"source", "image/png")
+
+    def mock_post(*args, **kwargs):
+        raise httpx.ConnectError("scanner offline")
+
+    monkeypatch.setattr(httpx, "post", mock_post)
+    assert scanner.scan_bytes(item, b"source").verdict == "unavailable"
