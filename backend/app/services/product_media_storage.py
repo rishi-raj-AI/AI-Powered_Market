@@ -8,6 +8,8 @@ operational dependencies are provisioned; settings reject enabling them early.
 from __future__ import annotations
 
 import hashlib
+import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Protocol
@@ -74,7 +76,18 @@ class LocalObjectStorage:
     def _put(root: Path, key: str, content: bytes, content_type: str) -> StoredMediaObject:
         destination = _safe_path(root, key)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(content)
+        # A worker must never observe a partially written quarantine object.
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=destination.parent, prefix=".media-", delete=False) as handle:
+                temporary = Path(handle.name)
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, destination)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
         return LocalObjectStorage._stored(key, content, content_type)
 
     def put_quarantine(self, key: str, content: bytes, content_type: str) -> StoredMediaObject:
