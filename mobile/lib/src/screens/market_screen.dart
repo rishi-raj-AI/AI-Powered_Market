@@ -18,6 +18,8 @@ class _MarketScreenState extends State<MarketScreen> {
   List<Village> villages = [];
   List<StoreModel> stores = [];
   String? selectedVillageId;
+  String searchQuery = '';
+  String selectedCategory = 'All';
   bool loading = true;
   bool locating = false;
   bool usingLocation = false;
@@ -92,8 +94,29 @@ class _MarketScreenState extends State<MarketScreen> {
     widget.onLoggedOut();
   }
 
+  static const categories = <(String, IconData)>[
+    ('All', Icons.apps_rounded),
+    ('Food', Icons.restaurant_rounded),
+    ('Groceries', Icons.shopping_basket_rounded),
+    ('Vegetables', Icons.eco_rounded),
+    ('Agriculture', Icons.agriculture_rounded),
+    ('Hardware', Icons.handyman_rounded),
+    ('Retail', Icons.storefront_rounded),
+  ];
+
   @override
   Widget build(BuildContext context) {
+    final query = searchQuery.trim().toLowerCase();
+    final filtered = stores.where((store) {
+      final text = '${store.name} ${store.description ?? ''} ${store.landmark ?? ''}'.toLowerCase();
+      final matchesQuery = query.isEmpty || text.contains(query);
+      final matchesCategory = selectedCategory == 'All' ||
+          text.contains(selectedCategory.toLowerCase()) ||
+          (selectedCategory == 'Vegetables' && (text.contains('fruit') || text.contains('sabzi'))) ||
+          (selectedCategory == 'Groceries' && (text.contains('kirana') || text.contains('grocery')));
+      return matchesQuery && matchesCategory;
+    }).toList();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('GaonOne', style: TextStyle(fontWeight: FontWeight.w900)),
@@ -104,86 +127,125 @@ class _MarketScreenState extends State<MarketScreen> {
           : RefreshIndicator(
               onRefresh: usingLocation ? useMyLocation : load,
               child: ListView(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
                 children: [
-                  Text(
-                    'Nearby market',
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
+                  Container(
+                    padding: const EdgeInsets.all(22),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(colors: [Color(0xFF145B33), Color(0xFF29985B)]),
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Text('YOUR NEIGHBOURHOOD, DELIVERED', style: TextStyle(color: Color(0xFFBDE8C8), fontWeight: FontWeight.w700, fontSize: 11, letterSpacing: 1)),
+                      const SizedBox(height: 10),
+                      const Text('Everything local.\\nOne happy place.', style: TextStyle(color: Colors.white, fontSize: 29, fontWeight: FontWeight.w900, height: 1.15)),
+                      const SizedBox(height: 10),
+                      const Text('Food, fresh essentials and trusted nearby shops.', style: TextStyle(color: Colors.white70)),
+                    ]),
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Choose an area or locality, or use GPS to find shops around you.',
-                    style: Theme.of(context).textTheme.bodyMedium,
+                  const SizedBox(height: 18),
+                  TextField(
+                    onChanged: (value) => setState(() => searchQuery = value),
+                    decoration: InputDecoration(
+                      hintText: 'Search nearby stores or essentials',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      suffixIcon: searchQuery.isEmpty ? null : IconButton(
+                        tooltip: 'Clear search',
+                        onPressed: () => setState(() => searchQuery = ''),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
+                    ),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 18),
+                  Text('Explore categories', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 92,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: categories.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 10),
+                      itemBuilder: (context, index) {
+                        final (label, icon) = categories[index];
+                        final selected = selectedCategory == label;
+                        return InkWell(
+                          borderRadius: BorderRadius.circular(18),
+                          onTap: () => setState(() => selectedCategory = label),
+                          child: Container(
+                            width: 88,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            decoration: BoxDecoration(
+                              color: selected ? const Color(0xFFE0F2E5) : Colors.white,
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(color: selected ? const Color(0xFF1F7A45) : const Color(0xFFE8ECE7)),
+                            ),
+                            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                              Icon(icon, color: const Color(0xFF1F7A45), size: 28),
+                              const SizedBox(height: 7),
+                              Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                            ]),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  Text('Find shops near you', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 8),
                   FilledButton.tonalIcon(
                     onPressed: locating ? null : useMyLocation,
-                    icon: locating
-                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.my_location),
+                    icon: locating ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.my_location),
                     label: Text(locating ? 'Finding nearby shops…' : 'Use my current location'),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
                     initialValue: selectedVillageId,
-                    decoration: const InputDecoration(labelText: 'Or select area / locality'),
-                    items: villages
-                        .map((village) => DropdownMenuItem(
-                              value: village.id,
-                              child: Text('${village.name}, ${village.district}'),
-                            ))
-                        .toList(),
+                    decoration: const InputDecoration(labelText: 'Or choose area / locality'),
+                    items: villages.map((v) => DropdownMenuItem(value: v.id, child: Text('${v.name}, ${v.district}'))).toList(),
                     onChanged: (value) {
-                      setState(() {
-                        selectedVillageId = value;
-                        usingLocation = false;
-                      });
+                      setState(() { selectedVillageId = value; usingLocation = false; });
                       load();
                     },
                   ),
-                  const SizedBox(height: 18),
-                  if (usingLocation)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.location_on_outlined, size: 18),
-                          const SizedBox(width: 6),
-                          Text('${stores.length} shops found within the service radius'),
-                        ],
-                      ),
-                    ),
+                  const SizedBox(height: 22),
+                  Row(children: [
+                    Expanded(child: Text('Discover local stores', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800))),
+                    Text('${filtered.length} found', style: const TextStyle(color: Color(0xFF667069))),
+                  ]),
+                  const SizedBox(height: 12),
                   if (error != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                    ),
-                  ...stores.map(
-                    (store) => Card(
-                      child: ListTile(
-                        title: Text(store.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(store.landmark ?? store.description ?? 'Local store'),
-                            Text(store.isOpenNow ? 'Open now' : 'Closed now'),
-                            if (store.distanceKm != null)
-                              Text('${store.distanceKm!.toStringAsFixed(1)} km away'),
-                          ],
-                        ),
-                        trailing: Icon(store.deliveryEnabled ? Icons.delivery_dining : Icons.storefront),
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => StoreScreen(store: store)),
-                        ),
+                    Padding(padding: const EdgeInsets.only(bottom: 12), child: Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
+                  ...filtered.map((store) => Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => StoreScreen(store: store))),
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Row(children: [
+                          Container(
+                            width: 74, height: 78,
+                            decoration: BoxDecoration(color: const Color(0xFFEAF4ED), borderRadius: BorderRadius.circular(16)),
+                            child: Icon(store.deliveryEnabled ? Icons.delivery_dining_rounded : Icons.storefront_rounded, size: 35, color: const Color(0xFF1F7A45)),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text(store.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
+                            const SizedBox(height: 5),
+                            Text(store.landmark ?? store.description ?? 'Your neighbourhood store', maxLines: 2, overflow: TextOverflow.ellipsis),
+                            const SizedBox(height: 6),
+                            Text('${store.isOpenNow ? '● Open now' : '● Closed now'}${store.distanceKm == null ? '' : '  ·  ${store.distanceKm!.toStringAsFixed(1)} km'}', style: TextStyle(fontWeight: FontWeight.w700, color: store.isOpenNow ? const Color(0xFF1F7A45) : const Color(0xFFB42318))),
+                          ])),
+                          const Icon(Icons.chevron_right_rounded),
+                        ]),
                       ),
                     ),
-                  ),
-                  if (stores.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Center(child: Text('No stores found here yet. Try another area or locality.')),
-                    ),
+                  )),
+                  if (filtered.isEmpty)
+                    const Padding(padding: EdgeInsets.all(28), child: Center(child: Text('No matching stores here yet. Try another search, category or locality.', textAlign: TextAlign.center))),
                 ],
               ),
             ),
