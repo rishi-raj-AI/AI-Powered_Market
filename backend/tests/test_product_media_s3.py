@@ -88,3 +88,25 @@ def test_s3_missing_quarantine_object_is_file_not_found(adapter, monkeypatch):
     monkeypatch.setattr(httpx, "request", missing)
     with pytest.raises(FileNotFoundError):
         adapter.read_quarantine("quarantine/listings/missing")
+
+
+def test_s3_private_upload_rejects_nonlisting_sources(adapter, monkeypatch):
+    monkeypatch.setattr(httpx, "request", lambda *a, **kw: pytest.fail("unexpected network request"))
+    for key, mime in (
+        ("public/listings/a.webp", "image/webp"),
+        ("quarantine/listings/a", "application/octet-stream"),
+        ("quarantine/listings/../escape", "image/png"),
+    ):
+        with pytest.raises(ValueError):
+            adapter.put_quarantine(key, b"image", mime)
+
+
+def test_s3_http_failure_never_returns_successful_storage_metadata(adapter, monkeypatch):
+    def denied(method, url, **kwargs):
+        return httpx.Response(403, request=httpx.Request(method, url))
+
+    monkeypatch.setattr(httpx, "request", denied)
+    with pytest.raises(httpx.HTTPStatusError):
+        adapter.put_quarantine("quarantine/listings/1/source", b"image", "image/png")
+    with pytest.raises(httpx.HTTPStatusError):
+        adapter.put_public_derivative("public/listings/1/a.webp", b"webp", "image/webp")
