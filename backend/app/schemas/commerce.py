@@ -108,6 +108,17 @@ class StoreProductCreate(BaseModel):
     is_available: bool = True
 
 
+class MerchantProductListingCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=180)
+    category_name: str = Field(min_length=2, max_length=100)
+    unit: str = Field(min_length=1, max_length=40)
+    description: str | None = Field(default=None, max_length=2000)
+    brand: str | None = Field(default=None, max_length=120)
+    price: Decimal = Field(gt=0)
+    mrp: Decimal | None = Field(default=None, gt=0)
+    stock_quantity: int = Field(default=0, ge=0)
+
+
 class StoreProductUpdate(BaseModel):
     price: Decimal | None = Field(default=None, gt=0)
     mrp: Decimal | None = Field(default=None, gt=0)
