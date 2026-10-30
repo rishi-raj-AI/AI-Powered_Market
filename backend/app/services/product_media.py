@@ -176,3 +176,27 @@ def complete_media_job(job: ProductMediaJob, *, outcome: str, failure_code: str 
     else:
         raise ValueError("Unknown media job outcome")
     job.lease_expires_at = None
+
+
+def expire_exhausted_media_jobs(db: Session, *, now=None, limit: int = 100) -> int:
+    """Finalize expired processing leases that consumed their final attempt.
+
+    Such jobs cannot be reclaimed by claim_due_media_job; without this
+    cleanup they would remain indefinitely in a processing state.
+    """
+    from datetime import datetime, timezone
+    now = now or datetime.now(timezone.utc)
+    jobs = db.scalars(
+        select(ProductMediaJob).where(
+            ProductMediaJob.state == "processing",
+            ProductMediaJob.attempt_count >= settings.MEDIA_JOB_MAX_ATTEMPTS,
+            ProductMediaJob.lease_expires_at.is_not(None),
+            ProductMediaJob.lease_expires_at <= now,
+        ).order_by(ProductMediaJob.created_at).limit(limit).with_for_update(skip_locked=True)
+    ).all()
+    for job in jobs:
+        job.state = "failed"
+        job.failure_code = "max_attempts_exceeded"
+        job.lease_expires_at = None
+        job.next_attempt_at = None
+    return len(jobs)
