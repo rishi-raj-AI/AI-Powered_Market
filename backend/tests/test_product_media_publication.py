@@ -109,7 +109,8 @@ def test_publication_rejects_storage_content_type_mismatch(monkeypatch):
 
 def test_publication_rejects_tampered_source_checksum(monkeypatch):
     storage, asset, db = setup(monkeypatch)
-    storage.quarantine[asset.source_object_key] = b"tampered"
+    original = storage.quarantine[asset.source_object_key]
+    storage.quarantine[asset.source_object_key] = bytes([original[0] ^ 1]) + original[1:]
     result = product_media_publication.process_quarantined_asset(
         db, asset=asset, storage=storage, scanner=Scanner("clean"), request_id="test"
     )
