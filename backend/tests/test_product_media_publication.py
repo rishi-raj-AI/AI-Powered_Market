@@ -110,13 +110,12 @@ def test_publication_rejects_storage_content_type_mismatch(monkeypatch):
 def test_publication_rejects_tampered_source_checksum(monkeypatch):
     storage, asset, db = setup(monkeypatch)
     storage.quarantine[asset.source_object_key] = b"tampered"
-    from app.services.product_media_processing import MediaRejected
-    with pytest.raises(MediaRejected):
-        product_media_publication.process_quarantined_asset(
-            db, asset=asset, storage=storage, scanner=Scanner("clean"), request_id="test"
-        )
+    result = product_media_publication.process_quarantined_asset(
+        db, asset=asset, storage=storage, scanner=Scanner("clean"), request_id="test"
+    )
+    assert result.state == "rejected" and result.reason == "source_hash_mismatch"
     assert storage.public == {}
-    assert asset.state == "quarantined"
+    assert asset.state == "rejected"
 
 
 def test_missing_quarantine_source_is_audited_and_rejected(monkeypatch):
