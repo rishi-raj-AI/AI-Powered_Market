@@ -211,7 +211,10 @@ def test_enabled_production_media_accepts_complete_s3_and_scanner_contract() -> 
     assert settings.MEDIA_STORAGE_BACKEND == "s3"
 
 
-def test_public_media_selector_excludes_quarantine_and_retired_images() -> None:
+def test_public_media_selector_excludes_quarantine_and_retired_images(monkeypatch) -> None:
+    from app.services import product_media
+    monkeypatch.setattr(product_media.settings, "PRODUCT_MEDIA_ENABLED", True)
+    monkeypatch.setattr(product_media.settings, "MEDIA_PUBLIC_BASE_URL", "https://media.example.invalid")
     from app.services.product_media import approved_listing_media
     from app.models.user import User
     with session() as db:
