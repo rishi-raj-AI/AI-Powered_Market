@@ -118,6 +118,6 @@ test('merchant upload does not bypass disabled quarantine pipeline',async({page}
   await expect(page.getByLabel('Product listing')).toHaveValue('listing-media');
   await page.locator('input[type=file]').setInputFiles({name:'catalog.webp',mimeType:'image/webp',buffer:Buffer.from('test')});
   await page.getByRole('button',{name:'Upload image'}).click();
-  await expect(page.getByRole('alert')).toContainText('Secure product image processing is not enabled.');
+  await expect(page.getByRole('alert').filter({hasText:'Secure product image processing is not enabled.'})).toBeVisible();
   expect(legacyUploads).toBe(0);
 });
