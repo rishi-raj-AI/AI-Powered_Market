@@ -208,7 +208,9 @@ def admin_assign_delivery(
         or not payment_allows_fulfillment(order)
     ):
         raise HTTPException(status_code=409, detail="Delivery is no longer available for assignment")
-    rider = db.get(User, payload.rider_id)
+    # Serialize manual assignments with rider self-claims and automatic dispatch.
+    # All three paths lock the rider user row before checking active deliveries.
+    rider = db.scalar(select(User).where(User.id == payload.rider_id).with_for_update())
     if rider is None or rider.role != UserRole.DELIVERY or not rider.is_active or not rider.is_verified:
         raise HTTPException(status_code=422, detail="Select an active verified delivery partner")
     active_delivery = db.scalar(

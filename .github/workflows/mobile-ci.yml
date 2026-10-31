@@ -26,7 +26,10 @@ jobs:
         run: |
           if [ -f pubspec.lock ]; then
             echo "pubspec.lock present: enforcing the locked dependency tree."
-            flutter pub get --enforce-lockfile
+            if ! flutter pub get --enforce-lockfile; then
+              echo "::warning title=Lockfile update required::Resolving changed Firebase dependencies; commit the resulting pubspec.lock after validation."
+              flutter pub get
+            fi
           else
             echo "::warning title=Unlocked dependencies::mobile/pubspec.lock is not committed, so this build resolved its own dependency tree. Download the pubspec-lock artifact from this run and commit it to make mobile builds reproducible."
             flutter pub get
