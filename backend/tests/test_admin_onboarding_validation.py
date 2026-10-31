@@ -11,6 +11,8 @@ def test_onboarding_requires_international_phone():
         UserOnboardRequest(phone="9999999999", full_name="Test Rider", role=UserRole.DELIVERY)
     with pytest.raises(ValidationError):
         UserOnboardRequest(phone="+91bad", full_name="Test Rider", role=UserRole.DELIVERY)
+    with pytest.raises(ValidationError):
+        UserOnboardRequest(phone="+15551234567", full_name="Test Rider", role=UserRole.DELIVERY)
 
 
 def test_onboarding_accepts_valid_roles_without_verifying():
