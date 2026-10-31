@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.commerce import Store
+from app.services.audit import annotate_delivery_transition
 from app.models.orders import Delivery, DeliveryStatus, Order, OrderStatus
 from app.models.user import User
 from app.services.notifications import enqueue_notification
@@ -88,6 +89,11 @@ def dispatch_ready_deliveries(db: Session, limit: int = 25, radius_km: float = D
             delivery.delivery_partner_id = rider_id
             transition_delivery(delivery, DeliveryStatus.ASSIGNED)
             delivery.assigned_at = datetime.now(timezone.utc)
+            annotate_delivery_transition(
+                db, delivery, to_status=DeliveryStatus.ASSIGNED.value,
+                reason="background_auto_dispatch",
+                metadata={"rider_id": str(rider_id), "selection": "nearest_eligible_online_rider"},
+            )
             enqueue_notification(
                 db, user_id=rider_id, event_type="delivery.task_assigned",
                 title="New delivery assigned",
