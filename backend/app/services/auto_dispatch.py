@@ -7,7 +7,6 @@ The existing manual admin auto-assign endpoint remains available.
 from __future__ import annotations
 
 import logging
-import os
 from datetime import datetime, timezone
 
 from sqlalchemy import select
