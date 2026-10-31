@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import '../../firebase_options.dart';
 import 'package:flutter/foundation.dart';
 import '../api/gaon_api.dart';
 
@@ -12,6 +14,9 @@ class PushRegistration {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
     try {
       if (!await GaonApi.pushConfigured()) return;
+      if (Firebase.apps.isEmpty) {
+        await Firebase.initializeApp(options: GaonOneFirebaseOptions.currentPlatform);
+      }
       final messaging = FirebaseMessaging.instance;
       final permission = await messaging.requestPermission(alert: true, badge: true, sound: true);
       if (permission.authorizationStatus == AuthorizationStatus.denied) return;
@@ -32,6 +37,7 @@ class PushRegistration {
     await _tokenChanges?.cancel();
     _tokenChanges = null;
     try {
+      if (Firebase.apps.isEmpty) return;
       final token = await FirebaseMessaging.instance.getToken();
       if (token != null && token.isNotEmpty) await GaonApi.unregisterPushToken(token);
     } catch (error) {
