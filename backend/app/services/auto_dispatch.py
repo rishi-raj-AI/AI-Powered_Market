@@ -31,12 +31,11 @@ def dispatch_ready_deliveries(db: Session, limit: int = 25, radius_km: float = D
     """
     matched = 0
     skipped = 0
+    seen: set = set()
     for _ in range(limit):
         try:
             # Prevent a tight loop reselecting the same unmatched delivery.
             # Keep candidate ids in memory for this pass; retry on the next tick.
-            if _ == 0:
-                seen: set = set()
             query = (
                 select(Delivery)
                 .join(Order, Delivery.order_id == Order.id)
