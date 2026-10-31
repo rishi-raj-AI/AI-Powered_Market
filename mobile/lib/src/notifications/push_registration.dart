@@ -31,7 +31,11 @@ class PushRegistration {
   static Future<void> stop() async {
     await _tokenChanges?.cancel();
     _tokenChanges = null;
-    // Device token is intentionally not deleted here: Firebase may rotate it,
-    // and backend token ownership is rebound on the next authenticated login.
+    try {
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token != null && token.isNotEmpty) await GaonApi.unregisterPushToken(token);
+    } catch (error) {
+      debugPrint('Push unregister unavailable: $error');
+    }
   }
 }
