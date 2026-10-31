@@ -50,7 +50,7 @@ def notification_health(
     rows = db.execute(
         select(NotificationEvent.event_type, NotificationEvent.status, func.count(NotificationEvent.id))
         .where(NotificationEvent.event_type.in_(
-            ("merchant.order_placed", "merchant.new_order", "delivery.task_assigned", "delivery.assigned")
+            ("merchant.order_received", "merchant.new_order", "delivery.task_assigned", "delivery.assigned")
         ))
         .group_by(NotificationEvent.event_type, NotificationEvent.status)
     ).all()
