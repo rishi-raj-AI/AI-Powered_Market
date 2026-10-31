@@ -97,13 +97,16 @@ export default function MerchantMedia() {
       const response = await fetch(API + '/media/store-products/' + listingId + '/images', {
         method: 'POST', headers: {Authorization: 'Bearer ' + token}, body: form,
       });
-      const body = await response.json();
+      // A gateway can return an HTML 503. Preserve the fail-closed error
+      // instead of leaking a JSON parse failure or retrying the legacy path.
+      let body: {detail?: unknown; id?: unknown; state?: unknown} | null = null;
+      try { body = await response.json(); } catch { /* non-JSON gateway response */ }
       if (!response.ok) {
         if (response.status === 503) throw new Error('Secure product image processing is not enabled. Ask the administrator to configure it.');
-        throw new Error(typeof body.detail === 'string' ? body.detail : 'Image upload failed (' + response.status + ')');
+        throw new Error(typeof body?.detail === 'string' ? body.detail : 'Image upload failed (' + response.status + ')');
       }
-      const queued = body as QueuedAsset;
-      if (response.status !== 202 || queued.state !== 'quarantined') {
+      const queued = body as QueuedAsset | null;
+      if (response.status !== 202 || typeof queued?.id !== 'string' || queued.state !== 'quarantined') {
         throw new Error('The image upload was not confirmed as quarantined. Refresh before trying again.');
       }
       setNotice('Image queued for safety checks. It will appear in the marketplace only after approval.');
