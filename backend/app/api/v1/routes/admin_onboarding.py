@@ -14,7 +14,7 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
 class UserOnboardRequest(BaseModel):
-    phone: str = Field(pattern=r"^\\+[1-9][0-9]{7,14}$")
+    phone: str = Field(pattern=r"^\+[1-9][0-9]{7,14}$")
     full_name: str = Field(min_length=2, max_length=120)
     role: UserRole
 
