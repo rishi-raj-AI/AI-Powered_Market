@@ -121,3 +121,38 @@ test('merchant upload does not bypass disabled quarantine pipeline',async({page}
   await expect(page.getByRole('alert').filter({hasText:'Secure product image processing is not enabled.'})).toBeVisible();
   expect(legacyUploads).toBe(0);
 });
+
+test('merchant upload treats a non-JSON gateway 503 as a disabled secure pipeline',async({page})=>{
+  await installApiMocks(page,merchantUser);
+  await page.route('http://localhost:8000/api/v1/stores/mine',route=>route.fulfill({json:[{id:'store-media',name:'Nimbu Store'}]}));
+  await page.route('http://localhost:8000/api/v1/stores/store-media/inventory',route=>route.fulfill({json:[{id:'listing-media',store_id:'store-media',product_id:'product-media',price:'80',stock_quantity:5,is_available:true,product:{id:'product-media',name:'Fresh Rice',unit:'1 kg'}}]}));
+  await page.route('http://localhost:8000/api/v1/media/store-products/listing-media/images',route=>route.request().method()==='POST'
+    ? route.fulfill({status:503,contentType:'text/html',body:'<html>Gateway unavailable</html>'})
+    : route.fulfill({json:[]}));
+  let legacyUploads=0;
+  await page.route('http://localhost:8000/api/v1/media/images',route=>{legacyUploads++;return route.fulfill({status:201,json:{}})});
+  await page.goto('/merchant/media');
+  await expect(page.getByLabel('Product listing')).toHaveValue('listing-media');
+  await page.locator('input[type=file]').setInputFiles({name:'catalog.webp',mimeType:'image/webp',buffer:Buffer.from('test')});
+  await page.getByRole('button',{name:'Upload image'}).click();
+  await expect(page.getByRole('alert').filter({hasText:'Secure product image processing is not enabled.'})).toBeVisible();
+  expect(legacyUploads).toBe(0);
+});
+
+test('merchant upload rejects a non-quarantined acknowledgement without publishing',async({page})=>{
+  await installApiMocks(page,merchantUser);
+  await page.route('http://localhost:8000/api/v1/stores/mine',route=>route.fulfill({json:[{id:'store-media',name:'Nimbu Store'}]}));
+  await page.route('http://localhost:8000/api/v1/stores/store-media/inventory',route=>route.fulfill({json:[{id:'listing-media',store_id:'store-media',product_id:'product-media',price:'80',stock_quantity:5,is_available:true,product:{id:'product-media',name:'Fresh Rice',unit:'1 kg'}}]}));
+  await page.route('http://localhost:8000/api/v1/media/store-products/listing-media/images',route=>route.request().method()==='POST'
+    ? route.fulfill({status:202,json:{id:'asset-not-quarantined',state:'approved'}})
+    : route.fulfill({json:[]}));
+  let legacyUploads=0;
+  await page.route('http://localhost:8000/api/v1/media/images',route=>{legacyUploads++;return route.fulfill({status:201,json:{}})});
+  await page.goto('/merchant/media');
+  await expect(page.getByLabel('Product listing')).toHaveValue('listing-media');
+  await page.locator('input[type=file]').setInputFiles({name:'catalog.webp',mimeType:'image/webp',buffer:Buffer.from('test')});
+  await page.getByRole('button',{name:'Upload image'}).click();
+  await expect(page.getByRole('alert').filter({hasText:'The image upload was not confirmed as quarantined.'})).toBeVisible();
+  await expect(page.getByText('Image queued for safety checks. It will appear in the marketplace only after approval.')).toHaveCount(0);
+  expect(legacyUploads).toBe(0);
+});
