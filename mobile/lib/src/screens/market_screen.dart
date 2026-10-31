@@ -72,6 +72,7 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   Future<void> load() async {
+    if (usingLocation) { await useMyLocation(); return; }
     if (mounted) setState(() { loading = stores.isEmpty; error = null; });
     try {
       final loadedVillages = await GaonApi.villages();
@@ -231,6 +232,20 @@ class _MarketScreenState extends State<MarketScreen> {
                   ])),
                   if (searchQuery.trim().isNotEmpty && searchLatitude != null && hasSearchedProducts && !searchingProducts && searchError == null) ...[
                     const SizedBox(height: 16),
+                    if (matchedStores.isNotEmpty) ...[
+                      Text('Matching nearby stores', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                      ...matchedStores.map((result) {
+                        final store = stores.where((item) => item.id.toString() == result['id'].toString()).firstOrNull;
+                        return Card(child: ListTile(
+                          leading: const Icon(Icons.storefront_rounded, color: Color(0xFF1F7A45)),
+                          title: Text('${result['name'] ?? store?.name ?? 'Local store'}'),
+                          subtitle: const Text('Tap to explore products'),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                          onTap: () async { final target = store ?? (await GaonApi.nearbyStores(searchLatitude!, searchLongitude!)).where((item) => item.id.toString() == result['id'].toString()).firstOrNull; if (!context.mounted) return; if (target != null) { await Navigator.push(context, MaterialPageRoute(builder: (_) => StoreScreen(store: target))); } else { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('This store is currently unavailable. Refresh nearby shops.'))); } },
+                        ));
+                      }),
+                      const SizedBox(height: 12),
+                    ],
                     Text('Matching products', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
                     if (matchedProducts.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('No nearby products match this search.')),
                     ...matchedProducts.map((product) => Card(child: ListTile(
@@ -239,8 +254,9 @@ class _MarketScreenState extends State<MarketScreen> {
                       subtitle: Text('${product['store_name']} · ${product['unit']}'),
                       trailing: Text('₹${product['price']}', style: const TextStyle(fontWeight: FontWeight.w800)),
                       onTap: () async {
-                        final store = stores.where((item) => item.id == product['store_id']).firstOrNull;
-                        if (store != null) await Navigator.push(context, MaterialPageRoute(builder: (_) => StoreScreen(store: store)));
+                        final store = stores.where((item) => item.id.toString() == product['store_id'].toString()).firstOrNull ?? (await GaonApi.nearbyStores(searchLatitude!, searchLongitude!)).where((item) => item.id.toString() == product['store_id'].toString()).firstOrNull;
+                        if (!context.mounted) return;
+                        if (store != null) { await Navigator.push(context, MaterialPageRoute(builder: (_) => StoreScreen(store: store))); } else { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('This product’s store is unavailable. Refresh nearby shops.'))); }
                       },
                     ))),
                   ],

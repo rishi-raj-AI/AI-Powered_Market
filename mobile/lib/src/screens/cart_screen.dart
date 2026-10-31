@@ -219,6 +219,41 @@ class _CartScreenState extends State<CartScreen> {
     }
   }
 
+  Future<void> choosePaymentAndPlaceOrder(AddressModel address) async {
+    if (checkoutCoordinator.busy || checkoutCoordinator.hasUnresolvedAttempt || changingProductId != null) return;
+    final method = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text('Choose payment method', style: Theme.of(sheetContext).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            Text('Deliver to: ${address.label} · ${address.landmark}'),
+            const SizedBox(height: 12),
+            ListTile(
+              leading: const Icon(Icons.payments_outlined),
+              title: const Text('Cash on delivery'),
+              subtitle: const Text('Pay when your order arrives'),
+              onTap: () => Navigator.pop(sheetContext, 'cod'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.account_balance_wallet_outlined),
+              title: const Text('Pay online / UPI'),
+              subtitle: const Text('Secure online payment after order confirmation'),
+              onTap: () => Navigator.pop(sheetContext, 'upi'),
+            ),
+            TextButton(onPressed: () => Navigator.pop(sheetContext), child: const Text('Cancel')),
+          ]),
+        ),
+      ),
+    );
+    if (!mounted || method == null) return;
+    await checkout(address, method);
+  }
+
   Future<void> checkout(AddressModel address, String payment) async {
     try {
       if(checkoutCoordinator.busy || changingProductId != null)return;setState((){});final currentCart=cart;final result=await checkoutCoordinator.place(addressId:address.id,paymentMethod:payment,cartFingerprint:currentCart==null?'unknown':'${currentCart.id}|${currentCart.items.map((item)=>'${item.product.id}:${item.quantity}').join(',')}',confirm:(quote)=>_confirmQuote(quote,payment));if(result==null||!mounted)return;final order=result.order;final resolvedPayment=result.paymentMethod;
@@ -310,21 +345,18 @@ class _CartScreenState extends State<CartScreen> {
                 TextButton.icon(onPressed: addAddress, icon: const Icon(Icons.add), label: const Text('Add')),
               ],
             ),
-            if (addresses.isEmpty) const Text('Add an address before checkout.'),
+            if (addresses.isEmpty) const Text('Add an address to place your order.'),
             ...addresses.map(
               (a) => Card(
                 child: ListTile(
                   leading: Icon(a.latitude != null ? Icons.location_on : Icons.signpost_outlined),
                   title: Text(a.label),
                   subtitle: Text('${a.houseDetails ?? ''} • ${a.landmark}'),
-                  trailing: PopupMenuButton<String>(
-                    enabled: !checkoutCoordinator.busy && changingProductId == null && !checkoutCoordinator.hasUnresolvedAttempt,
-                    onSelected: (p) => checkout(a, p),
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(value: 'cod', child: Text('Cash on delivery')),
-                      PopupMenuItem(value: 'upi', child: Text('Pay online / UPI')),
-                    ],
-                    child: const Chip(label: Text('Checkout')),
+                  trailing: FilledButton(
+                    onPressed: checkoutCoordinator.busy || changingProductId != null || checkoutCoordinator.hasUnresolvedAttempt
+                        ? null
+                        : () => choosePaymentAndPlaceOrder(a),
+                    child: const Text('Place order'),
                   ),
                 ),
               ),
