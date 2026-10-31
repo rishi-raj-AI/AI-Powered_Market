@@ -97,13 +97,16 @@ export default function MerchantMedia() {
       const response = await fetch(API + '/media/store-products/' + listingId + '/images', {
         method: 'POST', headers: {Authorization: 'Bearer ' + token}, body: form,
       });
-      const body = await response.json();
+      // A gateway can return an HTML 503. Preserve the fail-closed error
+      // instead of leaking a JSON parse failure or retrying the legacy path.
+      let body: {detail?: unknown; id?: unknown; state?: unknown} | null = null;
+      try { body = await response.json(); } catch { /* non-JSON gateway response */ }
       if (!response.ok) {
         if (response.status === 503) throw new Error('Secure product image processing is not enabled. Ask the administrator to configure it.');
-        throw new Error(typeof body.detail === 'string' ? body.detail : 'Image upload failed (' + response.status + ')');
+        throw new Error(typeof body?.detail === 'string' ? body.detail : 'Image upload failed (' + response.status + ')');
       }
-      const queued = body as QueuedAsset;
-      if (response.status !== 202 || queued.state !== 'quarantined') {
+      const queued = body as QueuedAsset | null;
+      if (response.status !== 202 || typeof queued?.id !== 'string' || queued.state !== 'quarantined') {
         throw new Error('The image upload was not confirmed as quarantined. Refresh before trying again.');
       }
       setNotice('Image queued for safety checks. It will appear in the marketplace only after approval.');
@@ -123,8 +126,8 @@ export default function MerchantMedia() {
     {loading ? <p role="status">Loading your stores…</p> : stores.length === 0 ?
       <div className="panel">No storefronts found. <Link href="/merchant">Set up your store</Link> before uploading product photos.</div> :
       <div className="panel form" style={{maxWidth: 720}}>
-        <div className="field"><label htmlFor="media-store">Store</label><select id="media-store" value={storeId} onChange={e => setStoreId(e.target.value)}>{stores.map(store => <option key={store.id} value={store.id}>{store.name}</option>)}</select></div>
-        <div className="field"><label htmlFor="media-listing">Product listing</label><select id="media-listing" value={listingId} onChange={e => {setListingId(e.target.value);setFile(null);}} disabled={inventory.length === 0}><option value="">Select product</option>{inventory.map(item => <option key={item.id} value={item.id}>{item.product.name} · {item.product.unit}</option>)}</select></div>
+        <div className="field"><label htmlFor="media-store">Store</label><select id="media-store" value={storeId} disabled={busy} onChange={e => setStoreId(e.target.value)}>{stores.map(store => <option key={store.id} value={store.id}>{store.name}</option>)}</select></div>
+        <div className="field"><label htmlFor="media-listing">Product listing</label><select id="media-listing" value={listingId} onChange={e => {setListingId(e.target.value);setFile(null);}} disabled={inventory.length === 0 || busy}><option value="">Select product</option>{inventory.map(item => <option key={item.id} value={item.id}>{item.product.name} · {item.product.unit}</option>)}</select></div>
         {inventory.length === 0 && <p className="muted">Add a product to this store before uploading its photo.</p>}
         <div className="field"><label htmlFor="media-file">JPEG, PNG or WebP photo</label><input id="media-file" type="file" accept="image/jpeg,image/png,image/webp" disabled={!listingId || busy} onChange={e => setFile(e.target.files?.[0] || null)}/></div>
         {preview && <img src={preview} alt="Selected product photo preview" style={{maxWidth:'100%',maxHeight:260,objectFit:'contain'}}/>}
