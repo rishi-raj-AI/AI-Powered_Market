@@ -231,6 +231,20 @@ class _MarketScreenState extends State<MarketScreen> {
                   ])),
                   if (searchQuery.trim().isNotEmpty && searchLatitude != null && hasSearchedProducts && !searchingProducts && searchError == null) ...[
                     const SizedBox(height: 16),
+                    if (matchedStores.isNotEmpty) ...[
+                      Text('Matching nearby stores', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                      ...matchedStores.map((result) {
+                        final store = stores.where((item) => item.id.toString() == result['id'].toString()).firstOrNull;
+                        return Card(child: ListTile(
+                          leading: const Icon(Icons.storefront_rounded, color: Color(0xFF1F7A45)),
+                          title: Text('${result['name'] ?? store?.name ?? 'Local store'}'),
+                          subtitle: Text(store == null ? 'Refresh nearby stores to open this shop' : 'Tap to explore products'),
+                          trailing: store == null ? const Icon(Icons.info_outline) : const Icon(Icons.chevron_right_rounded),
+                          onTap: store == null ? null : () => Navigator.push(context, MaterialPageRoute(builder: (_) => StoreScreen(store: store))),
+                        ));
+                      }),
+                      const SizedBox(height: 12),
+                    ],
                     Text('Matching products', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
                     if (matchedProducts.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('No nearby products match this search.')),
                     ...matchedProducts.map((product) => Card(child: ListTile(
