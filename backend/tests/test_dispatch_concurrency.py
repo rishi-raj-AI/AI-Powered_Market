@@ -181,3 +181,34 @@ def test_parallel_admin_assignments_do_not_double_book_one_rider() -> None:
     assert sorted(results) == [200, 409], results
     with session() as db:
         assert _active_count(db, rider_id) == 1
+
+
+def test_parallel_self_claim_and_admin_assignment_share_rider_lock_order() -> None:
+    """A manual assignment must not deadlock or double-book a rider claiming another job."""
+    with session() as db:
+        rider = make_user(db, role=UserRole.DELIVERY, prefix="9")
+        deliveries = [_ready_delivery(db) for _ in range(2)]
+        db.commit()
+        rider_id, rider_phone = rider.id, rider.phone
+        claim_id, admin_id = (d.id for d in deliveries)
+
+    rider_headers = auth(token_for(rider_phone))
+    admin_headers = auth(token_for("+919000000001"))
+
+    def claim():
+        return client.post(f"/api/v1/delivery/{claim_id}/claim", headers=rider_headers).status_code
+
+    def assign():
+        return client.post(
+            f"/api/v1/admin/deliveries/{admin_id}/assign",
+            headers=admin_headers, json={"rider_id": str(rider_id)},
+        ).status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(claim)
+        second = pool.submit(assign)
+        results = [first.result(), second.result()]
+
+    assert sorted(results) == [200, 409], results
+    with session() as db:
+        assert _active_count(db, rider_id) == 1
