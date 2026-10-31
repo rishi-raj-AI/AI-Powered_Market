@@ -149,8 +149,23 @@ async def queue_listing_image(
         raise HTTPException(status_code=409, detail="Listing image limit reached")
     asset_id = uuid.uuid4()
     key = f"quarantine/listings/{listing_id}/{asset_id.hex}"
-    storage = configured_media_storage()
-    stored = storage.put_quarantine(key, content, mime)
+    # Misconfigured or temporarily unavailable private storage must fail
+    # closed with a stable response. Never fall back to the legacy public path.
+    try:
+        storage = configured_media_storage()
+        stored = storage.put_quarantine(key, content, mime)
+    except (OSError, RuntimeError, ValueError) as exc:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Secure media storage is unavailable") from exc
+    except Exception as exc:
+        # S3 adapters surface transport/HTTP failures as httpx.HTTPError.
+        # Keep unexpected failures visible to operators rather than leaking
+        # private endpoint or credential details to merchants.
+        import httpx
+        if not isinstance(exc, httpx.HTTPError):
+            raise
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Secure media storage is unavailable") from exc
     asset = new_quarantined_asset(
         store_product_id=listing_id, uploader=user, source_object_key=key,
         source_sha256=stored.sha256, position=count,
