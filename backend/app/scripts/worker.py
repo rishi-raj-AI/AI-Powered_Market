@@ -18,6 +18,7 @@ import sys
 import time
 
 from app.db.session import SessionLocal
+from app.services.auto_dispatch import dispatch_ready_deliveries
 from app.services.fcm import flush_pending
 from app.services.refunds import dispatch_due_refunds
 from app.services.store_banners import process_due_banner_jobs
@@ -33,6 +34,9 @@ POLL_SECONDS = int(os.environ.get("WORKER_POLL_SECONDS", "20"))
 NOTIFICATION_BATCH = int(os.environ.get("WORKER_NOTIFICATION_BATCH", "100"))
 REFUND_BATCH = int(os.environ.get("WORKER_REFUND_BATCH", "25"))
 BANNER_BATCH = int(os.environ.get("BANNER_JOB_BATCH", "25"))
+AUTO_DISPATCH_ENABLED = os.environ.get("AUTO_DISPATCH_ENABLED", "false").lower() == "true"
+AUTO_DISPATCH_BATCH = int(os.environ.get("AUTO_DISPATCH_BATCH", "25"))
+AUTO_DISPATCH_RADIUS_KM = float(os.environ.get("AUTO_DISPATCH_RADIUS_KM", "8"))
 
 _running = True
 
@@ -46,6 +50,13 @@ def _stop(signum, _frame) -> None:
 def tick() -> dict[str, dict]:
     """One pass over both queues. Each is isolated so one cannot stall the other."""
     result: dict[str, dict] = {}
+    if AUTO_DISPATCH_ENABLED:
+        try:
+            with SessionLocal() as db:
+                result["auto_dispatch"] = dispatch_ready_deliveries(db, limit=AUTO_DISPATCH_BATCH, radius_km=AUTO_DISPATCH_RADIUS_KM)
+        except Exception:
+            logger.exception("Automatic dispatch tick failed")
+            result["auto_dispatch"] = {"error": 1}
     try:
         with SessionLocal() as db:
             result["notifications"] = flush_pending(db, limit=NOTIFICATION_BATCH)
@@ -85,12 +96,13 @@ def main() -> int:
         notifications = outcome.get("notifications", {})
         refunds = outcome.get("refunds", {})
         banners = outcome.get("banners", {})
-        if notifications.get("events") or refunds.get("considered") or banners.get("considered"):
+        if notifications.get("events") or refunds.get("considered") or banners.get("considered") or outcome.get("auto_dispatch", {}).get("assigned"):
             logger.info(
-                "Worker tick notifications=%s refunds=%s banners=%s",
+                "Worker tick notifications=%s refunds=%s banners=%s auto_dispatch=%s",
                 notifications,
                 refunds,
                 banners,
+                outcome.get("auto_dispatch", {}),
             )
         for _ in range(POLL_SECONDS):
             if not _running:
