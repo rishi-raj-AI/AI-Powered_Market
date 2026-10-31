@@ -7,6 +7,7 @@ from app.core.capabilities import Capability
 from app.models.commerce import Merchant, Store, StoreProduct
 from app.models.orders import Order
 from app.models.user import User
+from app.models.integrations import NotificationEvent, DeviceRegistration
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -39,3 +40,24 @@ def merchant_details(
                   "is_active": owner.is_active} if owner else None,
         "stores": result,
     }
+
+@router.get("/notifications/health")
+def notification_health(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_capability(Capability.NOTIFICATION_OPERATIONS)),
+):
+    """Operational counts only: no device tokens or customer message bodies."""
+    rows = db.execute(
+        select(NotificationEvent.event_type, NotificationEvent.status, func.count(NotificationEvent.id))
+        .where(NotificationEvent.event_type.in_(
+            ("merchant.order_placed", "merchant.new_order", "delivery.task_assigned", "delivery.assigned")
+        ))
+        .group_by(NotificationEvent.event_type, NotificationEvent.status)
+    ).all()
+    totals: dict[str, dict[str, int]] = {}
+    for event_type, status, count in rows:
+        totals.setdefault(event_type, {})[status] = count
+    active_devices = db.scalar(
+        select(func.count(DeviceRegistration.id)).where(DeviceRegistration.is_active.is_(True))
+    ) or 0
+    return {"event_status_counts": totals, "active_devices": active_devices}
