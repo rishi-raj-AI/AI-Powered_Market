@@ -34,14 +34,16 @@ def admin_onboard_user(
     user = User(phone=payload.phone, full_name=payload.full_name.strip(),
                 role=payload.role, is_active=True, is_verified=False)
     db.add(user)
-    db.flush()
-    record_admin_action(
-        db, request=request, actor=admin, action="user.onboarded",
-        capability=Capability.ADMIN_MANAGE, resource_type="user", resource_id=user.id,
-        previous_state={}, resulting_state={"role": user.role.value, "is_verified": False},
-        reason="administrator_pre_registration",
-    )
     try:
+        # The unique phone constraint may fail at flush, before commit, when
+        # two administrators pre-register the same number concurrently.
+        db.flush()
+        record_admin_action(
+            db, request=request, actor=admin, action="user.onboarded",
+            capability=Capability.ADMIN_MANAGE, resource_type="user", resource_id=user.id,
+            previous_state={}, resulting_state={"role": user.role.value, "is_verified": False},
+            reason="administrator_pre_registration",
+        )
         db.commit()
     except IntegrityError as exc:
         db.rollback()
