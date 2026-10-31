@@ -31,7 +31,7 @@ export default function Admin(){
   }
   async function onboardUser(){
     if(!canManageRoles)return;
-    if(!/^\+91[6-9][0-9]{9}$/.test(onboardPhone)||onboardName.trim().length<2){setMsg('Enter an international phone number (+91...) and full name.');return}
+    if(!/^\+91[6-9][0-9]{9}$/.test(onboardPhone)||onboardName.trim().length<2){setMsg('Enter a valid +91 Indian mobile number and full name.');return}
     setBusy('onboard');
     try{
       await api('/admin/users/onboard',{method:'POST',body:JSON.stringify({phone:onboardPhone,full_name:onboardName.trim(),role:onboardRole})});
