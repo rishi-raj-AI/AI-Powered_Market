@@ -55,7 +55,7 @@ async function mockStorefront(page: Page, products = [product]) {
 }
 
 const surfaces = [
-  {name: 'marketplace', route: '/market', heading: 'What’s available around you?', ready: store.name, mock: mockMarketplace},
+  {name: 'marketplace', route: '/market', heading: 'Fresh finds, just around the corner.', ready: store.name, mock: mockMarketplace},
   {name: 'storefront', route: `/market/${store.id}`, heading: store.name, ready: product.product.name, mock: mockStorefront},
 ];
 
