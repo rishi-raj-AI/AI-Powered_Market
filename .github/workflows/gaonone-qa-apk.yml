@@ -4,6 +4,7 @@ on:
     branches:
       - feat/marketplace-permanent-signed-apk
       - fix/cart-place-order-marketplace-actions
+      - feat/priority1-integrated-release
   workflow_dispatch:
 
 permissions:
