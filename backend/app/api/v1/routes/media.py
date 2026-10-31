@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
+from httpx import HTTPError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.api.deps import get_db
@@ -154,16 +155,7 @@ async def queue_listing_image(
     try:
         storage = configured_media_storage()
         stored = storage.put_quarantine(key, content, mime)
-    except (OSError, RuntimeError, ValueError) as exc:
-        db.rollback()
-        raise HTTPException(status_code=503, detail="Secure media storage is unavailable") from exc
-    except Exception as exc:
-        # S3 adapters surface transport/HTTP failures as httpx.HTTPError.
-        # Keep unexpected failures visible to operators rather than leaking
-        # private endpoint or credential details to merchants.
-        import httpx
-        if not isinstance(exc, httpx.HTTPError):
-            raise
+    except (OSError, RuntimeError, ValueError, HTTPError) as exc:
         db.rollback()
         raise HTTPException(status_code=503, detail="Secure media storage is unavailable") from exc
     asset = new_quarantined_asset(
