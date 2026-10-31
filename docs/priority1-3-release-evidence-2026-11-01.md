@@ -21,6 +21,7 @@ from CI results.
 
 - Build run: **passed**, https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41243423460
 - Artifact: [gaonone-qa-apk-04ddf31bdcb1f197035e1605c065e8007f6b8799](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41243423460/artifacts/13058646487)
+- APK build number: `5` (from the pinned QA workflow build command).
 - Artifact ID: `13058646487`; ZIP SHA-256:
   `313195ce9adde7ee486d1fd740082a66e5806880d8e259f1c56c6c55dda5bed0`.
 - APK signer certificate SHA-256, checked with `apksigner verify --print-certs`:
@@ -60,6 +61,7 @@ from CI results.
 - Database backup/restore, production migration and deployment smoke test:
   **not verified**. Do not deploy or flip feature flags without approval.
 
-Use [the release acceptance checklist](priority1-3-release-acceptance.md)
+Use [the secret-safe operator preflight](priority1-3-operator-preflight.md) and
+[the release acceptance checklist](priority1-3-release-acceptance.md)
 to record device, operator, environment, time, test result and rollback decision
 before changing any gate from pending to passed.
