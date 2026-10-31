@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_capability
 from app.core.capabilities import Capability
+from app.core.config import settings
 from app.models.user import User, UserRole
 from app.services.governance_audit import record_admin_action
 
@@ -19,6 +20,20 @@ class UserOnboardRequest(BaseModel):
     role: UserRole
 
 
+def _phone_onboarding_enabled() -> bool:
+    # Google/Firebase login only proves the Firebase subject, not ownership
+    # of the admin-entered phone. Never create an account that Google login
+    # cannot claim or silently link it by email/phone.
+    return settings.SMS_AUTH_ENABLED and settings.AUTH_PROVIDER in {"local_otp", "msg91_widget"}
+
+
+@router.get("/users/onboard/config")
+def admin_onboarding_config(
+    _: User = Depends(require_capability(Capability.ADMIN_MANAGE)),
+):
+    return {"enabled": _phone_onboarding_enabled()}
+
+
 @router.post("/users/onboard", status_code=201)
 def admin_onboard_user(
     payload: UserOnboardRequest,
@@ -27,6 +42,11 @@ def admin_onboard_user(
     admin: User = Depends(require_capability(Capability.ADMIN_MANAGE)),
 ):
     """Pre-register a user; their own verified phone login is still required."""
+    if not _phone_onboarding_enabled():
+        raise HTTPException(
+            status_code=409,
+            detail="Phone pre-registration requires enabled phone authentication. For Google users, have them sign in first and then assign their role.",
+        )
     if payload.role == UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Administrator onboarding requires a verified account")
     if db.scalar(select(User.id).where(User.phone == payload.phone)) is not None:
