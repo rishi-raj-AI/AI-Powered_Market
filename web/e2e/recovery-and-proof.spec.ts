@@ -84,5 +84,6 @@ test('merchant image upload remains explicit and backend validated',async({page}
   await page.goto('/merchant/media');
   await page.locator('input[type=file]').setInputFiles({name:'catalog.webp',mimeType:'image/webp',buffer:Buffer.from('test')});
   await page.getByRole('button',{name:'Upload image'}).click();
-  await expect(page.getByText('Upload ready')).toBeVisible();
+  await expect(page.getByText('Image uploaded')).toBeVisible();
+  await expect(page.getByText('The uploaded image is not yet linked to a product or approved for marketplace display.')).toBeVisible();
 });
