@@ -155,3 +155,29 @@ def test_a_rider_can_claim_again_after_finishing() -> None:
         f"/api/v1/delivery/{next_id}/claim", headers=auth(token_for(rider_phone))
     )
     assert response.status_code == 200, response.text
+
+
+def test_parallel_admin_assignments_do_not_double_book_one_rider() -> None:
+    """Manual dispatch and worker dispatch must share the same rider-row lock."""
+    with session() as db:
+        rider = make_user(db, role=UserRole.DELIVERY, prefix="9")
+        deliveries = [_ready_delivery(db) for _ in range(2)]
+        db.commit()
+        rider_id = rider.id
+        delivery_ids = [delivery.id for delivery in deliveries]
+
+    headers = auth(token_for("+919000000001"))
+
+    def assign(delivery_id):
+        return client.post(
+            f"/api/v1/admin/deliveries/{delivery_id}/assign",
+            headers=headers,
+            json={"rider_id": str(rider_id)},
+        ).status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(assign, delivery_ids))
+
+    assert sorted(results) == [200, 409], results
+    with session() as db:
+        assert _active_count(db, rider_id) == 1
