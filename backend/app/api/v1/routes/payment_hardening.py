@@ -198,7 +198,7 @@ def hardened_verify_payment(
 
     previously_paid = order.payment_status == PaymentStatus.PAID
     _apply_paid(db, attempt, order, payload.razorpay_payment_id)
-    if not previously_paid and order.payment_status == PaymentStatus.PAID:
+    if not previously_paid and order.payment_status == PaymentStatus.PAID and order.status == OrderStatus.PLACED:
         _notify_payment_captured(db, order)
     db.commit()
     return PaymentVerifyResponse(order_id=order.id, payment_status=order.payment_status.value, provider_payment_id=payload.razorpay_payment_id)
@@ -230,38 +230,39 @@ def _process_refund_event(db: Session, payload: dict) -> bool:
     return True
 
 
-def _process_event(db: Session, payload: dict) -> None:
+def _process_event(db: Session, payload: dict) -> bool:
     event = str(payload.get("event") or "")
     if event.startswith("refund."):
-        _process_refund_event(db, payload)
-        return
+        return _process_refund_event(db, payload)
     payment_entity = (((payload.get("payload") or {}).get("payment") or {}).get("entity") or {})
     order_entity = (((payload.get("payload") or {}).get("order") or {}).get("entity") or {})
     provider_payment_id = str(payment_entity.get("id") or "") or None
     provider_order_id = str(payment_entity.get("order_id") or order_entity.get("id") or "") or None
     if not provider_order_id:
-        return
+        return event not in {"order.paid", "payment.captured"}
     attempt, order, _ = _lock_payment_context(db, provider_order_id=provider_order_id)
     if attempt is None or order is None:
-        return
+        return False
     if event in {"order.paid", "payment.captured"}:
         if not provider_payment_id:
-            return
+            return False
         try:
             captured = _confirmed_capture(attempt, provider_payment_id)
         except HTTPException as exc:
             if exc.status_code == 409:
                 # Mismatched signed events must never change the order.
-                return
+                return True
             raise
         if not captured:
-            return
+            # Authorized/processing is not terminal; keep the event for replay.
+            return False
         previously_paid = order.payment_status == PaymentStatus.PAID
         _apply_paid(db, attempt, order, provider_payment_id)
-        if not previously_paid and order.payment_status == PaymentStatus.PAID:
+        if not previously_paid and order.payment_status == PaymentStatus.PAID and order.status == OrderStatus.PLACED:
             _notify_payment_captured(db, order)
     elif event == "payment.failed":
         _apply_failed(attempt, order)
+    return True
 
 
 @router.post("/webhook", status_code=status.HTTP_200_OK)
@@ -291,6 +292,8 @@ async def hardened_razorpay_webhook(request: Request, db: Session = Depends(get_
         )
     )
     if existing is not None:
+        # A duplicate delivery cannot discard an earlier deferred capture.
+        # The durable replay worker will retry rows without processed_at.
         return {"ok": True}
 
     event = PaymentWebhookEvent(
@@ -306,8 +309,8 @@ async def hardened_razorpay_webhook(request: Request, db: Session = Depends(get_
         db.rollback()
         return {"ok": True}
 
-    _process_event(db, payload)
-    event.processed_at = datetime.now(timezone.utc)
+    if _process_event(db, payload):
+        event.processed_at = datetime.now(timezone.utc)
     db.commit()
     return {"ok": True}
 
