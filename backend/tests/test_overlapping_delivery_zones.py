@@ -3,16 +3,11 @@
 Uses the same real PostGIS database as Backend CI. No mocked geometry: this
 reproduces the previous address-admission versus checkout disagreement.
 """
-from uuid import uuid4
 
-import pytest
-from fastapi import HTTPException
-
-from app.api.v1.routes.checkout import cart_quote, safe_checkout
+from app.api.v1.routes.checkout import cart_quote
 from app.api.v1.routes.geography import _serviceability, create_my_address
 from app.models.orders import Cart, CartItem
 from app.schemas.geography import AddressCreate
-from app.schemas.orders import CheckoutRequest
 from app.services.spatial import point_is_in_service_area, serviceability_for_point
 from tests import factories
 
