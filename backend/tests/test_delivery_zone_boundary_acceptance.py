@@ -5,14 +5,9 @@ circles, not polygons. These tests exercise the real SQL predicate and reject
 out-of-radius coordinates; they must run against CI PostGIS, not mocks.
 """
 
-from uuid import uuid4
 
-import pytest
-from fastapi import HTTPException
-
-from app.api.v1.routes.checkout import cart_quote, safe_checkout
+from app.api.v1.routes.checkout import cart_quote
 from app.models.orders import Cart, CartItem
-from app.schemas.orders import CheckoutRequest
 from app.services.spatial import point_is_in_service_area, serviceability_for_point
 from tests import factories
 
