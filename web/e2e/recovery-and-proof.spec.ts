@@ -85,8 +85,8 @@ test('merchant photo upload is listing-scoped and never uses legacy public uploa
   let legacy=0;
   await page.route('http://localhost:8000/api/v1/media/images',route=>{legacy++;return route.fulfill({status:201,json:{url:'/media/unsafe.png'}})});
   await page.route(`http://localhost:8000/api/v1/media/store-products/${listing}/images`,route=>{
-    if(route.request().method()==='POST'){queued=true;return route.fulfill({status:202,json:{id:'asset-queued',state:'quarantined'}})}
-    return route.fulfill({json:queued?[{id:'asset-queued',state:'quarantined',alt_text:null,position:0,is_primary:false,created_at:'2026-11-01T00:00:00Z'}]:[]});
+    if(route.request().method()==='POST'){queued=true;return route.fulfill({status:202,json:{id:'22222222-2222-4222-8222-222222222222',state:'quarantined'}})}
+    return route.fulfill({json:queued?[{id:'22222222-2222-4222-8222-222222222222',state:'quarantined',alt_text:null,position:0,is_primary:false,created_at:'2026-11-01T00:00:00Z'}]:[]});
   });
   await page.route(`http://localhost:8000/api/v1/media/store-products/${listing}/approved-images`,route=>route.fulfill({json:[]}));
   await page.goto('/merchant/media');
@@ -110,6 +110,22 @@ test('merchant upload fails closed when private media storage is unavailable',as
   await page.locator('input[type=file]').setInputFiles({name:'catalog.webp',mimeType:'image/webp',buffer:Buffer.from('test')});
   await page.getByRole('button',{name:'Securely upload & queue scan'}).click();
   await expect(page.getByRole('alert').filter({hasText:'Request failed (503)'})).toBeVisible();
+  await expect(page.getByText(/securely queued for scanning/)).toHaveCount(0);
+  expect(legacy).toBe(0);
+});
+
+
+test('merchant upload rejects a non-quarantined 202 acknowledgement',async({page})=>{
+  await installApiMocks(page,merchantUser);
+  const listing='11111111-1111-4111-8111-111111111111';
+  let legacy=0;
+  await page.route('http://localhost:8000/api/v1/media/images',route=>{legacy++;return route.fulfill({status:201,json:{url:'/media/unsafe.png'}})});
+  await page.route(`http://localhost:8000/api/v1/media/store-products/${listing}/images`,route=>route.fulfill({status:202,json:{id:'22222222-2222-4222-8222-222222222222',state:'approved'}}));
+  await page.goto('/merchant/media');
+  await page.getByLabel('Store-product ID').fill(listing);
+  await page.locator('input[type=file]').setInputFiles({name:'catalog.webp',mimeType:'image/webp',buffer:Buffer.from('test')});
+  await page.getByRole('button',{name:'Securely upload & queue scan'}).click();
+  await expect(page.getByRole('alert').filter({hasText:'The image upload was not confirmed as quarantined.'})).toBeVisible();
   await expect(page.getByText(/securely queued for scanning/)).toHaveCount(0);
   expect(legacy).toBe(0);
 });
