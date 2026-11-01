@@ -256,3 +256,39 @@ baselines above.
 No physical handset, provider integration, live payment, dispatch, media
 storage, database restore or production deployment gate was passed by this
 CI checkpoint. **NO-GO; keep automatic dispatch and product media disabled.**
+
+## 13:50 IST checkpoint — recovered Web CI and permanent-signer QA builds
+
+The Playwright tracking-outage race correction has now passed **all five**
+GitHub Actions workflows at each of the following immutable heads. These
+results were checked against the GitHub Actions run records and APK artifact
+records, not inferred from an earlier branch run.
+
+| PR | Exact SHA | Backend | Web | Mobile | Production | Signed QA APK |
+| --- | --- | --- | --- | --- | --- | --- |
+| [#235](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/235) | `3e6341d8658b13721849dbec8aa13da613cd164a` | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41284160315) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41284160271) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41284160267) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41284160262) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41284157165) |
+| [#236](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/236) | `c0223fbb6c7d22b7dc9f7b05165b2e96f38188e8` | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41284182721) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41284182696) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41284182698) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41284182787) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41284178508) |
+| [#237](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/237) | `6e9622ab701592f3ebf131d58824c53cd8e8895d` | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41284192116) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41284192175) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41284192088) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41284192141) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41284188357) |
+
+Signed APK artifacts: [#235: 13074169741](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41284157165/artifacts/13074169741),
+[#236: 13073918604](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41284178508/artifacts/13073918604),
+[#237: 13074329354](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41284188357/artifacts/13074329354).
+All three were unexpired when checked; GitHub reported expiration on
+2026-11-15 UTC. The existing permanent signing-certificate check remains
+in the workflow. Artifact success does **not** imply installation or sign-in
+on a physical handset.
+
+### Subsequent signed APK configuration hardening
+
+Priority 1 now requires the Android Maps repository variable to be present
+and nonblank, alongside Firebase and Google OAuth configuration, before
+building a signed QA APK. Priority 2 and Priority 3 inherit that change
+through their stacked integration commits. The check does not prove the
+API key is correctly restricted or that Maps, location, or search works on a
+device. **The new heads need fresh exact-head CI and signed APK verification.**
+
+The release remains **NO-GO**: no human approving review, real-device
+Google/Firebase/Maps/FCM acceptance, live COD/payment/dispatch/proof-of-delivery
+acceptance, secure media provider validation, backup/restore verification, or
+production deployment is recorded. Keep `AUTO_DISPATCH_ENABLED=false` and
+`PRODUCT_MEDIA_ENABLED=false`.
