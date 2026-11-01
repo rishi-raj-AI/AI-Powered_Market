@@ -12,8 +12,8 @@ New nullable fields on `addresses`:
 
 | Field | Meaning |
 | --- | --- |
-| `location_source` | `gps`, `map_pin`, or `searched_place` when the client asserts explicit confirmation |
-| `location_confirmed_at` | UTC server timestamp when that assertion was saved |
+| `location_source` | `gps` or `map_pin` for explicit customer pin confirmation; `searched_place` for an approximate provider centroid |
+| `location_confirmed_at` | UTC server timestamp only for a confirmed GPS/map pin; NULL for searched-place centroids and legacy records |
 | `location_accuracy_meters` | Optional reported GPS accuracy, **not** a guarantee |
 | `place_id` | Optional provider place identifier |
 
@@ -29,7 +29,9 @@ may help move the map but are not confirmed doorstep coordinates.
 `POST /api/v1/addresses/me` accepts the four optional metadata fields and
 continues to support legacy requests. When `location_source` is supplied, a
 coordinate pair is mandatory. Metadata without a source is rejected. The
-server, not the client, assigns `location_confirmed_at`.
+server, not the client, assigns `location_confirmed_at`, and only for `gps`
+or `map_pin`. A `searched_place` source is stored as approximate with NULL
+confirmation time.
 
 `POST /api/v1/addresses/me/{address_id}/confirm-pin` accepts:
 
@@ -43,7 +45,9 @@ server, not the client, assigns `location_confirmed_at`.
 }
 ```
 
-The endpoint requires the authenticated owner and an unarchived address.
+The confirm-pin endpoint accepts only `gps` or `map_pin`; a `searched_place`
+centroid is rejected during validation. It requires the authenticated owner
+and an unarchived address.
 It checks the point against current **platform-wide** coverage (not a promise
 that every store delivers there). It locks the old address, creates a new row
 with the original contact/address details and confirmed coordinates, archives
