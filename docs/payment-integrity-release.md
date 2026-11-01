@@ -21,6 +21,11 @@ issue refunds, or build APKs until the release owner approves.
 
 ## Feature flags and operator safety
 
+- `PAYMENT_WEBHOOK_REPLAY_ENABLED=false` is the safe default. The durable
+  webhook table retains unconfirmed captures with `processed_at=NULL`;
+  the opt-in worker rechecks provider capture and records completion only
+  after verification. Configure `PAYMENT_WEBHOOK_REPLAY_BATCH=25` and review
+  provider rate limits and aged pending events before enabling.
 - `PAYMENT_EXPIRY_ENABLED=false` is the safe default. Leave it disabled until
   sandbox testing, historical reconciliation and business approval.
 - `PAYMENT_EXPIRY_MINUTES=15` and `PAYMENT_EXPIRY_BATCH=25` only apply if enabled.
