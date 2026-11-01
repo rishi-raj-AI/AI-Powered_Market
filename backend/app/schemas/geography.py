@@ -79,7 +79,8 @@ class AddressRead(AddressCreate):
 class AddressPinConfirm(BaseModel):
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
-    location_source: Literal["gps", "map_pin", "searched_place"]
+    # Place centroids are approximate and cannot complete doorstep confirmation.
+    location_source: Literal["gps", "map_pin"]
     location_accuracy_meters: float | None = Field(default=None, ge=0, le=100000)
     place_id: str | None = Field(default=None, max_length=255)
 
