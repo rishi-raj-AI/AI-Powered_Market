@@ -82,3 +82,37 @@ def test_push_config_requires_project_and_worker_credentials(monkeypatch):
     assert notification_config().enabled is True
     monkeypatch.setattr(settings, "FCM_PROJECT_ID", "")
     assert notification_config().enabled is False
+
+
+def test_postgres_token_ownership_survives_rejected_handover():
+    """Real database transaction: reject takeover without altering ownership."""
+    from app.models.integrations import DeviceRegistration
+    from tests.factories import make_user, session
+
+    token = "integration-token-" + uuid4().hex
+    payload = DeviceRegistrationCreate(token=token, platform="android")
+    with session() as db:
+        first = make_user(db)
+        second = make_user(db)
+        db.commit()
+        first_id, second_id = first.id, second.id
+        created = register_device(payload, db=db, user=first)
+        registration_id = created.id
+
+    with session() as db:
+        second = db.get(type(first), second_id)
+        with pytest.raises(HTTPException) as exc:
+            register_device(payload, db=db, user=second)
+        assert exc.value.status_code == 409
+        db.rollback()
+        registered = db.get(DeviceRegistration, registration_id)
+        assert registered.user_id == first_id
+        assert registered.is_active is True
+        registered.is_active = False
+        db.commit()
+
+    with session() as db:
+        second = db.get(type(first), second_id)
+        rebound = register_device(payload, db=db, user=second)
+        assert rebound.user_id == second_id
+        assert rebound.is_active is True
