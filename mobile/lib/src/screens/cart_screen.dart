@@ -200,6 +200,8 @@ class _CartScreenState extends State<CartScreen> {
           directions: directions.text.trim(),
           latitude: confirmedPin?.latitude,
           longitude: confirmedPin?.longitude,
+          locationSource: confirmedPin?.source,
+          locationAccuracyMeters: confirmedPin?.accuracyMeters,
         );
         await load();
       } catch (e) {
