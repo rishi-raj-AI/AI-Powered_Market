@@ -28,6 +28,7 @@ from app.services.refunds import (
     REFUND_REASON_RETURNED,
     apply_provider_refund_result,
     ensure_refund_request,
+    get_refund_for_order,
 )
 from app.services.settlements import ensure_settlement_entry
 from app.services.notifications import enqueue_notification
@@ -127,6 +128,15 @@ def _apply_paid(db: Session, attempt: PaymentAttempt, order: Order, provider_pay
         if duplicate:
             raise HTTPException(status_code=409, detail="Payment ID has already been used")
         attempt.provider_payment_id = provider_payment_id
+
+    # A previously recorded refund obligation may lack the payment ID if a
+    # cancellation raced provider capture. Attach the verified ID so the
+    # refund dispatcher can actually return the customer's money.
+    if order.payment_status == PaymentStatus.REFUND_PENDING:
+        refund = get_refund_for_order(db, order.id)
+        if refund is not None and refund.provider_payment_id is None and provider_payment_id:
+            refund.provider_payment_id = provider_payment_id
+            refund.payment_attempt_id = attempt.id
 
     # Provider capture is a financial fact, but it must not reopen a cancelled
     # commercial order or recreate merchant settlement after cancellation/refund.
