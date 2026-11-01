@@ -63,14 +63,14 @@ def evaluate_delivery(
     # never be misrepresented as customer-confirmed GPS/map selection.
     source = getattr(address, "location_source", None)
     confirmed_at = getattr(address, "location_confirmed_at", None)
-    if (
-        address.latitude is not None
-        and address.longitude is not None
-        and source in {"gps", "map_pin", "searched_place"}
-        and confirmed_at is not None
-    ):
+    has_coordinates = address.latitude is not None and address.longitude is not None
+    if has_coordinates and source == "searched_place":
+        # A provider result may be a road, locality, or village centroid.
+        # Even a saved selection must not be called a confirmed doorstep pin.
+        confidence = "approximate_searched_place"
+    elif has_coordinates and source in {"gps", "map_pin"} and confirmed_at is not None:
         confidence = f"confirmed_{source}"
-    elif address.latitude is not None and address.longitude is not None:
+    elif has_coordinates:
         confidence = "legacy_coordinates"
     else:
         confidence = "unverified_manual"
