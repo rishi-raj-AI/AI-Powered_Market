@@ -133,3 +133,27 @@ def verify_razorpay_webhook_signature(*, raw_body: bytes, received_signature: st
         settings.RAZORPAY_WEBHOOK_SECRET.encode("utf-8"), raw_body, hashlib.sha256
     ).hexdigest()
     return hmac.compare_digest(expected, received_signature)
+
+
+def fetch_razorpay_payment(*, provider_payment_id: str) -> dict:
+    """Fetch authoritative provider payment state; a valid callback signature alone is insufficient."""
+    if not razorpay_enabled():
+        raise PaymentProviderUnavailable("Razorpay credentials are not configured")
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            response = client.get(
+                f"https://api.razorpay.com/v1/payments/{provider_payment_id}",
+                auth=(settings.RAZORPAY_KEY_ID or "", settings.RAZORPAY_KEY_SECRET or ""),
+            )
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise PaymentProviderError(f"Razorpay payment verification failed ({exc.response.status_code})") from exc
+    except httpx.HTTPError as exc:
+        raise PaymentProviderError("Unable to verify payment with Razorpay") from exc
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise PaymentProviderError("Razorpay returned an invalid payment response") from exc
+    if not isinstance(data, dict) or data.get("id") != provider_payment_id:
+        raise PaymentProviderError("Razorpay returned a mismatched payment response")
+    return data
