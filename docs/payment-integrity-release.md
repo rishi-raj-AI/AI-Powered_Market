@@ -17,7 +17,14 @@ issue refunds, or build APKs until the release owner approves.
    Late captures after cancellation create a durable refund obligation and do
    not reopen the commercial order.
 5. Expiration never infers nonpayment from a provider outage. Stock restoration
-   is guarded by `orders.stock_restored_at`.
+   is guarded by `orders.stock_restored_at`. An order with both a captured and
+   an authorized payment is deferred for reconciliation, not auto-expired.
+6. A second captured payment cannot replace the first payment ID or silently
+   generate a second merchant settlement. It requires manual reconciliation
+   and, when money is owed, a separately reviewed refund obligation.
+7. Refund obligations created for captures after cancellation or return must
+   include the captured provider payment ID. Without it the refund dispatcher
+   cannot execute the obligation; the captured attempt must be flushed first.
 
 ## Feature flags and operator safety
 
@@ -58,7 +65,11 @@ issue refunds, or build APKs until the release owner approves.
 - [ ] Merchant acceptance and preparation reject unpaid UPI but accept COD.
 - [ ] Rider offers, assignment, pickup and delivery completion reject unpaid UPI.
 - [ ] Expiry tests: zero attempts, provider outage, authorized payment, captured
-      payment, multiple captures, inventory restore once, cancellation race.
+      payment, captured plus authorized, multiple captures, inventory restore
+      once, cancellation race.
+- [ ] Manually investigate any second captured payment or unprocessed duplicate
+      webhook. Do not clear the event or refund blindly: reconcile the provider
+      transaction and customer obligation first.
 - [ ] Run the historical audit against a **staging copy**; reconcile discrepancies
       manually with Razorpay records and the refund ledger.
 - [ ] Confirm no production payment record is changed by staging tests.
