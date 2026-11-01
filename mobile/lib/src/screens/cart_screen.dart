@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../api/gaon_api.dart';
 import '../models/models.dart';
 import '../widgets/delivery_pin_picker.dart';
+import '../widgets/address_pin_repair_action.dart';
 
 abstract class CheckoutGateway {
   Future<String> currentUserId();
@@ -60,6 +61,10 @@ class CartScreen extends StatefulWidget {
 }
 
 class _CartScreenState extends State<CartScreen> {
+  // Enable only after the additive address-provenance backend is deployed.
+  static const bool _pinRepairEnabled = bool.fromEnvironment(
+    'ADDRESS_PIN_REPAIR_ENABLED', defaultValue: false);
+
   CartModel? cart;
   List<AddressModel> addresses = [];
   List<Village> villages = [];
@@ -342,7 +347,29 @@ class _CartScreenState extends State<CartScreen> {
                 child: ListTile(
                   leading: Icon(a.latitude != null && a.longitude != null ? Icons.location_on : Icons.signpost_outlined),
                   title: Text(a.label),
-                  subtitle: Text('${a.houseDetails ?? ''} • ${a.landmark}${a.latitude == null || a.longitude == null ? ' • Add a new pinned address to order' : a.locationConfirmedAt == null ? ' • Saved coordinates (confirmation unrecorded)' : ' • Confirmed pin'}'),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('${a.houseDetails ?? ''} • ${a.landmark}${a.latitude == null || a.longitude == null ? ' • Pin required to order' : a.locationConfirmedAt == null ? ' • Saved coordinates (confirmation unrecorded)' : ' • Confirmed pin'}'),
+                      if (_pinRepairEnabled &&
+                          a.locationConfirmedAt == null &&
+                          !checkoutCoordinator.busy &&
+                          !checkoutCoordinator.hasUnresolvedAttempt)
+                        AddressPinRepairAction(
+                          key: ValueKey('repin-${a.id}'),
+                          address: a,
+                          onReplaced: (_) async {
+                            // Fetch the replacement address list explicitly.
+                            // load() catches its own errors, so relying on it
+                            // here could falsely report a successful refresh.
+                            final refreshed = await GaonApi.addresses();
+                            if (!mounted) return;
+                            setState(() => addresses = refreshed);
+                          },
+                        ),
+                    ],
+                  ),
                   trailing: FilledButton(
                     onPressed: a.latitude == null || a.longitude == null || checkoutCoordinator.busy || changingProductId != null || checkoutCoordinator.hasUnresolvedAttempt
                         ? null
