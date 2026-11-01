@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../api/gaon_api.dart';
+import '../utils/polyline_decoder.dart';
 
 class CustomerLiveTracking extends StatefulWidget {
   final String orderId;
@@ -75,30 +76,6 @@ class _CustomerLiveTrackingState extends State<CustomerLiveTracking> {
     return '${(meters.toDouble() / 1000).toStringAsFixed(1)} km';
   }
 
-  List<LatLng> _decodePolyline(String encoded) {
-    final points = <LatLng>[];
-    var index = 0, latitude = 0, longitude = 0;
-    while (index < encoded.length) {
-      var shift = 0, result = 0, byte = 0;
-      do {
-        byte = encoded.codeUnitAt(index++) - 63;
-        result |= (byte & 0x1f) << shift;
-        shift += 5;
-      } while (byte >= 0x20 && index < encoded.length);
-      latitude += (result & 1) != 0 ? ~(result >> 1) : result >> 1;
-      shift = 0;
-      result = 0;
-      do {
-        byte = encoded.codeUnitAt(index++) - 63;
-        result |= (byte & 0x1f) << shift;
-        shift += 5;
-      } while (byte >= 0x20 && index < encoded.length);
-      longitude += (result & 1) != 0 ? ~(result >> 1) : result >> 1;
-      points.add(LatLng(latitude / 1e5, longitude / 1e5));
-    }
-    return points;
-  }
-
   Future<void> _openRiderMap(Map<String, dynamic> rider) async {
     final uri = Uri.https('www.google.com', '/maps/search/', {
       'api': '1',
@@ -146,7 +123,7 @@ class _CustomerLiveTrackingState extends State<CustomerLiveTracking> {
           rider, Icons.delivery_dining, stale ? Colors.grey : Colors.blue);
     }
     final routePolyline = route?['encoded_polyline'] is String && !stale
-        ? _decodePolyline(route!['encoded_polyline'] as String)
+        ? decodePolylineSafely(route!['encoded_polyline'] as String)
         : <LatLng>[];
     final center = markers.isNotEmpty
         ? markers.last.point
