@@ -1,6 +1,6 @@
 """Durable webhook replay retry scheduling and starvation protection.
 
-Revision ID: 0027_payment_webhook_retry_schedule
+Revision ID: 0027_webhook_retry_schedule
 Revises: 0026_delivery_proof_limits
 """
 
@@ -8,7 +8,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0027_payment_webhook_retry_schedule"
+revision = "0027_webhook_retry_schedule"
 down_revision = "0026_delivery_proof_limits"
 branch_labels = None
 depends_on = None
