@@ -15,7 +15,14 @@ from app.models.integrations import PaymentAttempt, PaymentRefund, PaymentWebhoo
 from app.models.orders import Order, OrderStatus, PaymentStatus
 from app.models.user import User, UserRole
 from app.schemas.integrations import PaymentVerifyRequest, PaymentVerifyResponse
-from app.services.payments import PaymentProviderUnavailable, verify_razorpay_signature, verify_razorpay_webhook_signature
+from app.services.payments import (
+    PaymentProviderError,
+    PaymentProviderUnavailable,
+    amount_to_subunits,
+    fetch_razorpay_payment,
+    verify_razorpay_signature,
+    verify_razorpay_webhook_signature,
+)
 from app.services.refunds import (
     REFUND_REASON_ORPHANED_CAPTURE,
     apply_provider_refund_result,
@@ -65,6 +72,25 @@ def _lock_payment_context(
         .with_for_update()
     )
     return attempt, order, True
+
+
+
+def _confirmed_capture(attempt: PaymentAttempt, provider_payment_id: str) -> bool:
+    """Signature proves callback authenticity; only provider capture proves payment."""
+    try:
+        entity = fetch_razorpay_payment(provider_payment_id=provider_payment_id)
+    except PaymentProviderUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Payment verification is unavailable") from exc
+    except PaymentProviderError as exc:
+        raise HTTPException(status_code=502, detail="Unable to verify payment with provider") from exc
+    if (
+        entity.get("id") != provider_payment_id
+        or entity.get("order_id") != attempt.provider_order_id
+        or entity.get("currency") != attempt.currency
+        or entity.get("amount") != amount_to_subunits(attempt.amount)
+    ):
+        raise HTTPException(status_code=409, detail="Provider payment does not match this order")
+    return entity.get("status") == "captured"
 
 
 def _apply_paid(db: Session, attempt: PaymentAttempt, order: Order, provider_payment_id: str | None) -> None:
@@ -131,15 +157,6 @@ def hardened_verify_payment(
         raise HTTPException(status_code=404, detail="Order not found")
     if not attempt.provider_order_id:
         raise HTTPException(status_code=409, detail="Payment attempt has no provider order")
-    if attempt.status == "paid" and attempt.provider_payment_id == payload.razorpay_payment_id:
-        if order.status != OrderStatus.CANCELLED and order.payment_status not in {
-            PaymentStatus.REFUNDED,
-            PaymentStatus.REFUND_PENDING,
-        }:
-            ensure_settlement_entry(db, order)
-        db.commit()
-        return PaymentVerifyResponse(order_id=order.id, payment_status=order.payment_status.value, provider_payment_id=payload.razorpay_payment_id)
-
     try:
         valid = verify_razorpay_signature(
             provider_order_id=attempt.provider_order_id,
@@ -149,9 +166,13 @@ def hardened_verify_payment(
     except PaymentProviderUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     if not valid:
-        _apply_failed(attempt, order)
-        db.commit()
+        # Never let an unauthenticated callback alter financial state.
         raise HTTPException(status_code=400, detail="Invalid payment signature")
+
+    if not _confirmed_capture(attempt, payload.razorpay_payment_id):
+        # Authorized or still processing is not a captured payment. Do not
+        # mark it failed: a later webhook may confirm a legitimate capture.
+        raise HTTPException(status_code=409, detail="Payment is not captured yet")
 
     _apply_paid(db, attempt, order, payload.razorpay_payment_id)
     db.commit()
@@ -199,6 +220,17 @@ def _process_event(db: Session, payload: dict) -> None:
     if attempt is None or order is None:
         return
     if event in {"order.paid", "payment.captured"}:
+        if not provider_payment_id:
+            return
+        try:
+            captured = _confirmed_capture(attempt, provider_payment_id)
+        except HTTPException as exc:
+            if exc.status_code == 409:
+                # Mismatched signed events must never change the order.
+                return
+            raise
+        if not captured:
+            return
         _apply_paid(db, attempt, order, provider_payment_id)
     elif event == "payment.failed":
         _apply_failed(attempt, order)
