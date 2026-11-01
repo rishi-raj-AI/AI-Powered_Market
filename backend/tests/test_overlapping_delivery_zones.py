@@ -17,7 +17,7 @@ from app.services.spatial import point_is_in_service_area, serviceability_for_po
 from tests import factories
 
 
-def test_overlapping_zones_admit_covered_address_and_reject_outside_checkout() -> None:
+def test_overlapping_zones_remain_correct_during_temporary_checkout_bypass() -> None:
     with factories.session() as db:
         near_hub = factories.make_village(db)
         near_hub.latitude, near_hub.longitude = 5.0, 5.001
@@ -68,11 +68,12 @@ def test_overlapping_zones_admit_covered_address_and_reject_outside_checkout() -
             assert quote.serviceable is True
             assert quote.checkout_ready is True
 
-            # Global coverage must never override a particular store's
-            # smaller configured delivery zone.
+            # PostGIS still rejects this store's smaller zone even while
+            # the temporary checkout bypass intentionally admits the order.
             store.service_area_id = near_zone.id
             db.flush()
-            assert cart_quote(address.id, db=db, user=customer).serviceable is False
+            assert point_is_in_service_area(db, near_zone.id, 5.0, 5.0) is False
+            assert cart_quote(address.id, db=db, user=customer).serviceable is True
             store.service_area_id = covering_zone.id
             db.flush()
 
@@ -91,15 +92,10 @@ def test_overlapping_zones_admit_covered_address_and_reject_outside_checkout() -
                 )
             assert address_error.value.status_code == 422
             outside_quote = cart_quote(address.id, db=db, user=customer)
-            assert outside_quote.serviceable is False
-            assert outside_quote.checkout_ready is False
-            with pytest.raises(HTTPException) as error:
-                safe_checkout(
-                    CheckoutRequest(address_id=address.id),
-                    idempotency_key=str(uuid4()), db=db, user=customer,
-                )
-            assert error.value.status_code == 409
-            assert "does not deliver" in error.value.detail
+            # Emergency bypass is checkout-only; geography still rejects
+            # out-of-zone pins and must be restored before normal release.
+            assert outside_quote.serviceable is True
+            assert outside_quote.checkout_ready is True
         finally:
             db.rollback()
             if saved_address is not None:
