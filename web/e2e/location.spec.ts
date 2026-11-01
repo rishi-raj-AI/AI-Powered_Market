@@ -206,7 +206,7 @@ test('selecting a locality does not silently use its hub as the delivery entranc
   await page.goto('/checkout');
   await page.getByRole('button',{name:/Add address/i}).click();
   await page.getByLabel('Area / locality *').selectOption('village-niphad');
-  await page.getByLabel(/Landmark/).fill('Temple gate');
+  await page.locator('#checkout-landmark').fill('Temple gate');
   await expect(page.getByText(/Pinned coordinates:/)).toHaveCount(0);
   await page.getByRole('button',{name:'Save address'}).click();
   await expect(page.getByText('Pin the exact delivery location before saving.')).toBeVisible();
