@@ -5,6 +5,8 @@ on:
       - feat/marketplace-permanent-signed-apk
       - fix/cart-place-order-marketplace-actions
       - feat/priority1-integrated-release
+      - feat/priority2-merchant-media-workflow
+      - docs/priority3-release-acceptance
   workflow_dispatch:
 
 permissions:
