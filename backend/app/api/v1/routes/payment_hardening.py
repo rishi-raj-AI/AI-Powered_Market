@@ -145,8 +145,10 @@ def _apply_paid(db: Session, attempt: PaymentAttempt, order: Order, provider_pay
             ensure_refund_request(db, order, reason=REFUND_REASON_ORPHANED_CAPTURE)
         return
 
+    first_capture = order.payment_status != PaymentStatus.PAID
     order.payment_status = PaymentStatus.PAID
-    ensure_settlement_entry(db, order)
+    if first_capture:
+        ensure_settlement_entry(db, order)
 
 
 def _apply_failed(attempt: PaymentAttempt, order: Order) -> None:
