@@ -1,5 +1,6 @@
 """PostGIS-backed P0 checkout eligibility and diagnostic regression tests."""
 
+from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -137,4 +138,24 @@ def test_diagnostic_reports_only_scoped_configuration_and_rounded_distances():
             "recipient_name", "phone", "house_details", "landmark",
             "latitude", "longitude", "customer_id",
         })
+        db.rollback()
+
+
+def test_provenance_is_confirmed_only_with_source_and_server_timestamp():
+    with factories.session() as db:
+        customer = factories.make_user(db)
+        store = factories.make_store(db, is_active=True)
+        address = factories.make_address(
+            db, customer, db.get(factories.Village, store.village_id),
+        )
+        db.flush()
+        assert evaluate_delivery(db, store, address).location_confidence == "legacy_coordinates"
+        # These attributes become mapped nullable fields in additive PR #247.
+        # Until then, getattr keeps the P0 engine compatible with the old schema.
+        address.location_source = "gps"
+        assert evaluate_delivery(db, store, address).location_confidence == "legacy_coordinates"
+        address.location_confirmed_at = datetime.now(timezone.utc)
+        assert evaluate_delivery(db, store, address).location_confidence == "confirmed_gps"
+        address.location_source = "map_pin"
+        assert evaluate_delivery(db, store, address).location_confidence == "confirmed_map_pin"
         db.rollback()
