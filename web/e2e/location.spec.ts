@@ -194,3 +194,21 @@ test('@a11y location picker has no serious or critical accessibility violations'
   const results=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze();
   expect(results.violations.filter(v=>['serious','critical'].includes(v.impact||''))).toEqual([]);
 });
+
+
+test('selecting a locality does not silently use its hub as the delivery entrance',async({page})=>{
+  await installApiMocks(page);
+  let created=0;
+  await page.route('http://localhost:8000/api/v1/addresses/me',route=>{
+    if(route.request().method()==='POST')created++;
+    return route.fulfill({json:[]});
+  });
+  await page.goto('/checkout');
+  await page.getByRole('button',{name:/Add address/i}).click();
+  await page.getByLabel('Area / locality *').selectOption('village-niphad');
+  await page.locator('#checkout-landmark').fill('Temple gate');
+  await expect(page.getByText(/Pinned coordinates:/)).toHaveCount(0);
+  await page.getByRole('button',{name:'Save address'}).click();
+  await expect(page.getByText('Pin the exact delivery location before saving.')).toBeVisible();
+  expect(created).toBe(0);
+});

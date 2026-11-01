@@ -136,7 +136,14 @@ test('checkout serializes a pending address save',async({page})=>{
   const addAddress=page.getByRole('button',{name:'+ Add address'});
   await addAddress.click();
   await page.locator('#checkout-village').selectOption('village-niphad');
+  // A locality centroid is not an exact delivery pin. Explicitly resolve it.
+  const search=page.getByLabel('Search delivery location');
+  await search.fill('Niphad');
+  await page.getByRole('button',{name:/Niphad.*Maharashtra/i}).click();
+  await expect(page.getByText(/Pinned coordinates:/)).toBeVisible();
+  await expect(page.getByText(/Delivery available in/)).toBeVisible();
   await page.locator('#checkout-landmark').fill('Temple gate');
+  const serviceabilityBeforeSave=await page.evaluate(()=>((window as typeof window&{addressSaveServiceabilityRequests:number}).addressSaveServiceabilityRequests));
   const form=page.locator('form.formInset');
   const save=page.getByRole('button',{name:'Save address'});
   await save.click();
@@ -146,7 +153,7 @@ test('checkout serializes a pending address save',async({page})=>{
   await expect(addAddress).toBeDisabled();
   const secondSubmitWasPrevented=await form.evaluate(element=>!element.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
   expect(secondSubmitWasPrevented).toBe(true);
-  expect(await page.evaluate(()=>((window as typeof window&{addressSaveServiceabilityRequests:number}).addressSaveServiceabilityRequests))).toBe(1);
+  expect(await page.evaluate(()=>((window as typeof window&{addressSaveServiceabilityRequests:number}).addressSaveServiceabilityRequests))).toBe(serviceabilityBeforeSave+1);
   expect(createAttempts).toBe(1);
   releaseCreate();
   await expect(addAddress).toBeEnabled();
