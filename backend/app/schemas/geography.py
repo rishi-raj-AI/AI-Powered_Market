@@ -1,8 +1,9 @@
 import uuid
 from decimal import Decimal
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class VillageCreate(BaseModel):
@@ -47,15 +48,40 @@ class AddressCreate(BaseModel):
     directions: str | None = None
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
+    # NULL provenance is deliberately retained for historical addresses.
+    location_source: Literal["gps", "map_pin", "searched_place"] | None = None
+    location_accuracy_meters: float | None = Field(default=None, ge=0, le=100000)
+    place_id: str | None = Field(default=None, max_length=255)
     is_default: bool = False
+
+    @model_validator(mode="after")
+    def validate_pin_provenance(self):
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValueError("Latitude and longitude must be supplied together")
+        if self.location_source is not None and self.latitude is None:
+            raise ValueError("A confirmed location source requires a coordinate pair")
+        if self.location_source is None and (
+            self.location_accuracy_meters is not None or self.place_id is not None
+        ):
+            raise ValueError("Location metadata requires a confirmed source")
+        return self
 
 
 class AddressRead(AddressCreate):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
     user_id: uuid.UUID
+    location_confirmed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class AddressPinConfirm(BaseModel):
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    location_source: Literal["gps", "map_pin", "searched_place"]
+    location_accuracy_meters: float | None = Field(default=None, ge=0, le=100000)
+    place_id: str | None = Field(default=None, max_length=255)
 
 
 class PlaceSuggestion(BaseModel):
