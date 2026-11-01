@@ -263,3 +263,52 @@ def test_late_capture_links_existing_refund_without_payment_id(monkeypatch):
         assert refund.provider_payment_id == "pay_test_capture_12345"
         assert refund.payment_attempt_id == attempt.id
         assert refund.status == "requested"
+
+
+def test_second_capture_cannot_replace_first_payment_id(monkeypatch):
+    with session() as db:
+        customer, order, attempt = _context(db)
+        monkeypatch.setattr(payment_hardening, "verify_razorpay_signature", lambda **_: True)
+        monkeypatch.setattr(
+            payment_hardening, "fetch_razorpay_payment",
+            lambda *, provider_payment_id: _payment(attempt, provider_payment_id),
+        )
+        monkeypatch.setattr(payment_hardening, "ensure_settlement_entry", lambda *_: None)
+        _verify(db, customer, attempt)
+        with pytest.raises(HTTPException) as exc:
+            _verify(db, customer, attempt, payment_id="pay_second_capture_67890")
+        assert exc.value.status_code == 409
+        db.refresh(attempt)
+        db.refresh(order)
+        assert attempt.provider_payment_id == "pay_test_capture_12345"
+        assert order.payment_status == PaymentStatus.PAID
+
+
+def test_capture_on_second_attempt_requires_manual_reconciliation(monkeypatch):
+    with session() as db:
+        customer, order, first_attempt = _context(db)
+        second_attempt = PaymentAttempt(
+            order_id=order.id, provider="razorpay",
+            provider_order_id=f"order_{uuid4().hex}",
+            status="attempted", amount=Decimal("120.00"), currency="INR",
+        )
+        db.add(second_attempt)
+        db.commit()
+        monkeypatch.setattr(payment_hardening, "verify_razorpay_signature", lambda **_: True)
+        monkeypatch.setattr(
+            payment_hardening, "fetch_razorpay_payment",
+            lambda *, provider_payment_id: _payment(
+                first_attempt if provider_payment_id == "pay_test_capture_12345" else second_attempt,
+                provider_payment_id,
+            ),
+        )
+        monkeypatch.setattr(payment_hardening, "ensure_settlement_entry", lambda *_: None)
+        _verify(db, customer, first_attempt)
+        with pytest.raises(HTTPException) as exc:
+            _verify(db, customer, second_attempt, payment_id="pay_second_attempt_67890")
+        assert exc.value.status_code == 409
+        db.refresh(first_attempt)
+        db.refresh(second_attempt)
+        assert first_attempt.status == "paid"
+        assert second_attempt.status == "attempted"
+        assert second_attempt.provider_payment_id is None
