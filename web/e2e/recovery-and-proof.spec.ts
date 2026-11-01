@@ -129,3 +129,19 @@ test('merchant upload rejects a non-quarantined 202 acknowledgement',async({page
   await expect(page.getByText(/securely queued for scanning/)).toHaveCount(0);
   expect(legacy).toBe(0);
 });
+
+
+test('merchant can select an owned product listing without finding its UUID',async({page})=>{
+  await installApiMocks(page,merchantUser);
+  const listing='11111111-1111-4111-8111-111111111111';
+  await page.route('http://localhost:8000/api/v1/stores/mine',route=>route.fulfill({json:[{id:'store-media',name:'Nimbu Store'}]}));
+  await page.route('http://localhost:8000/api/v1/stores/store-media/inventory',route=>route.fulfill({json:[{
+    id:listing,store_id:'store-media',product_id:'product-rice',price:'80',
+    stock_quantity:5,is_available:true,product:{id:'product-rice',name:'Fresh Rice',unit:'1 kg'},
+  }]}));
+  await page.goto('/merchant/media');
+  await expect(page.getByLabel('Store')).toHaveValue('store-media');
+  await expect(page.getByLabel('Product listing')).toBeVisible();
+  await page.getByLabel('Product listing').selectOption(listing);
+  await expect(page.getByLabel('Store-product ID (advanced)')).toHaveValue(listing);
+});
