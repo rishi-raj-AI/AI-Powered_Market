@@ -157,3 +157,38 @@ def fetch_razorpay_payment(*, provider_payment_id: str) -> dict:
     if not isinstance(data, dict) or data.get("id") != provider_payment_id:
         raise PaymentProviderError("Razorpay returned a mismatched payment response")
     return data
+
+
+
+def list_razorpay_order_payments(*, provider_order_id: str) -> list[dict]:
+    """Authoritative provider read before expiring an unpaid reservation.
+
+    Refuse to treat a truncated provider response as proof that no capture
+    exists. A provider outage must delay expiration, not silently lose money.
+    """
+    if not razorpay_enabled():
+        raise PaymentProviderUnavailable("Razorpay credentials are not configured")
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            response = client.get(
+                f"https://api.razorpay.com/v1/orders/{provider_order_id}/payments",
+                auth=(settings.RAZORPAY_KEY_ID or "", settings.RAZORPAY_KEY_SECRET or ""),
+                params={"count": 100, "skip": 0},
+            )
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise PaymentProviderError(
+            f"Razorpay payment lookup failed ({exc.response.status_code})"
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise PaymentProviderError("Unable to retrieve Razorpay order payments") from exc
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise PaymentProviderError("Razorpay returned invalid payment history") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+        raise PaymentProviderError("Razorpay returned invalid payment history")
+    items = data["items"]
+    if len(items) >= 100 or not all(isinstance(item, dict) for item in items):
+        raise PaymentProviderError("Razorpay payment history is incomplete")
+    return items
