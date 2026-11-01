@@ -12,22 +12,37 @@ def serviceability_for_point(db: Session, latitude: float, longitude: float) -> 
         text(
             """
             SELECT
-                sa.id,
-                sa.name,
-                sa.radius_km,
-                ST_Distance(
-                    ST_SetSRID(ST_MakePoint(v.longitude::double precision, v.latitude::double precision), 4326)::geography,
-                    ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography
-                ) / 1000.0 AS distance_km
-            FROM service_areas sa
-            JOIN villages v ON v.id = sa.hub_village_id
-            WHERE sa.is_active = true
-              AND v.is_active = true
-              AND v.latitude IS NOT NULL
-              AND v.longitude IS NOT NULL
-            ORDER BY
-                ST_SetSRID(ST_MakePoint(v.longitude::double precision, v.latitude::double precision), 4326)::geography
-                <-> ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography
+                coverage.id,
+                coverage.name,
+                coverage.radius_km,
+                coverage.distance_km,
+                coverage.covers_point
+            FROM (
+                SELECT
+                    sa.id,
+                    sa.name,
+                    sa.radius_km,
+                    ST_Distance(
+                        ST_SetSRID(ST_MakePoint(v.longitude::double precision, v.latitude::double precision), 4326)::geography,
+                        ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography
+                    ) / 1000.0 AS distance_km,
+                    ST_DWithin(
+                        ST_SetSRID(ST_MakePoint(v.longitude::double precision, v.latitude::double precision), 4326)::geography,
+                        ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
+                        sa.radius_km * 1000.0
+                    ) AS covers_point
+                FROM service_areas sa
+                JOIN villages v ON v.id = sa.hub_village_id
+                WHERE sa.is_active = true
+                  AND v.is_active = true
+                  AND v.latitude IS NOT NULL
+                  AND v.longitude IS NOT NULL
+            ) coverage
+            -- A nearby small-radius hub may NOT cover this pin while a
+            -- farther, larger active zone does. Prefer any covering zone.
+            -- Use the same ST_DWithin predicate as checkout and stable
+            -- ordering when multiple zones overlap.
+            ORDER BY coverage.covers_point DESC, coverage.distance_km, coverage.id
             LIMIT 1
             """
         ),
