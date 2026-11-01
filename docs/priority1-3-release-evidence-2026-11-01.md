@@ -99,3 +99,42 @@ the original immutable CI and signing evidence.
 Release decision: **NO-GO** until exact-head checks, code review, real-device
 acceptance, external provider verification and the production preflight gates
 are completed with recorded evidence.
+
+
+## Verified CI checkpoint and subsequent safety fixes — 2026-11-01 IST
+
+The previously pending **exact-head** checks all completed successfully:
+
+| PR | Verified immutable SHA | Backend | Web | Mobile | Production |
+| --- | --- | --- | --- | --- | --- |
+| [#235](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/235) | `ddcb0171d37cc48b2510a21da6da01565bf02e20` | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41256451756) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41256451753) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41256451765) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41256451770) |
+| [#236](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/236) | `e3c3857e6d87a0bcb6f1874e77981c41f4d4a7a2` | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41256528001) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41256527952) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41256527959) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41256527961) |
+| [#237](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/237) | `4f43af1894a49ab8712576e1e7ac176bb6c22f8b` | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41256564457) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41256564460) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41256564412) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41256564481) |
+
+A newer [signed QA APK workflow 41256448299](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41256448299)
+**passed** for `ddcb0171d37cc48b2510a21da6da01565bf02e20`;
+artifact `13063123563` was present and unexpired when checked. The workflow
+compares the APK certificate SHA-256 with the existing pinned permanent
+GaonOne signing identity. This verifies a build, **not installation or device
+acceptance**.
+
+Subsequent hardening was committed to Priority 1 and carried forward through
+the dependent branches:
+
+- `b0c44ee3`: unattended dispatch now locks and revalidates the order row
+  before assigning a rider, preventing assignment to a concurrently cancelled
+  or no-longer-ready order.
+- `acd3e32d`: added regression coverage for a stale-ready order and the
+  PostgreSQL `FOR UPDATE` requirement.
+- `364839fa`: on logout, the Android app attempts local Firebase messaging
+  token deletion even if the backend token-unregistration call fails, reducing
+  push-notification leakage on shared handsets.
+- `da56bb03`: merged the Priority 1 hardening into the Priority 2 branch.
+- `e750e418`: merged the updated Priority 2 branch into Priority 3.
+
+**Important:** the green CI results above belong to the *earlier immutable
+SHAs*, not the subsequent hardening. New exact-head CI and a signed APK build
+were triggered and were still pending at the time this checkpoint was
+recorded. The open pull requests remain unmerged, and there is no production
+deployment approval or verified real-device/provider acceptance. Keep
+`AUTO_DISPATCH_ENABLED=false` and `PRODUCT_MEDIA_ENABLED=false`.
