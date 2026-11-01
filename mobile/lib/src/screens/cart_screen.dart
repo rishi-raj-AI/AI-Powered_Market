@@ -342,7 +342,7 @@ class _CartScreenState extends State<CartScreen> {
                 child: ListTile(
                   leading: Icon(a.latitude != null && a.longitude != null ? Icons.location_on : Icons.signpost_outlined),
                   title: Text(a.label),
-                  subtitle: Text('${a.houseDetails ?? ''} • ${a.landmark}${a.latitude == null || a.longitude == null ? ' • Confirm a pin in a new address to order' : ''}'),
+                  subtitle: Text('${a.houseDetails ?? ''} • ${a.landmark}${a.latitude == null || a.longitude == null ? ' • Add a new pinned address to order' : a.locationConfirmedAt == null ? ' • Saved coordinates (confirmation unrecorded)' : ' • Confirmed pin'}'),
                   trailing: FilledButton(
                     onPressed: a.latitude == null || a.longitude == null || checkoutCoordinator.busy || changingProductId != null || checkoutCoordinator.hasUnresolvedAttempt
                         ? null
