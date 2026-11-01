@@ -90,9 +90,14 @@ window is agreed:
 
 ## 5. Signing and mobile release
 
-The signed QA APK for Priority 1 commit
-`04ddf31bdcb1f197035e1605c065e8007f6b8799` is in
-[workflow 41243423460](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41243423460).
+The most recently verified signed QA APK before the latest dispatch and
+logout hardening was built at Priority 1 commit
+`ddcb0171d37cc48b2510a21da6da01565bf02e20` in
+[workflow 41256448299](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41256448299),
+[artifact 13063123563](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41256448299/artifacts/13063123563).
+It is **not** the newest source revision: before distributing an APK, confirm
+a successful signed build for the selected release SHA and record its artifact
+ID, expiry and signer fingerprint in the evidence ledger.
 It was signed with the existing pinned certificate; do not regenerate a key.
 Install that exact artifact on a real low-end Android device and record
 Google login, FCM token/receipt, Maps/GPS, COD, Hindi/Marathi, offline
