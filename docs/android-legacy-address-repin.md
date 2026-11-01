@@ -18,7 +18,9 @@ the additive backend address-provenance API in PR #247.
   Quote/checkout must use the replacement ID.
 - A backend rejection leaves the original address accessible. If the backend
   saved the pin but refreshing the cart fails, the UI says to reload the cart
-  rather than falsely claiming the write was rejected.
+  rather than falsely claiming the write was rejected. A timeout or unknown
+  network failure is also treated as an ambiguous outcome: reload addresses
+  before retrying, because the server may already have archived the old ID.
 
 ## Activation and compatibility
 
@@ -38,7 +40,8 @@ remain required.
 
 `mobile/test/address_pin_repair_action_test.dart` covers cancel, explicit
 confirmation and new ID, backend rejection, invalid coordinates, and a
-successful backend write followed by failed list refresh.
+successful backend write followed by failed list refresh, and an ambiguous
+network failure.
 
 Run `flutter analyze`, `flutter test`, and the Mobile CI workflow on the
 exact branch head. Also run backend PostGIS and migration tests from PR #247.
