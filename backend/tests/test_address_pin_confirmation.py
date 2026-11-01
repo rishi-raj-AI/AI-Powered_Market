@@ -175,3 +175,28 @@ def test_coordinate_provenance_cannot_be_fabricated_without_coordinates():
             landmark="Near school",
             location_accuracy_meters=20,
         )
+
+def test_searched_place_centroid_is_approximate_not_confirmed_doorstep():
+    with pytest.raises(ValidationError):
+        _pin(location_source="searched_place")
+
+    with factories.session() as db:
+        customer = factories.make_user(db)
+        village = factories.make_village(db)
+        approximate = create_my_address(
+            AddressCreate(
+                village_id=village.id,
+                landmark="Near village school",
+                latitude=18.5204,
+                longitude=73.8567,
+                location_source="searched_place",
+                place_id="place-approximate",
+            ),
+            db=db,
+            user=customer,
+        )
+        factories._track(approximate)
+        assert approximate.location_source == "searched_place"
+        assert approximate.location_confirmed_at is None
+        assert approximate.place_id == "place-approximate"
+        db.rollback()
