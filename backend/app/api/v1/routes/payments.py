@@ -140,13 +140,6 @@ def verify_payment(
     if not attempt.provider_order_id:
         raise HTTPException(status_code=409, detail="Payment attempt has no provider order")
 
-    if attempt.status == "paid" and attempt.provider_payment_id == payload.razorpay_payment_id:
-        return PaymentVerifyResponse(
-            order_id=order.id,
-            payment_status=order.payment_status.value,
-            provider_payment_id=payload.razorpay_payment_id,
-        )
-
     try:
         valid = verify_razorpay_signature(
             provider_order_id=attempt.provider_order_id,
@@ -157,9 +150,6 @@ def verify_payment(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     if not valid:
-        attempt.status = "failed"
-        order.payment_status = PaymentStatus.FAILED
-        db.commit()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid payment signature")
 
     duplicate = db.scalar(
@@ -185,6 +175,10 @@ def verify_payment(
     ):
         raise HTTPException(status_code=409, detail="Payment does not match the order")
     if provider_payment.get("status") != "captured":
+        if provider_payment.get("status") == "failed" and order.payment_status != PaymentStatus.PAID:
+            attempt.status = "failed"
+            order.payment_status = PaymentStatus.FAILED
+            db.commit()
         raise HTTPException(status_code=409, detail="Payment has not been captured; order remains unpaid")
 
     attempt.provider_payment_id = payload.razorpay_payment_id
@@ -221,17 +215,32 @@ def _process_razorpay_event(payload: dict) -> None:
             return
 
         if event in {"order.paid", "payment.captured"}:
-            if provider_payment_id:
-                duplicate = db.scalar(
-                    select(PaymentAttempt).where(
-                        PaymentAttempt.provider_payment_id == provider_payment_id,
-                        PaymentAttempt.id != attempt.id,
-                    )
+            if not provider_payment_id:
+                logger.warning("Razorpay success webhook missing payment id")
+                return
+            try:
+                verified = fetch_razorpay_payment(provider_payment_id=provider_payment_id)
+            except (PaymentProviderError, PaymentProviderUnavailable):
+                logger.exception("Could not confirm Razorpay capture; webhook ignored for retry")
+                raise
+            if (
+                verified.get("status") != "captured"
+                or verified.get("order_id") != attempt.provider_order_id
+                or verified.get("currency") != attempt.currency
+                or verified.get("amount") != amount_to_subunits(attempt.amount)
+            ):
+                logger.warning("Razorpay success webhook has unconfirmed or mismatched payment")
+                return
+            duplicate = db.scalar(
+                select(PaymentAttempt).where(
+                    PaymentAttempt.provider_payment_id == provider_payment_id,
+                    PaymentAttempt.id != attempt.id,
                 )
-                if duplicate:
-                    logger.warning("Razorpay webhook duplicate payment id ignored")
-                    return
-                attempt.provider_payment_id = provider_payment_id
+            )
+            if duplicate:
+                logger.warning("Razorpay webhook duplicate payment id ignored")
+                return
+            attempt.provider_payment_id = provider_payment_id
             attempt.status = "paid"
             order.payment_status = PaymentStatus.PAID
         elif event == "payment.failed":
