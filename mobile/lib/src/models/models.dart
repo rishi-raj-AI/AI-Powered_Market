@@ -142,7 +142,9 @@ class AddressModel {
   final String? houseDetails;
   final double? latitude;
   final double? longitude;
-  AddressModel({required this.id, required this.villageId, required this.label, required this.landmark, this.houseDetails, this.latitude, this.longitude});
+  final String? locationSource;
+  final String? locationConfirmedAt;
+  AddressModel({required this.id, required this.villageId, required this.label, required this.landmark, this.houseDetails, this.latitude, this.longitude, this.locationSource, this.locationConfirmedAt});
   factory AddressModel.fromJson(Map<String, dynamic> j) => AddressModel(
         id: j['id'],
         villageId: j['village_id'],
@@ -151,6 +153,8 @@ class AddressModel {
         houseDetails: j['house_details'],
         latitude: (j['latitude'] as num?)?.toDouble(),
         longitude: (j['longitude'] as num?)?.toDouble(),
+        locationSource: j['location_source'],
+        locationConfirmedAt: j['location_confirmed_at'],
       );
 }
 
