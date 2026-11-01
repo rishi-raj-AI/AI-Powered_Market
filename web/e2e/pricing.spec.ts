@@ -136,6 +136,11 @@ test('checkout serializes a pending address save',async({page})=>{
   const addAddress=page.getByRole('button',{name:'+ Add address'});
   await addAddress.click();
   await page.locator('#checkout-village').selectOption('village-niphad');
+  // A locality centroid is not an exact delivery pin. Explicitly resolve it.
+  const search=page.getByLabel('Search delivery location');
+  await search.fill('Niphad');
+  await page.getByRole('button',{name:/Niphad.*Maharashtra/i}).click();
+  await expect(page.getByText(/Pinned coordinates:/)).toBeVisible();
   await page.locator('#checkout-landmark').fill('Temple gate');
   const form=page.locator('form.formInset');
   const save=page.getByRole('button',{name:'Save address'});
