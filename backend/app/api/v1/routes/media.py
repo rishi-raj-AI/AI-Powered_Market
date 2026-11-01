@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
+from httpx import HTTPError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.api.deps import get_db
@@ -149,8 +150,14 @@ async def queue_listing_image(
         raise HTTPException(status_code=409, detail="Listing image limit reached")
     asset_id = uuid.uuid4()
     key = f"quarantine/listings/{listing_id}/{asset_id.hex}"
-    storage = configured_media_storage()
-    stored = storage.put_quarantine(key, content, mime)
+    # Misconfigured or temporarily unavailable private storage must fail
+    # closed with a stable response. Never fall back to the legacy public path.
+    try:
+        storage = configured_media_storage()
+        stored = storage.put_quarantine(key, content, mime)
+    except (OSError, RuntimeError, ValueError, HTTPError) as exc:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Secure media storage is unavailable") from exc
     asset = new_quarantined_asset(
         store_product_id=listing_id, uploader=user, source_object_key=key,
         source_sha256=stored.sha256, position=count,
