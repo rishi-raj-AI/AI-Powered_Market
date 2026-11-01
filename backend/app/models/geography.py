@@ -65,6 +65,11 @@ class Address(Base):
     directions: Mapped[str | None] = mapped_column(Text)
     latitude: Mapped[float | None] = mapped_column(Float)
     longitude: Mapped[float | None] = mapped_column(Float)
+    # NULL means legacy/unknown provenance, never automatically confirmed.
+    location_source: Mapped[str | None] = mapped_column(String(32))
+    location_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    location_accuracy_meters: Mapped[float | None] = mapped_column(Float)
+    place_id: Mapped[str | None] = mapped_column(String(255))
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     #: Addresses are archived, never deleted: orders reference them, and a hard
     #: delete both broke with a foreign-key error and would have erased where a
