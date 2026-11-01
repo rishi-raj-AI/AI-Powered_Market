@@ -134,7 +134,7 @@ def test_confirmed_capture_marks_paid_and_duplicate_callback_is_idempotent(monke
         assert order.payment_status == PaymentStatus.PAID
         assert attempt.provider_payment_id == "pay_test_capture_12345"
         assert attempt.status == "paid"
-        assert settlements == [order.id, order.id]
+        assert settlements == [order.id]
 
 
 def test_success_webhook_requires_capture_and_ignores_late_failure(monkeypatch):
