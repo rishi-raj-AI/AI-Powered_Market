@@ -25,6 +25,7 @@ from app.services.payments import (
 )
 from app.services.refunds import (
     REFUND_REASON_ORPHANED_CAPTURE,
+    REFUND_REASON_RETURNED,
     apply_provider_refund_result,
     ensure_refund_request,
 )
@@ -130,19 +131,23 @@ def _apply_paid(db: Session, attempt: PaymentAttempt, order: Order, provider_pay
     # Provider capture is a financial fact, but it must not reopen a cancelled
     # commercial order or recreate merchant settlement after cancellation/refund.
     attempt.status = "paid"
-    if order.status == OrderStatus.CANCELLED or order.payment_status in {
+    if order.status in {OrderStatus.CANCELLED, OrderStatus.RETURNED} or order.payment_status in {
         PaymentStatus.REFUNDED,
         PaymentStatus.REFUND_PENDING,
     }:
         # Real money was captured for an order that will never be fulfilled.
         # Record the debt instead of absorbing it into an attempt/order status
         # mismatch that nothing would ever act on.
-        if order.status == OrderStatus.CANCELLED and order.payment_status not in {
+        if order.status in {OrderStatus.CANCELLED, OrderStatus.RETURNED} and order.payment_status not in {
             PaymentStatus.REFUNDED,
             PaymentStatus.REFUND_PENDING,
         }:
             order.payment_status = PaymentStatus.PAID
-            ensure_refund_request(db, order, reason=REFUND_REASON_ORPHANED_CAPTURE)
+            ensure_refund_request(
+                db, order,
+                reason=(REFUND_REASON_RETURNED if order.status == OrderStatus.RETURNED
+                        else REFUND_REASON_ORPHANED_CAPTURE),
+            )
         return
 
     first_capture = order.payment_status != PaymentStatus.PAID
@@ -154,7 +159,7 @@ def _apply_paid(db: Session, attempt: PaymentAttempt, order: Order, provider_pay
 def _apply_failed(attempt: PaymentAttempt, order: Order) -> None:
     # A late/invalid provider event must never overwrite terminal cancellation or
     # refund state. Active unpaid orders may still transition to payment failed.
-    if order.status == OrderStatus.CANCELLED or order.payment_status in {
+    if order.status in {OrderStatus.CANCELLED, OrderStatus.RETURNED} or order.payment_status in {
         PaymentStatus.PAID,
         PaymentStatus.REFUNDED,
         PaymentStatus.REFUND_PENDING,
