@@ -513,15 +513,9 @@ def claim_delivery(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.DELIVERY)),
 ):
-    # Lock the rider before the delivery. Automatic dispatch locks the rider's
-    # user row (spatial.nearest_eligible_rider, FOR UPDATE OF u), so taking the
-    # same lock here puts self-claim and auto-assign in one ordering instead of
-    # contending on different rows — which is how a rider ended up with two
-    # active deliveries at once.
-    rider = db.scalar(select(User).where(User.id == user.id).with_for_update())
-    if rider is None:
-        raise HTTPException(status_code=404, detail="Delivery partner not found")
-
+    # Use the same delivery -> order -> rider lock order as admin assignment.
+    # Locking the rider first here deadlocks against background auto-dispatch
+    # when a rider tries to claim the very delivery the worker has locked.
     delivery = db.scalar(select(Delivery).where(Delivery.id == delivery_id).with_for_update())
     if delivery is None:
         raise HTTPException(status_code=404, detail="Delivery not found")
@@ -533,6 +527,12 @@ def claim_delivery(
         or not can_transition_delivery(delivery.status, DeliveryStatus.ASSIGNED)
     ):
         raise HTTPException(status_code=409, detail="Delivery is not available")
+
+    # The row lock serializes concurrent claims and assignments for the same
+    # rider; the busy check must run while that lock is held.
+    rider = db.scalar(select(User).where(User.id == user.id).with_for_update())
+    if rider is None or not rider.is_active or not rider.is_verified:
+        raise HTTPException(status_code=403, detail="Delivery partner is not eligible")
 
     # One active delivery per rider. Every other path enforced this; the claim
     # endpoint never checked, so the rule was only as strong as the UI hiding
