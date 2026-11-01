@@ -359,10 +359,13 @@ class _CartScreenState extends State<CartScreen> {
                         AddressPinRepairAction(
                           key: ValueKey('repin-${a.id}'),
                           address: a,
-                          onReplaced: (replacement) async {
-                            // The backend archives the old ID and creates a new
-                            // address; never checkout against the old ID.
-                            await load();
+                          onReplaced: (_) async {
+                            // Fetch the replacement address list explicitly.
+                            // load() catches its own errors, so relying on it
+                            // here could falsely report a successful refresh.
+                            final refreshed = await GaonApi.addresses();
+                            if (!mounted) return;
+                            setState(() => addresses = refreshed);
                           },
                         ),
                     ],
