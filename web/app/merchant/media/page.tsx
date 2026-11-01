@@ -39,6 +39,15 @@ export default function MerchantMedia(){
     }catch(e:any){setError(e.message);setAssets([]);setApproved([])}
     finally{setLoading(false)}
   }
+  async function updateAltText(asset:MediaAsset,value:string){
+    setBusy(true);setError('');setNotice('');
+    try{
+      await request(`/media/store-products/${encodeURIComponent(listingId)}/images/${asset.id}`,{
+        method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({alt_text:value})
+      });
+      setNotice('Image description saved.');await refresh();
+    }catch(e:any){setError(e.message)}finally{setBusy(false)}
+  }
   async function upload(){
     if(!file||!listingId)return;
     if(!['image/jpeg','image/png','image/webp'].includes(file.type)){setError('Choose a JPEG, PNG or WebP image.');return}
@@ -69,7 +78,7 @@ export default function MerchantMedia(){
     {error&&<div className="notice" role="alert">{error}</div>}
     {notice&&<div className="notice" role="status">{notice}</div>}
     <section className="card" style={{marginTop:14}}><h3>Processing status</h3>
-      {assets.length===0?<p className="muted">No photos loaded for this product.</p>:<ul>{assets.map(asset=><li key={asset.id}><strong>{asset.state}</strong> · Photo {asset.id.slice(0,8)} · Position {asset.position}{asset.is_primary?' · Primary':''}</li>)}</ul>}
+      {assets.length===0?<p className="muted">No photos loaded for this product.</p>:<ul>{assets.map(asset=><li key={asset.id}><strong>{asset.state}</strong> · Photo {asset.id.slice(0,8)} · Position {asset.position}{asset.is_primary?' · Primary':''}<div><label htmlFor={`alt-${asset.id}`}>Accessible image description</label><input id={`alt-${asset.id}`} aria-label={`Image description ${asset.id.slice(0,8)}`} maxLength={240} defaultValue={asset.alt_text||''} onBlur={event=>{if(event.target.value.trim()!==(asset.alt_text||''))void updateAltText(asset,event.target.value)}} disabled={busy}/></div></li>)}</ul>}
       <button className="btn" disabled={!listingId||loading} onClick={()=>refresh()}>{loading?'Refreshing…':'Refresh status'}</button>
     </section>
     <section className="card" style={{marginTop:14}}><h3>Public approved photos</h3>
