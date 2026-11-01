@@ -115,6 +115,49 @@ def nearby_store_distances(
     return [(row[0], float(row[1])) for row in rows]
 
 
+def store_delivery_serviceable(
+    db: Session,
+    store_id: uuid.UUID,
+    service_area_id: uuid.UUID,
+    latitude: float,
+    longitude: float,
+) -> bool:
+    """Evaluate delivery radius around the store's actual location.
+
+    The service-area hub is an administrative reference point, not necessarily
+    where the shop operates. Using only its radius can reject an address next
+    door to a shop located near the hub boundary. Require an active assigned
+    service area, and use the store's pinned coordinates when available;
+    fall back to the hub only for stores without a location pin.
+    """
+    return bool(db.scalar(text("""
+        SELECT EXISTS (
+            SELECT 1
+            FROM stores s
+            JOIN service_areas sa ON sa.id = s.service_area_id
+            JOIN villages v ON v.id = sa.hub_village_id
+            WHERE s.id = :store_id
+              AND sa.id = :service_area_id
+              AND sa.is_active = true
+              AND v.is_active = true
+              AND sa.radius_km > 0
+              AND ST_DWithin(
+                  ST_SetSRID(ST_MakePoint(
+                      COALESCE(s.longitude::double precision, v.longitude::double precision),
+                      COALESCE(s.latitude::double precision, v.latitude::double precision)
+                  ), 4326)::geography,
+                  ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
+                  sa.radius_km * 1000.0
+              )
+        )
+    """), {
+        "store_id": store_id,
+        "service_area_id": service_area_id,
+        "latitude": latitude,
+        "longitude": longitude,
+    }))
+
+
 def nearest_eligible_rider(
     db: Session,
     store_latitude: float,

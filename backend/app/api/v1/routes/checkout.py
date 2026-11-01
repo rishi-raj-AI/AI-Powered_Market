@@ -15,7 +15,7 @@ from app.models.user import User
 from app.schemas.orders import CheckoutQuoteRead, CheckoutRequest, OrderRead
 from app.services.notifications import enqueue_notification
 from app.services.pricing import order_total, resolve_delivery_fee
-from app.services.spatial import point_is_in_service_area
+from app.services.spatial import store_delivery_serviceable
 from app.services.store_hours import describe_hours, store_is_open
 
 router = APIRouter(tags=["Orders & Checkout"])
@@ -145,7 +145,7 @@ def cart_quote(
         store.delivery_enabled
         and store.service_area_id is not None
         and point is not None
-        and point_is_in_service_area(db, store.service_area_id, point[0], point[1])
+        and store_delivery_serviceable(db, store.id, store.service_area_id, point[0], point[1])
     )
     open_now = store_is_open(store)
     blockers: list[str] = []
@@ -228,7 +228,7 @@ def safe_checkout(
     address_point = _address_point(db, address)
     if store.service_area_id is None or address_point is None:
         raise HTTPException(status_code=409, detail="Delivery serviceability cannot be verified for this order")
-    if not point_is_in_service_area(db, store.service_area_id, address_point[0], address_point[1]):
+    if not store_delivery_serviceable(db, store.id, store.service_area_id, address_point[0], address_point[1]):
         raise HTTPException(status_code=409, detail="This store does not deliver to the selected address")
 
     listing_ids = sorted((item.store_product_id for item in items), key=str)
