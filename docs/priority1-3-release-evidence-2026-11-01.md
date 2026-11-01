@@ -224,3 +224,35 @@ Firebase/Google, GPS/Maps, merchant/rider push, COD, payments, dispatch,
 proof-of-delivery, production backup/restore and secure media configuration
 remain unverified. **NO-GO for production; keep automatic dispatch and
 product media disabled.**
+
+## 11:54 IST checkpoint — exact-head CI and signed QA build verified
+
+All four standard workflows (Backend, Web, Mobile, Production) and the
+permanent-signer QA APK workflow completed **successfully** for the following
+immutable heads **before the subsequent QA provenance change**:
+
+| PR | SHA | Backend | Web | Mobile | Production | Signed QA APK |
+| --- | --- | --- | --- | --- | --- | --- |
+| [#235](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/235) | `fec740966acc65cfbc764d33e025cd92a9f17222` | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41276548058) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41276547965) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41276547968) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41276547976) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41276544505) |
+| [#236](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/236) | `126b715d5fa57439a27551bfb183e095b84a7a08` | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41276568432) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41276568554) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41276568420) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41276568395) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41276563140) |
+| [#237](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/237) | `b5adc2e43c3b0204dfbf4c68c42f6f93e00cb45a` | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41276591958) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41276591999) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41276591978) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41276591967) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41276586782) |
+
+The respective QA artifact IDs are
+[13071033485](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41276544505/artifacts/13071033485),
+[13071721086](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41276563140/artifacts/13071721086)
+and [13071696676](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41276586782/artifacts/13071696676).
+All were unexpired when inspected; GitHub reports expiry on 2026-11-15 UTC.
+
+After this green checkpoint, Priority 1 commit `190ceb0d` changed only the
+QA workflow: QA Android version codes now increase with the GitHub workflow
+run number, and artifacts include a text provenance manifest with commit,
+run ID, build number, signer certificate SHA-256 and APK SHA-256. The
+pinned permanent signing identity is unchanged. Priority 2 merge commit
+`4e5942a0` and Priority 3 merge commit `44ebc59a` carry the same change
+through the stacked branches. **These newer commits require fresh exact-head
+CI and signed APK verification.** Do not infer their success from the green
+baselines above.
+
+No physical handset, provider integration, live payment, dispatch, media
+storage, database restore or production deployment gate was passed by this
+CI checkpoint. **NO-GO; keep automatic dispatch and product media disabled.**
