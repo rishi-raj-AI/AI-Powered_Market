@@ -136,26 +136,30 @@ def deliver_event(db: Session, event: NotificationEvent) -> int:
     return sent
 
 
-def due_events(db: Session, limit: int = 100) -> list[NotificationEvent]:
+def due_events(db: Session, limit: int = 100, *, lock: bool = False) -> list[NotificationEvent]:
     now = datetime.now(timezone.utc)
-    return list(
-        db.scalars(
-            select(NotificationEvent)
-            .where(
-                NotificationEvent.status == STATUS_PENDING,
-                or_(
-                    NotificationEvent.next_attempt_at.is_(None),
-                    NotificationEvent.next_attempt_at <= now,
-                ),
-            )
-            .order_by(NotificationEvent.created_at)
-            .limit(limit)
-        ).all()
+    query = (
+        select(NotificationEvent)
+        .where(
+            NotificationEvent.status == STATUS_PENDING,
+            or_(
+                NotificationEvent.next_attempt_at.is_(None),
+                NotificationEvent.next_attempt_at <= now,
+            ),
+        )
+        .order_by(NotificationEvent.created_at)
+        .limit(limit)
     )
+    if lock:
+        # Multiple workers (or an admin-triggered flush) must not send the
+        # same pending event concurrently. Locks remain held until the
+        # status update and the batch commit below.
+        query = query.with_for_update(of=NotificationEvent, skip_locked=True)
+    return list(db.scalars(query).all())
 
 
 def flush_pending(db: Session, limit: int = 100) -> dict[str, int]:
-    events = due_events(db, limit=limit)
+    events = due_events(db, limit=limit, lock=True)
     delivered = 0
     for event in events:
         delivered += deliver_event(db, event)
