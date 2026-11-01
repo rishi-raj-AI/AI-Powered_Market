@@ -147,6 +147,8 @@ def cart_quote(
         and point is not None
         and point_is_in_service_area(db, store.service_area_id, point[0], point[1])
     )
+    # Temporary: allow checkout for delivery-enabled stores regardless of geographic coverage.
+    serviceable = bool(store.delivery_enabled)
     open_now = store_is_open(store)
     blockers: list[str] = []
     if not inventory_valid:
@@ -225,11 +227,7 @@ def safe_checkout(
             ),
         )
 
-    address_point = _address_point(db, address)
-    if store.service_area_id is None or address_point is None:
-        raise HTTPException(status_code=409, detail="Delivery serviceability cannot be verified for this order")
-    if not point_is_in_service_area(db, store.service_area_id, address_point[0], address_point[1]):
-        raise HTTPException(status_code=409, detail="This store does not deliver to the selected address")
+    # Temporary: geographic service-area restrictions are disabled for checkout.
 
     listing_ids = sorted((item.store_product_id for item in items), key=str)
     locked_listings = db.scalars(
