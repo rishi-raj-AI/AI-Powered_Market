@@ -3,6 +3,7 @@
 Never call Razorpay: all provider reads are stubbed and the database is the CI
 test database. A valid HMAC callback alone must not mark money as captured.
 """
+from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
@@ -13,6 +14,7 @@ from app.api.v1.routes import payment_hardening
 from app.models.integrations import PaymentAttempt, PaymentRefund
 from app.models.orders import OrderStatus, PaymentStatus
 from app.schemas.integrations import PaymentVerifyRequest
+from app.services.refunds import refund_idempotency_key
 from tests.factories import make_order, make_user, session
 
 
@@ -207,3 +209,57 @@ def test_late_capture_after_return_creates_refund_not_settlement(monkeypatch):
         assert refund.provider_payment_id == "pay_test_capture_12345"
         assert refund.reason == payment_hardening.REFUND_REASON_RETURNED
         assert settlements == []
+
+
+def test_late_capture_after_cancellation_creates_dispatchable_refund(monkeypatch):
+    with session() as db:
+        customer, order, attempt = _context(db)
+        order.status = OrderStatus.CANCELLED
+        db.commit()
+        monkeypatch.setattr(payment_hardening, "verify_razorpay_signature", lambda **_: True)
+        monkeypatch.setattr(
+            payment_hardening, "fetch_razorpay_payment",
+            lambda *, provider_payment_id: _payment(attempt, provider_payment_id),
+        )
+        monkeypatch.setattr(
+            payment_hardening, "ensure_settlement_entry",
+            lambda *_: pytest.fail("Cancelled order must not settle"),
+        )
+        result = _verify(db, customer, attempt)
+        refund = db.query(PaymentRefund).filter(PaymentRefund.order_id == order.id).one()
+        assert result.payment_status == "refund_pending"
+        assert refund.provider_payment_id == "pay_test_capture_12345"
+        assert refund.payment_attempt_id == attempt.id
+        assert refund.reason == payment_hardening.REFUND_REASON_ORPHANED_CAPTURE
+        assert order.status == OrderStatus.CANCELLED
+
+
+def test_late_capture_links_existing_refund_without_payment_id(monkeypatch):
+    with session() as db:
+        customer, order, attempt = _context(db)
+        order.status = OrderStatus.CANCELLED
+        order.payment_status = PaymentStatus.REFUND_PENDING
+        refund = PaymentRefund(
+            order_id=order.id, provider="razorpay",
+            provider_payment_id=None, amount=order.total, currency="INR",
+            status="requested", reason=payment_hardening.REFUND_REASON_ORPHANED_CAPTURE,
+            idempotency_key=refund_idempotency_key(order.id),
+            requested_at=datetime.now(timezone.utc),
+        )
+        db.add(refund)
+        db.commit()
+        monkeypatch.setattr(payment_hardening, "verify_razorpay_signature", lambda **_: True)
+        monkeypatch.setattr(
+            payment_hardening, "fetch_razorpay_payment",
+            lambda *, provider_payment_id: _payment(attempt, provider_payment_id),
+        )
+        monkeypatch.setattr(
+            payment_hardening, "ensure_settlement_entry",
+            lambda *_: pytest.fail("Refund-pending order must not settle"),
+        )
+        result = _verify(db, customer, attempt)
+        db.refresh(refund)
+        assert result.payment_status == "refund_pending"
+        assert refund.provider_payment_id == "pay_test_capture_12345"
+        assert refund.payment_attempt_id == attempt.id
+        assert refund.status == "requested"
