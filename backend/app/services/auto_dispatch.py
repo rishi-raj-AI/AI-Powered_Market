@@ -51,10 +51,16 @@ def dispatch_ready_deliveries(db: Session, limit: int = 25, radius_km: float = D
                 db.rollback()
                 break
             seen.add(delivery.id)
-            order = db.get(Order, delivery.order_id)
+            # Lock the order as well as its delivery: cancellation, payment
+            # reconciliation and readiness can change while rider selection
+            # is in progress. Recheck readiness after acquiring the row lock.
+            order = db.scalar(
+                select(Order).where(Order.id == delivery.order_id).with_for_update()
+            )
             store = db.get(Store, order.store_id) if order else None
             if (
-                order is None or not payment_allows_fulfillment(order)
+                order is None or order.status != OrderStatus.READY
+                or not payment_allows_fulfillment(order)
                 or store is None or store.latitude is None or store.longitude is None
             ):
                 skipped += 1

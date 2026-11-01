@@ -36,12 +36,25 @@ class PushRegistration {
   static Future<void> stop() async {
     await _tokenChanges?.cancel();
     _tokenChanges = null;
+    if (Firebase.apps.isEmpty) return;
+    final messaging = FirebaseMessaging.instance;
     try {
-      if (Firebase.apps.isEmpty) return;
-      final token = await FirebaseMessaging.instance.getToken();
-      if (token != null && token.isNotEmpty) await GaonApi.unregisterPushToken(token);
+      final token = await messaging.getToken();
+      if (token != null && token.isNotEmpty) {
+        await GaonApi.unregisterPushToken(token);
+      }
     } catch (error) {
+      // A session may have expired or the handset may be offline.
+      // Invalidate the local FCM token even when server cleanup fails.
       debugPrint('Push unregister unavailable: $error');
+    }
+    try {
+      // Prevent notifications intended for the previous signed-in account
+      // from continuing to arrive on a shared or logged-out handset.
+      // The next login obtains and registers a fresh token.
+      await messaging.deleteToken();
+    } catch (error) {
+      debugPrint('Push token deletion unavailable: $error');
     }
   }
 }
