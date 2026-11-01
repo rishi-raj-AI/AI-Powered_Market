@@ -6,30 +6,30 @@ issue refunds, or build APKs until the release owner approves.
 ## Core invariants
 
 1. A valid Razorpay signature authenticates a callback; only an independent
-   provider read with status \`captured\`, matching payment ID, provider order ID,
-   amount in paise and currency INR, may mark a UPI order \`paid\`.
+   provider read with status `captured`, matching payment ID, provider order ID,
+   amount in paise and currency INR, may mark a UPI order `paid`.
 2. COD orders remain payable on delivery. UPI orders with payment status other
-   than \`paid\` cannot be accepted, prepared, marked ready, dispatched, picked
+   than `paid` cannot be accepted, prepared, marked ready, dispatched, picked
    up or completed.
 3. Merchant order-received notifications for UPI are emitted on first verified
    capture, not when a payment reservation is created.
-4. Late failure events cannot overwrite \`paid\`, \`refund_pending\` or \`refunded\`.
+4. Late failure events cannot overwrite `paid`, `refund_pending` or `refunded`.
    Late captures after cancellation create a durable refund obligation and do
    not reopen the commercial order.
 5. Expiration never infers nonpayment from a provider outage. Stock restoration
-   is guarded by \`orders.stock_restored_at\`.
+   is guarded by `orders.stock_restored_at`.
 
 ## Feature flags and operator safety
 
-- \`PAYMENT_EXPIRY_ENABLED=false\` is the safe default. Leave it disabled until
+- `PAYMENT_EXPIRY_ENABLED=false` is the safe default. Leave it disabled until
   sandbox testing, historical reconciliation and business approval.
-- \`PAYMENT_EXPIRY_MINUTES=15\` and \`PAYMENT_EXPIRY_BATCH=25\` only apply if enabled.
+- `PAYMENT_EXPIRY_MINUTES=15` and `PAYMENT_EXPIRY_BATCH=25` only apply if enabled.
 - Never print Razorpay credentials, raw webhook signatures, customer addresses
   or payment method details in logs.
 - Historical read-only audit (requires provider read credentials):
-  \`python -m app.scripts.audit_upi_payments --limit 100 --days 30\`.
+  `python -m app.scripts.audit_upi_payments --limit 100 --days 30`.
   It makes **no** financial or database mutations. Review every result other
-  than \`verified_capture\`; do not automatically downgrade paid orders.
+  than `verified_capture`; do not automatically downgrade paid orders.
 
 ## Pre-release validation
 
