@@ -143,5 +143,5 @@ test('merchant can select an owned product listing without finding its UUID',asy
   await expect(page.getByLabel('Store',{exact:true})).toHaveValue('store-media');
   await expect(page.getByLabel('Product listing',{exact:true})).toBeVisible();
   await page.getByLabel('Product listing',{exact:true}).selectOption(listing);
-  await expect(page.getByLabel('Store-product ID (advanced)')).toHaveValue(listing);
+  // The input has an explicit aria-label, which is its accessible name.\n  await expect(page.getByLabel('Store-product ID',{exact:true})).toHaveValue(listing);
 });
