@@ -140,8 +140,8 @@ test('merchant can select an owned product listing without finding its UUID',asy
     stock_quantity:5,is_available:true,product:{id:'product-rice',name:'Fresh Rice',unit:'1 kg'},
   }]}));
   await page.goto('/merchant/media');
-  await expect(page.getByLabel('Store')).toHaveValue('store-media');
-  await expect(page.getByLabel('Product listing')).toBeVisible();
-  await page.getByLabel('Product listing').selectOption(listing);
+  await expect(page.getByLabel('Store',{exact:true})).toHaveValue('store-media');
+  await expect(page.getByLabel('Product listing',{exact:true})).toBeVisible();
+  await page.getByLabel('Product listing',{exact:true}).selectOption(listing);
   await expect(page.getByLabel('Store-product ID (advanced)')).toHaveValue(listing);
 });
