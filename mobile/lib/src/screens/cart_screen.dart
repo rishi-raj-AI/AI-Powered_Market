@@ -275,12 +275,16 @@ class _CartScreenState extends State<CartScreen> {
         final paid = await GaonApi.openRazorpayCheckout(order);
         if (!mounted) return;
         if (!paid) {
-          final latest = await GaonApi.orderDetail(order.id);
-          if (latest['payment_status'] == 'paid') {
-            _snack('Payment confirmed.');
-          } else {
-            _snack('Online payment is not confirmed. You can retry from Orders.');
+          var confirmed = false;
+          try {
+            final latest = await GaonApi.orderDetail(order.id);
+            confirmed = latest['payment_status'] == 'paid';
+          } catch (_) {
+            // Treat an unavailable order-status lookup as unconfirmed.
           }
+          _snack(confirmed
+              ? 'Payment confirmed.'
+              : 'Online payment is not confirmed. You can retry from Orders.');
         }
       } else {
         await showDialog(
