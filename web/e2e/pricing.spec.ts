@@ -141,6 +141,7 @@ test('checkout serializes a pending address save',async({page})=>{
   await search.fill('Niphad');
   await page.getByRole('button',{name:/Niphad.*Maharashtra/i}).click();
   await expect(page.getByText(/Pinned coordinates:/)).toBeVisible();
+  await expect(page.getByText(/Delivery available in/)).toBeVisible();
   await page.locator('#checkout-landmark').fill('Temple gate');
   const serviceabilityBeforeSave=await page.evaluate(()=>((window as typeof window&{addressSaveServiceabilityRequests:number}).addressSaveServiceabilityRequests));
   const form=page.locator('form.formInset');
