@@ -79,7 +79,7 @@ void main() {
           address: address('old-address'),
           selectPin: (_) async => selectedPin,
           confirmPin: (_, __) async => throw Exception('out of zone'),
-          onReplaced: (_) async => refreshed = true,
+          onReplaced: (_) async { refreshed = true; },
         ),
       ),
     ));
