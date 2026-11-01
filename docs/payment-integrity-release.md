@@ -25,7 +25,13 @@ issue refunds, or build APKs until the release owner approves.
   webhook table retains unconfirmed captures with `processed_at=NULL`;
   the opt-in worker rechecks provider capture and records completion only
   after verification. Configure `PAYMENT_WEBHOOK_REPLAY_BATCH=25` and review
-  provider rate limits and aged pending events before enabling.
+  provider rate limits and aged pending events before enabling. Revision
+  `0027_payment_webhook_retry_schedule` adds `attempt_count` and
+  `next_attempt_at` to persist replay backoff across worker restarts.
+  Unresolved events retry after 60, 120, 240, 480, 960, 1920 and then
+  at most 3600 seconds; they are never silently discarded. A deferred
+  old event no longer monopolizes the oldest-event batch.
+  Check `processed_at IS NULL` and `next_attempt_at` for backlog health.
 - `PAYMENT_EXPIRY_ENABLED=false` is the safe default. Leave it disabled until
   sandbox testing, historical reconciliation and business approval.
 - `PAYMENT_EXPIRY_MINUTES=15` and `PAYMENT_EXPIRY_BATCH=25` only apply if enabled.
@@ -38,8 +44,12 @@ issue refunds, or build APKs until the release owner approves.
 
 ## Pre-release validation
 
-- [ ] Backend CI lint, migration checks and full pytest suite green.
+- [ ] Backend CI lint, migration checks and full pytest suite green,
+      including Alembic upgrade/downgrade of revision 0027.
 - [ ] Web CI and Flutter analysis/tests green.
+- [ ] Replay worker: repeated authorized capture, provider outage,
+      retry scheduling, worker restart, and a newer capture behind an older
+      deferred event (no head-of-line starvation).
 - [ ] Razorpay **sandbox**: captured, authorized, failed, dismissed, timeout,
       webhook-first, callback-first, replay, duplicate payment ID, mismatched
       amount/currency/order, refund after late capture.
