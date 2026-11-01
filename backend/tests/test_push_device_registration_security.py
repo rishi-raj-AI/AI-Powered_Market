@@ -69,3 +69,16 @@ def test_first_registration_unique_token_race_returns_conflict():
         register_device(_payload(), db=db, user=_user())
     assert exc.value.status_code == 409
     db.rollback.assert_called_once()
+
+
+def test_push_config_requires_project_and_worker_credentials(monkeypatch):
+    from app.api.v1.routes.notifications import notification_config
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "FCM_PROJECT_ID", "gaonone-test")
+    monkeypatch.setattr(settings, "FCM_SERVICE_ACCOUNT_JSON_B64", "")
+    assert notification_config().enabled is False
+    monkeypatch.setattr(settings, "FCM_SERVICE_ACCOUNT_JSON_B64", "configured-credential")
+    assert notification_config().enabled is True
+    monkeypatch.setattr(settings, "FCM_PROJECT_ID", "")
+    assert notification_config().enabled is False
