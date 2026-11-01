@@ -90,6 +90,31 @@ void main() {
         findsOneWidget);
   });
 
+  testWidgets('refresh failure never claims that saved pin was rejected',
+      (tester) async {
+    var writes = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: AddressPinRepairAction(
+          address: address('old-address'),
+          selectPin: (_) async => selectedPin,
+          confirmPin: (_, __) async {
+            writes++;
+            return address('replacement-address');
+          },
+          onReplaced: (_) async => throw StateError('refresh failed'),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('Confirm saved address pin'));
+    await tester.pumpAndSettle();
+    expect(writes, 1);
+    expect(find.textContaining('Pin saved, but the address list could not refresh.'),
+        findsOneWidget);
+    expect(find.textContaining('Your existing address is unchanged.'),
+        findsNothing);
+  });
+
   testWidgets('invalid candidate cannot be submitted', (tester) async {
     var writes = 0;
     await tester.pumpWidget(MaterialApp(
