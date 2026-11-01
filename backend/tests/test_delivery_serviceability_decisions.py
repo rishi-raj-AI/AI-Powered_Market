@@ -158,4 +158,9 @@ def test_provenance_is_confirmed_only_with_source_and_server_timestamp():
         assert evaluate_delivery(db, store, address).location_confidence == "confirmed_gps"
         address.location_source = "map_pin"
         assert evaluate_delivery(db, store, address).location_confidence == "confirmed_map_pin"
+        # A Places centroid is approximate even if a client saved it and the
+        # backend timestamped that event; it is not a doorstep confirmation.
+        address.location_source = "searched_place"
+        assert evaluate_delivery(db, store, address).location_confidence == "approximate_searched_place"
+        assert evaluate_delivery(db, store, address).serviceable is True
         db.rollback()
