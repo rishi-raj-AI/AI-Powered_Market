@@ -132,6 +132,17 @@ def test_intent_retry_and_verify_lock_order_without_deadlock(monkeypatch) -> Non
 
     monkeypatch.setattr(payment_routes.settings, "RAZORPAY_KEY_ID", "rzp_test_payment_intent")
     monkeypatch.setattr(payment_hardening, "verify_razorpay_signature", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        payment_hardening,
+        "fetch_razorpay_payment",
+        lambda *, provider_payment_id: {
+            "id": provider_payment_id,
+            "order_id": attempt.provider_order_id,
+            "amount": 12000,
+            "currency": "INR",
+            "status": "captured",
+        },
+    )
     monkeypatch.setattr(payment_hardening, "ensure_settlement_entry", lambda *_args, **_kwargs: None)
     intent_update_started = Event()
     release_intent_update = Event()
