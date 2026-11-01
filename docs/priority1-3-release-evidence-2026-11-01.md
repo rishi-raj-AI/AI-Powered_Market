@@ -138,3 +138,47 @@ were triggered and were still pending at the time this checkpoint was
 recorded. The open pull requests remain unmerged, and there is no production
 deployment approval or verified real-device/provider acceptance. Keep
 `AUTO_DISPATCH_ENABLED=false` and `PRODUCT_MEDIA_ENABLED=false`.
+
+
+## Verified three-branch CI and signed APK — 2026-11-01 IST
+
+The four standard CI workflows **and permanent-signer QA APK build**
+completed successfully for each of the following immutable release heads.
+These are **historical green baselines**, not the current branch heads:
+
+| PR | Verified SHA | Backend | Web | Mobile | Production | Signed APK |
+| --- | --- | --- | --- | --- | --- | --- |
+| [#235](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/235) | `568f986e41b89433fcf96b1083ffa80dab051cb8` | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41261292756) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41261292777) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41261292830) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41261292824) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41261289742) |
+| [#236](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/236) | `9e4b21decda7b1ae3027dce6166a1e1147b5da00` | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41261302749) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41261302765) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41261302744) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41261302745) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41261299515) |
+| [#237](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/237) | `bd94f894ae1435c32a52ec2a9fdd6e8c87e5c28c` | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41261311538) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41261311586) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41261311499) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41261311670) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41261307905) |
+
+The final Priority 3 QA build produced [artifact 13065352822](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41261307905/artifacts/13065352822).
+Its signing workflow validates the pinned permanent certificate SHA-256.
+Artifact publication is **not** evidence of physical handset installation.
+
+### Subsequent FCM registration security hardening
+
+A code review identified that any authenticated account could previously
+rebind an *active* FCM device token already associated with another account.
+The device registration endpoint now locks existing token rows, rejects
+cross-account active-token takeover (HTTP 409), permits inactive-token
+reclamation after logout, and maps first-registration unique-constraint
+races to HTTP 409. Tests cover takeover, idempotent same-account updates,
+inactive-token handover, concurrent insert conflicts, and push configuration.
+
+Push readiness now requires both the Firebase project ID **and** the worker's
+service-account configuration; a project ID alone is not sufficient to
+advertise push as enabled. This is a configuration check, **not** proof that
+FCM credentials are valid or notifications reach handsets.
+
+- Priority 1 current head: `c0e51afb989dc4fc16d7863e5d6492f6274a0e60`.
+- Priority 2 current head: `f6ca2f38074a488076665b32a708359d6e9bb804`.
+- Priority 3 integration head before this evidence update:
+  `e2d8a56324ba33a5f2897715e64f4b80e8fbb6c0`.
+- All newer exact-head CI and signed QA APK checks were **queued/running**
+  when this checkpoint was recorded. Do not transfer earlier green status
+  to these commits.
+
+**Release decision remains NO-GO:** all three PRs are unmerged, no human
+reviews are recorded, no real-device/provider acceptance has been completed,
+and no production deployment or feature activation was performed.
