@@ -119,6 +119,21 @@ def _notify_payment_captured(db: Session, order: Order) -> None:
 
 def _apply_paid(db: Session, attempt: PaymentAttempt, order: Order, provider_payment_id: str | None) -> None:
     if provider_payment_id:
+        # A second capture is a separate financial obligation. Never silently
+        # replace an already captured payment ID or settle it as the same sale.
+        # Keep the webhook unprocessed for explicit financial reconciliation.
+        if attempt.provider_payment_id and attempt.provider_payment_id != provider_payment_id:
+            raise HTTPException(status_code=409, detail="Multiple captures require reconciliation")
+        another_capture = db.scalar(
+            select(PaymentAttempt.id).where(
+                PaymentAttempt.order_id == order.id,
+                PaymentAttempt.id != attempt.id,
+                PaymentAttempt.status == "paid",
+                PaymentAttempt.provider_payment_id.is_not(None),
+            ).limit(1)
+        )
+        if another_capture is not None:
+            raise HTTPException(status_code=409, detail="Multiple captures require reconciliation")
         duplicate = db.scalar(
             select(PaymentAttempt).where(
                 PaymentAttempt.provider_payment_id == provider_payment_id,
