@@ -45,9 +45,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
           // An unavailable status endpoint is not proof of payment failure.
         }
       }
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
-        confirmed ? 'Payment confirmed.' : 'Payment is not confirmed. Retry from Orders.',
-      )));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+          confirmed ? 'Payment confirmed.' : 'Payment is not confirmed. Retry from Orders.',
+        )));
+      }
       await load();
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
