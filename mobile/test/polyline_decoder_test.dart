@@ -18,7 +18,7 @@ void main() {
   });
 
   test('rejects out-of-range coordinates and excessive points', () {
-    expect(decodePolylineSafely('_p~iF~ps|U' * 2), isEmpty);
-    expect(decodePolylineSafely('??' * 2001), isEmpty);
+    expect(decodePolylineSafely(List.filled(2, '_p~iF~ps|U').join()), isEmpty);
+    expect(decodePolylineSafely(List.filled(2001, '??').join()), isEmpty);
   });
 }
