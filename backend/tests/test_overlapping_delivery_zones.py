@@ -4,6 +4,9 @@ Uses the same real PostGIS database as Backend CI. No mocked geometry: this
 reproduces the previous address-admission versus checkout disagreement.
 """
 
+import pytest
+from fastapi import HTTPException
+
 from app.api.v1.routes.checkout import cart_quote
 from app.api.v1.routes.geography import _serviceability, create_my_address
 from app.models.orders import Cart, CartItem
