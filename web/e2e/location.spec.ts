@@ -301,3 +301,54 @@ test('a delayed old-locality geocode cannot restore a stale checkout pin',async(
   await placeFinished;
   await expect(page.getByText(/Pinned coordinates:/)).toHaveCount(0);
 });
+
+test('searched place centroid is not a confirmed doorstep until a deliberate map drag',async({page})=>{
+  await page.addInitScript(()=>{
+    const callbacks:Record<string,()=>void>={};
+    class FakeMap {
+      center:{lat:number;lng:number};
+      constructor(_element:unknown,options:{center:{lat:number;lng:number}}){
+        this.center=options.center;
+        (window as any).__mapCallbacks=callbacks;
+      }
+      addListener(event:string,callback:()=>void){callbacks[event]=callback;return {remove(){}}}
+      getCenter(){return {lat:()=>this.center.lat,lng:()=>this.center.lng}}
+      panTo(point:{lat:number;lng:number}){this.center=point}
+    }
+    (window as any).google={maps:{Map:FakeMap}};
+  });
+  await installApiMocks(page);
+  let writes=0;
+  await page.route('http://localhost:8000/api/v1/addresses/me',route=>{
+    if(route.request().method()!=='POST')return route.fulfill({json:[]});
+    writes++;
+    const payload=route.request().postDataJSON();
+    return route.fulfill({status:201,json:{...payload,id:'confirmed-address',user_id:'user-customer',created_at:'2026-11-02T00:00:00Z',updated_at:'2026-11-02T00:00:00Z'}});
+  });
+  await page.goto('/checkout');
+  await page.getByRole('button',{name:/Add address/i}).click();
+  await page.getByLabel('Area / locality *').selectOption('village-niphad');
+  await page.getByLabel('Search delivery location').fill('Niphad');
+  await page.getByRole('button',{name:/Niphad.*Maharashtra/i}).click();
+  await expect(page.getByText(/Search results are approximate/)).toBeVisible();
+  await page.getByRole('button',{name:'Save address'}).click();
+  await expect(page.getByText(/Move the map to your doorstep or use GPS to confirm before saving/)).toBeVisible();
+  expect(writes).toBe(0);
+  await expect.poll(()=>page.evaluate(()=>Boolean((window as any).__mapCallbacks?.dragend))).toBe(true);
+  await page.evaluate(()=>(window as any).__mapCallbacks.dragend());
+  await expect(page.getByText('Delivery pin confirmed by map selection.')).toBeVisible();
+  await page.getByRole('button',{name:'Save address'}).click();
+  await expect.poll(()=>writes).toBe(1);
+});
+
+test('legacy coordinates are never labelled as a confirmed customer pin',async({page})=>{
+  await installApiMocks(page);
+  await page.route('http://localhost:8000/api/v1/addresses/me',route=>route.fulfill({json:[{
+    id:'legacy-address',village_id:'village-niphad',label:'Home',landmark:'School',
+    latitude:20.0778,longitude:74.1118,is_default:true,location_source:null,
+    location_confirmed_at:null,
+  }]}));
+  await page.goto('/checkout');
+  await expect(page.getByText('Saved coordinates (confirmation unrecorded)')).toBeVisible();
+  await expect(page.getByText('Confirmed delivery pin')).toHaveCount(0);
+});

@@ -94,6 +94,16 @@ test('checkout keeps the quote for the currently selected address when an older 
 
 test('checkout serializes a pending address save',async({page})=>{
   await installApiMocks(page);
+  // A Places result is only an approximate centroid. Simulate an explicit
+  // customer GPS confirmation before testing address-save serialization.
+  await page.addInitScript(()=>{
+    Object.defineProperty(navigator,'geolocation',{
+      configurable:true,
+      value:{getCurrentPosition:(success:PositionCallback)=>success({
+        coords:{latitude:20.0778,longitude:74.1118,accuracy:15} as GeolocationCoordinates,
+      } as GeolocationPosition)},
+    });
+  });
   await page.addInitScript(()=>{
     const fetch=window.fetch.bind(window);
     (window as typeof window&{addressSaveServiceabilityRequests:number}).addressSaveServiceabilityRequests=0;
@@ -142,6 +152,8 @@ test('checkout serializes a pending address save',async({page})=>{
   await page.getByRole('button',{name:/Niphad.*Maharashtra/i}).click();
   await expect(page.getByText(/Pinned coordinates:/)).toBeVisible();
   await expect(page.getByText(/Delivery available in/)).toBeVisible();
+  await page.getByRole('button',{name:'Current location',exact:true}).click();
+  await expect(page.getByText('Delivery pin confirmed by GPS.')).toBeVisible();
   await page.locator('#checkout-landmark').fill('Temple gate');
   const serviceabilityBeforeSave=await page.evaluate(()=>((window as typeof window&{addressSaveServiceabilityRequests:number}).addressSaveServiceabilityRequests));
   const form=page.locator('form.formInset');

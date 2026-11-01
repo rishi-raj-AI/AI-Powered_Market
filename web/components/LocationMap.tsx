@@ -9,7 +9,7 @@ export type MapPoint={lat:number;lng:number;label?:string;kind?:'store'|'custome
 type Props={
   latitude?:number;
   longitude?:number;
-  onChange?:(lat:number,lng:number)=>void;
+  onChange?:(lat:number,lng:number,source?:'gps'|'map_pin')=>void;
   editable?:boolean;
   height?:number;
   zoom?:number;
@@ -76,7 +76,7 @@ export function LocationMap({latitude,longitude,onChange,editable=false,height=2
       // Only a customer drag may choose a map-centre pin. 'idle' also fires on
       // initial map load and programmatic panTo, which silently saved a fake
       // fallback location as the delivery address.
-      if(editable&&onChange){map.addListener('dragend',()=>{const center=map.getCenter();if(center)onChange(center.lat(),center.lng())})}
+      if(editable&&onChange){map.addListener('dragend',()=>{const center=map.getCenter();if(center)onChange(center.lat(),center.lng(),'map_pin')})}
     }).catch(()=>{if(alive){setAvailable(false);setMessage('Embedded map is not configured yet. Coordinates still work.')}});
     return()=>{alive=false;overlays.current.forEach(x=>{try{x.map=null}catch{}});overlays.current=[];routeLine.current?.setMap?.(null);routeLine.current=null;mapRef.current=null};
   },[]);
@@ -104,7 +104,7 @@ export function LocationMap({latitude,longitude,onChange,editable=false,height=2
 
   function locate(){
     if(!navigator.geolocation){setMessage('Location is unavailable in this browser.');return}
-    navigator.geolocation.getCurrentPosition(p=>{const lat=p.coords.latitude,lng=p.coords.longitude;mapRef.current?.panTo({lat,lng});mapRef.current?.setZoom(17);onChange?.(lat,lng);setMessage('Current location selected.');},()=>setMessage('Location permission was not granted.'),{enableHighAccuracy:true,timeout:10000,maximumAge:15000});
+    navigator.geolocation.getCurrentPosition(p=>{const lat=p.coords.latitude,lng=p.coords.longitude;mapRef.current?.panTo({lat,lng});mapRef.current?.setZoom(17);onChange?.(lat,lng,'gps');setMessage('Current location selected.');},()=>setMessage('Location permission was not granted.'),{enableHighAccuracy:true,timeout:10000,maximumAge:15000});
   }
 
   return <div className={`${styles.shell} ${className}`}>
