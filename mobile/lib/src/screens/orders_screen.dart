@@ -36,8 +36,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
     try {
       final paid = await GaonApi.openRazorpayCheckout(order);
       // A webhook may confirm capture even if the app callback timed out.
-      final latest = await GaonApi.orderDetail(order.id);
-      final confirmed = paid || latest['payment_status'] == 'paid';
+      var confirmed = paid;
+      if (!confirmed) {
+        try {
+          final latest = await GaonApi.orderDetail(order.id);
+          confirmed = latest['payment_status'] == 'paid';
+        } catch (_) {
+          // An unavailable status endpoint is not proof of payment failure.
+        }
+      }
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
         confirmed ? 'Payment confirmed.' : 'Payment is not confirmed. Retry from Orders.',
       )));
