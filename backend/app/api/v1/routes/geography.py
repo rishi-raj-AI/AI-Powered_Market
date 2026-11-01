@@ -160,7 +160,7 @@ def create_my_address(payload: AddressCreate, db: Session = Depends(get_db), use
         user_id=user.id,
         **payload.model_dump(),
         location_confirmed_at=(
-            datetime.now(timezone.utc) if payload.location_source is not None else None
+            datetime.now(timezone.utc) if payload.location_source in {"gps", "map_pin"} else None
         ),
     )
     db.add(address)
