@@ -145,17 +145,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(children: [Expanded(child: Text(order.orderNumber, style: const TextStyle(fontWeight: FontWeight.w800))), Chip(label: Text(order.status.replaceAll('_', ' ')))]),
+                    Row(children: [Expanded(child: Text(order.orderNumber, style: const TextStyle(fontWeight: FontWeight.w800))), Chip(label: Text(order.paymentMethod == 'upi' && (order.paymentStatus == 'pending' || order.paymentStatus == 'failed') && order.status == 'placed' ? 'Awaiting payment' : order.status.replaceAll('_', ' ')))]),
                     Text('₹${order.total} • ${order.paymentMethod.toUpperCase()} • ${_paymentLabel(order.paymentStatus)}'),
                     const SizedBox(height: 8),
                     Wrap(spacing: 8, children: [
                       OutlinedButton.icon(onPressed: () => detail(order), icon: const Icon(Icons.receipt_long), label: const Text('Details')),
                       if (order.status == 'placed') TextButton(onPressed: () => cancel(order), child: const Text('Cancel order')),
-                      if (order.paymentMethod == 'upi' && order.paymentStatus == 'pending' && order.status != 'cancelled' && order.status != 'returned')
+                      if (order.paymentMethod == 'upi' && (order.paymentStatus == 'pending' || order.paymentStatus == 'failed') && order.status != 'cancelled' && order.status != 'returned')
                         FilledButton.icon(
                           onPressed: payingOrderId == order.id ? null : () => pay(order),
                           icon: const Icon(Icons.payments_outlined),
-                          label: Text(payingOrderId == order.id ? 'Opening…' : 'Pay now'),
+                          label: Text(payingOrderId == order.id ? 'Opening…' : order.paymentStatus == 'failed' ? 'Retry payment' : 'Pay now'),
                         ),
                     ]),
                   ],
