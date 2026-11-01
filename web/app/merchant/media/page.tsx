@@ -1,4 +1,79 @@
 'use client';
-import {useState} from 'react';import {Nav} from '@/components/Nav';import {getToken} from '@/lib/api';
+
+import {useEffect,useState} from 'react';
+import {Nav} from '@/components/Nav';
+import {getToken} from '@/lib/api';
+
 const API=process.env.NEXT_PUBLIC_API_URL||'http://localhost:8000/api/v1';
-export default function MerchantMedia(){const[file,setFile]=useState<File|null>(null);const[result,setResult]=useState<any>(null);const[error,setError]=useState('');const[busy,setBusy]=useState(false);const[preview,setPreview]=useState('');async function upload(){if(!file)return;setBusy(true);setError('');try{const form=new FormData();form.append('file',file);const token=getToken();const res=await fetch(`${API}/media/images`,{method:'POST',headers:token?{Authorization:`Bearer ${token}`}:{},body:form});const body=await res.json();if(!res.ok)throw new Error(body.detail||`Upload failed (${res.status})`);setResult(body)}catch(e:any){setError(e.message)}finally{setBusy(false)}}return <><Nav/><main className="container section"><span className="eyebrow">Merchant media</span><h2>Catalog image upload</h2><p className="muted">Uploads use the existing merchant/admin media contract. The backend enforces supported image types and maximum upload size.</p><div className="card"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>{const next=e.target.files?.[0]||null;setFile(next);setResult(null);setError('');if(preview)URL.revokeObjectURL(preview);setPreview(next?URL.createObjectURL(next):'')}}/><button className="btn" disabled={!file||busy} onClick={upload}>{busy?'Uploading…':'Upload image'}</button></div>{preview&&<div className="card" style={{marginTop:14}}><img src={preview} alt="Selected product photo preview" style={{maxWidth:'100%',maxHeight:260,objectFit:'contain'}}/></div>}{error&&<div className="notice">{error}</div>}{result&&<article className="card"><strong>Image uploaded</strong><p className="muted">The uploaded image is not yet linked to a product or approved for marketplace display.</p><p className="muted small">{result.filename} • {result.size} bytes</p><a href={result.url} target="_blank" rel="noreferrer">Open uploaded image</a></article>}</main></>}
+type MediaAsset={id:string;state:string;alt_text:string|null;position:number;is_primary:boolean;created_at:string};
+type ApprovedAsset={id:string;url:string;alt_text:string|null;position:number;is_primary:boolean};
+
+export default function MerchantMedia(){
+  const[listingId,setListingId]=useState('');
+  const[file,setFile]=useState<File|null>(null);
+  const[preview,setPreview]=useState('');
+  const[assets,setAssets]=useState<MediaAsset[]>([]);
+  const[approved,setApproved]=useState<ApprovedAsset[]>([]);
+  const[busy,setBusy]=useState(false);
+  const[loading,setLoading]=useState(false);
+  const[error,setError]=useState('');
+  const[notice,setNotice]=useState('');
+  useEffect(()=>()=>{if(preview)URL.revokeObjectURL(preview)},[preview]);
+
+  async function request(path:string,init:RequestInit={}){
+    const token=getToken();
+    if(!token)throw new Error('Sign in as a merchant or administrator first.');
+    const res=await fetch(`${API}${path}`,{...init,headers:{...(init.headers||{}),Authorization:`Bearer ${token}`},cache:'no-store'});
+    let body:any;try{body=await res.json()}catch{body=null}
+    if(!res.ok)throw new Error(typeof body?.detail==='string'?body.detail:`Request failed (${res.status})`);
+    return body;
+  }
+  async function refresh(id=listingId){
+    if(!/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(id)){setError('Enter a valid store-product ID.');return}
+    setLoading(true);setError('');
+    try{
+      const privateAssets=await request(`/media/store-products/${encodeURIComponent(id)}/images`);
+      setAssets(privateAssets);
+      const publicRes=await fetch(`${API}/media/store-products/${encodeURIComponent(id)}/approved-images`,{cache:'no-store'});
+      setApproved(publicRes.ok?await publicRes.json():[]);
+    }catch(e:any){setError(e.message);setAssets([]);setApproved([])}
+    finally{setLoading(false)}
+  }
+  async function upload(){
+    if(!file||!listingId)return;
+    if(!['image/jpeg','image/png','image/webp'].includes(file.type)){setError('Choose a JPEG, PNG or WebP image.');return}
+    setBusy(true);setError('');setNotice('');
+    try{
+      const form=new FormData();form.append('file',file);
+      const result=await request(`/media/store-products/${encodeURIComponent(listingId)}/images`,{method:'POST',body:form});
+      setNotice(`Image ${result.id} securely queued for scanning. It will not appear publicly until approved.`);
+      setFile(null);setPreview('');
+      await refresh();
+    }catch(e:any){setError(e.message)}
+    finally{setBusy(false)}
+  }
+  return <><Nav/><main className="container section">
+    <span className="eyebrow">Merchant media</span><h2>Product photo management</h2>
+    <p className="muted">Photos are attached to a specific store product, quarantined and scanned before an approved derivative can appear in the marketplace. Original uploads remain private.</p>
+    <div className="card">
+      <label htmlFor="listing-id">Store-product ID</label>
+      <input id="listing-id" aria-label="Store-product ID" placeholder="Store-product UUID" value={listingId} onChange={e=>{setListingId(e.target.value.trim());setAssets([]);setApproved([]);setError('')}}/>
+      <button className="btn" disabled={!listingId||loading} onClick={()=>refresh()}>{loading?'Loading…':'View photo status'}</button>
+    </div>
+    <div className="card" style={{marginTop:14}}>
+      <label htmlFor="product-photo">Upload a photo for this product</label>
+      <input id="product-photo" type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>{const next=e.target.files?.[0]||null;setFile(next);setError('');setPreview(next?URL.createObjectURL(next):'')}}/>
+      <button className="btn" disabled={!file||!listingId||busy} onClick={upload}>{busy?'Uploading…':'Securely upload & queue scan'}</button>
+      {preview&&<div style={{marginTop:14}}><img src={preview} alt="Local preview of selected product photo" style={{maxWidth:'100%',maxHeight:260,objectFit:'contain'}}/></div>}
+    </div>
+    {error&&<div className="notice" role="alert">{error}</div>}
+    {notice&&<div className="notice" role="status">{notice}</div>}
+    <section className="card" style={{marginTop:14}}><h3>Processing status</h3>
+      {assets.length===0?<p className="muted">No photos loaded for this product.</p>:<ul>{assets.map(asset=><li key={asset.id}><strong>{asset.state}</strong> · Photo {asset.id.slice(0,8)} · Position {asset.position}{asset.is_primary?' · Primary':''}</li>)}</ul>}
+      <button className="btn" disabled={!listingId||loading} onClick={()=>refresh()}>{loading?'Refreshing…':'Refresh status'}</button>
+    </section>
+    <section className="card" style={{marginTop:14}}><h3>Public approved photos</h3>
+      {approved.length===0?<p className="muted">No approved public photos are available.</p>:<div style={{display:'flex',gap:12,flexWrap:'wrap'}}>{approved.map(asset=><img key={asset.id} src={asset.url} alt={asset.alt_text||'Approved product photo'} loading="lazy" style={{width:160,height:160,objectFit:'cover'}}/>)}</div>}
+    </section>
+  </main></>;
+}
