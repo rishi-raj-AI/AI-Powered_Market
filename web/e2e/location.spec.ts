@@ -250,10 +250,13 @@ test('a delayed old-locality geocode cannot restore a stale checkout pin',async(
   const holdPlace=new Promise<void>(resolve=>{releasePlace=resolve});
   let signalPlace!:()=>void;
   const placeStarted=new Promise<void>(resolve=>{signalPlace=resolve});
+  let signalPlaceFinished!:()=>void;
+  const placeFinished=new Promise<void>(resolve=>{signalPlaceFinished=resolve});
   await page.route('**/api/v1/location/place/place-niphad**',async route=>{
     signalPlace();
     await holdPlace;
     await route.fulfill({json:{place_id:'place-niphad',formatted_address:'Niphad, Nashik, Maharashtra 422303, India',latitude:20.0778,longitude:74.1118}});
+    signalPlaceFinished();
   });
   await page.goto('/checkout');
   await page.getByRole('button',{name:/Add address/i}).click();
@@ -264,8 +267,7 @@ test('a delayed old-locality geocode cannot restore a stale checkout pin',async(
   await suggestion.click();
   await placeStarted;
   await page.getByLabel('Area / locality *').selectOption('village-other');
-  const response=page.waitForResponse(r=>r.url().includes('/location/place/place-niphad'));
   releasePlace();
-  await response;
+  await placeFinished;
   await expect(page.getByText(/Pinned coordinates:/)).toHaveCount(0);
 });
