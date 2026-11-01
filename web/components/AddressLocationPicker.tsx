@@ -21,6 +21,9 @@ export function AddressLocationPicker({latitude,longitude,onChange,onAddress,onS
  const suppressAutocompleteFor=useRef<string|null>(null);
  const noun=mode==='store'?'storefront':'delivery location';
  const searchId=mode==='store'?'store-location-search':'delivery-location-search';
+ // A changed checkout locality remounts this picker. Invalidate pending
+ // geocoding/GPS responses so an old locality cannot restore a stale pin.
+ useEffect(()=>()=>{locationRequest.current+=1;autocompleteRequest.current+=1},[]);
 
  function publishService(next:Serviceability|null){setService(next);onServiceability?.(next)}
  function clearSuggestions(){autocompleteRequest.current+=1;setSuggestions([])}
@@ -61,6 +64,7 @@ export function AddressLocationPicker({latitude,longitude,onChange,onAddress,onS
  },[q]);
 
  async function resolve(lat:number,lng:number,requestId=beginLocationRequest()){
+  if(!isCurrent(requestId))return;
   onChange(lat,lng);
   try{
    const[r,next]=await Promise.all([gaonApi.reverseGeocode(lat,lng),requireServiceable?gaonApi.serviceability(lat,lng):Promise.resolve(null)]);

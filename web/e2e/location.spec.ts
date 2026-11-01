@@ -212,3 +212,62 @@ test('selecting a locality does not silently use its hub as the delivery entranc
   await expect(page.getByText('Pin the exact delivery location before saving.')).toBeVisible();
   expect(created).toBe(0);
 });
+
+
+test('changing locality invalidates a previously pinned entrance',async({page})=>{
+  await installApiMocks(page);
+  await page.route('http://localhost:8000/api/v1/villages',route=>route.fulfill({json:[
+    {id:'village-niphad',name:'Niphad',district:'Nashik',state:'Maharashtra',pincode:'422303',latitude:20.0778,longitude:74.1118,is_active:true},
+    {id:'village-other',name:'Other Locality',district:'Nashik',state:'Maharashtra',pincode:'422304',latitude:20.15,longitude:74.20,is_active:true},
+  ]}));
+  let created=0;
+  await page.route('http://localhost:8000/api/v1/addresses/me',route=>{
+    if(route.request().method()==='POST')created++;
+    return route.fulfill({json:[]});
+  });
+  await page.goto('/checkout');
+  await page.getByRole('button',{name:/Add address/i}).click();
+  await page.getByLabel('Area / locality *').selectOption('village-niphad');
+  await page.getByLabel('Search delivery location').fill('Niphad');
+  await page.getByRole('button',{name:/Niphad.*Maharashtra/i}).click();
+  await expect(page.getByText(/Pinned coordinates:/)).toBeVisible();
+  await page.getByLabel('Area / locality *').selectOption('village-other');
+  await expect(page.getByText(/Pinned coordinates:/)).toHaveCount(0);
+  await page.locator('#checkout-landmark').fill('New entrance');
+  await page.getByRole('button',{name:'Save address'}).click();
+  await expect(page.getByText('Pin the exact delivery location before saving.')).toBeVisible();
+  expect(created).toBe(0);
+});
+
+
+test('a delayed old-locality geocode cannot restore a stale checkout pin',async({page})=>{
+  await installApiMocks(page);
+  await page.route('http://localhost:8000/api/v1/villages',route=>route.fulfill({json:[
+    {id:'village-niphad',name:'Niphad',district:'Nashik',state:'Maharashtra',pincode:'422303',latitude:20.0778,longitude:74.1118,is_active:true},
+    {id:'village-other',name:'Other Locality',district:'Nashik',state:'Maharashtra',pincode:'422304',latitude:20.15,longitude:74.20,is_active:true},
+  ]}));
+  let releasePlace!:()=>void;
+  const holdPlace=new Promise<void>(resolve=>{releasePlace=resolve});
+  let signalPlace!:()=>void;
+  const placeStarted=new Promise<void>(resolve=>{signalPlace=resolve});
+  let signalPlaceFinished!:()=>void;
+  const placeFinished=new Promise<void>(resolve=>{signalPlaceFinished=resolve});
+  await page.route('**/api/v1/location/place/place-niphad**',async route=>{
+    signalPlace();
+    await holdPlace;
+    await route.fulfill({json:{place_id:'place-niphad',formatted_address:'Niphad, Nashik, Maharashtra 422303, India',latitude:20.0778,longitude:74.1118}});
+    signalPlaceFinished();
+  });
+  await page.goto('/checkout');
+  await page.getByRole('button',{name:/Add address/i}).click();
+  await page.getByLabel('Area / locality *').selectOption('village-niphad');
+  await page.getByLabel('Search delivery location').fill('Niphad');
+  const suggestion=page.getByRole('button',{name:/Niphad.*Maharashtra/i});
+  await expect(suggestion).toBeVisible();
+  await suggestion.click();
+  await placeStarted;
+  await page.getByLabel('Area / locality *').selectOption('village-other');
+  releasePlace();
+  await placeFinished;
+  await expect(page.getByText(/Pinned coordinates:/)).toHaveCount(0);
+});
