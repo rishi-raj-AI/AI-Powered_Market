@@ -200,3 +200,50 @@ def test_private_storage_errors_fail_closed_without_public_fallback(monkeypatch,
     db.rollback.assert_called_once()
     db.add.assert_not_called()
     db.commit.assert_not_called()
+
+
+def test_listing_image_alt_text_update_is_owned_audited_and_does_not_publish(monkeypatch):
+    owner = uuid.uuid4()
+    listing_id = uuid.uuid4()
+    asset_id = uuid.uuid4()
+    db = MagicMock()
+    db.get.side_effect = [
+        SimpleNamespace(store_id=uuid.uuid4()),
+        SimpleNamespace(merchant_id=uuid.uuid4()),
+        SimpleNamespace(owner_user_id=owner),
+    ]
+    asset = SimpleNamespace(
+        id=asset_id, store_product_id=listing_id, retired_at=None,
+        alt_text=None, state="quarantined",
+    )
+    db.scalar.return_value = asset
+    audit = MagicMock()
+    monkeypatch.setattr(media, "audit_media_event", audit)
+    result = media.update_listing_image_metadata(
+        listing_id, asset_id, media.ListingImageMetadata(alt_text="  Red rice bag  "),
+        db=db, user=SimpleNamespace(id=owner, role=UserRole.MERCHANT),
+    )
+    assert result == {"id": str(asset_id), "alt_text": "Red rice bag", "state": "quarantined"}
+    assert asset.state == "quarantined"
+    audit.assert_called_once()
+    assert audit.call_args.kwargs["action"] == "media.metadata_updated"
+    db.commit.assert_called_once()
+
+
+def test_other_merchant_cannot_edit_listing_image_metadata():
+    db = MagicMock()
+    db.get.side_effect = [
+        SimpleNamespace(store_id=uuid.uuid4()),
+        SimpleNamespace(merchant_id=uuid.uuid4()),
+        SimpleNamespace(owner_user_id=uuid.uuid4()),
+    ]
+    with pytest.raises(HTTPException) as exc:
+        media.update_listing_image_metadata(
+            uuid.uuid4(), uuid.uuid4(),
+            media.ListingImageMetadata(alt_text="Unauthorized edit"),
+            db=db,
+            user=SimpleNamespace(id=uuid.uuid4(), role=UserRole.MERCHANT),
+        )
+    assert exc.value.status_code == 403
+    db.scalar.assert_not_called()
+    db.commit.assert_not_called()
