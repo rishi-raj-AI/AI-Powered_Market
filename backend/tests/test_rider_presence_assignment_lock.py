@@ -9,7 +9,6 @@ from sqlalchemy.dialects import postgresql
 
 from app.api.v1.routes.dispatch import update_rider_presence
 from app.models.dispatch import RiderPresence
-from app.models.user import User
 from app.schemas.dispatch import RiderPresenceUpdate
 
 
