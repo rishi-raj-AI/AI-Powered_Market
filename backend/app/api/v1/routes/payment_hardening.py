@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import ensure_capability, get_current_user, get_db, require_roles
 from app.core.capabilities import Capability
-from app.models.commerce import Merchant
+from app.models.commerce import Merchant, Store
 from app.models.integrations import PaymentAttempt, PaymentRefund, PaymentWebhookEvent, SettlementEntry
 from app.models.orders import Order, OrderStatus, PaymentStatus
 from app.models.user import User, UserRole
@@ -29,6 +29,7 @@ from app.services.refunds import (
     ensure_refund_request,
 )
 from app.services.settlements import ensure_settlement_entry
+from app.services.notifications import enqueue_notification
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
 
@@ -91,6 +92,27 @@ def _confirmed_capture(attempt: PaymentAttempt, provider_payment_id: str) -> boo
     ):
         raise HTTPException(status_code=409, detail="Provider payment does not match this order")
     return entity.get("status") == "captured"
+
+
+
+def _notify_payment_captured(db: Session, order: Order) -> None:
+    """Only first verified capture releases a pending UPI order to its merchant."""
+    data = {"order_id": str(order.id), "order_number": order.order_number}
+    enqueue_notification(
+        db, user_id=order.user_id, event_type="order.payment_confirmed",
+        title="Payment confirmed",
+        body=f"Payment for order {order.order_number} was confirmed.",
+        data=data,
+    )
+    store = db.get(Store, order.store_id)
+    merchant = db.get(Merchant, store.merchant_id) if store else None
+    if merchant is not None:
+        enqueue_notification(
+            db, user_id=merchant.owner_user_id,
+            event_type="merchant.order_received", title="New paid order",
+            body=f"Paid order {order.order_number} is waiting for confirmation.",
+            data=data,
+        )
 
 
 def _apply_paid(db: Session, attempt: PaymentAttempt, order: Order, provider_payment_id: str | None) -> None:
@@ -174,7 +196,10 @@ def hardened_verify_payment(
         # mark it failed: a later webhook may confirm a legitimate capture.
         raise HTTPException(status_code=409, detail="Payment is not captured yet")
 
+    previously_paid = order.payment_status == PaymentStatus.PAID
     _apply_paid(db, attempt, order, payload.razorpay_payment_id)
+    if not previously_paid and order.payment_status == PaymentStatus.PAID:
+        _notify_payment_captured(db, order)
     db.commit()
     return PaymentVerifyResponse(order_id=order.id, payment_status=order.payment_status.value, provider_payment_id=payload.razorpay_payment_id)
 
@@ -231,7 +256,10 @@ def _process_event(db: Session, payload: dict) -> None:
             raise
         if not captured:
             return
+        previously_paid = order.payment_status == PaymentStatus.PAID
         _apply_paid(db, attempt, order, provider_payment_id)
+        if not previously_paid and order.payment_status == PaymentStatus.PAID:
+            _notify_payment_captured(db, order)
     elif event == "payment.failed":
         _apply_failed(attempt, order)
 
