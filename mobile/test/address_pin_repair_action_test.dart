@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gaonone_mobile/src/models/models.dart';
+import 'package:gaonone_mobile/src/api/gaon_api.dart';
 import 'package:gaonone_mobile/src/widgets/address_pin_repair_action.dart';
 import 'package:gaonone_mobile/src/widgets/delivery_pin_picker.dart';
 
@@ -78,7 +79,7 @@ void main() {
         body: AddressPinRepairAction(
           address: address('old-address'),
           selectPin: (_) async => selectedPin,
-          confirmPin: (_, __) async => throw Exception('out of zone'),
+          confirmPin: (_, __) async => throw ApiException('out of zone', 422),
           onReplaced: (_) async { refreshed = true; },
         ),
       ),
@@ -88,6 +89,26 @@ void main() {
     expect(refreshed, isFalse);
     expect(find.textContaining('Your existing address is unchanged.'),
         findsOneWidget);
+  });
+
+  testWidgets('ambiguous network failure never falsely claims no write occurred',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: AddressPinRepairAction(
+          address: address('old-address'),
+          selectPin: (_) async => selectedPin,
+          confirmPin: (_, __) async => throw Exception('network timeout'),
+          onReplaced: (_) async {},
+        ),
+      ),
+    ));
+    await tester.tap(find.text('Confirm saved address pin'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Could not confirm whether the pin was saved.'),
+        findsOneWidget);
+    expect(find.textContaining('Your existing address is unchanged.'),
+        findsNothing);
   });
 
   testWidgets('refresh failure never claims that saved pin was rejected',
