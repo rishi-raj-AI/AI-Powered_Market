@@ -33,6 +33,7 @@ class _AddressPinRepairActionState extends State<AddressPinRepairAction> {
 
   Future<void> _repair() async {
     if (_busy) return;
+    var saved = false;
     setState(() {
       _busy = true;
       _error = null;
@@ -56,6 +57,7 @@ class _AddressPinRepairActionState extends State<AddressPinRepairAction> {
             locationSource: pin.source,
             locationAccuracyMeters: pin.accuracyMeters,
           ));
+      saved = true;
       if (!mounted) return;
       await widget.onReplaced(replacement);
       if (!mounted) return;
@@ -65,9 +67,11 @@ class _AddressPinRepairActionState extends State<AddressPinRepairAction> {
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _error = error is ApiException && error.statusCode == 404
-            ? 'Address confirmation is unavailable. Refresh the app and try again.'
-            : 'Could not save the pin. Your existing address is unchanged. ${error is ApiException ? error.message : ''}';
+        _error = saved
+            ? 'Pin saved, but the address list could not refresh. Reload your cart before ordering.'
+            : error is ApiException && error.statusCode == 404
+                ? 'Address confirmation is unavailable. Refresh the app and try again.'
+                : 'Could not save the pin. Your existing address is unchanged. ${error is ApiException ? error.message : ''}';
       });
     } finally {
       if (mounted) setState(() => _busy = false);
