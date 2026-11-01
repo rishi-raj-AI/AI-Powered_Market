@@ -22,6 +22,7 @@ from app.services.payments import (
     PaymentProviderError,
     PaymentProviderUnavailable,
     amount_to_subunits,
+    fetch_razorpay_payment,
     create_razorpay_order,
     razorpay_enabled,
     verify_razorpay_signature,
@@ -169,6 +170,22 @@ def verify_payment(
     )
     if duplicate:
         raise HTTPException(status_code=409, detail="Payment ID has already been used")
+
+    # A valid callback signature proves authenticity, not that money was captured.
+    try:
+        provider_payment = fetch_razorpay_payment(provider_payment_id=payload.razorpay_payment_id)
+    except PaymentProviderUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except PaymentProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if (
+        provider_payment.get("order_id") != attempt.provider_order_id
+        or provider_payment.get("currency") != attempt.currency
+        or provider_payment.get("amount") != amount_to_subunits(attempt.amount)
+    ):
+        raise HTTPException(status_code=409, detail="Payment does not match the order")
+    if provider_payment.get("status") != "captured":
+        raise HTTPException(status_code=409, detail="Payment has not been captured; order remains unpaid")
 
     attempt.provider_payment_id = payload.razorpay_payment_id
     attempt.status = "paid"
