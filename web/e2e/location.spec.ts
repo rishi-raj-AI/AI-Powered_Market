@@ -2,6 +2,36 @@ import {expect,test} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import {installApiMocks,merchantUser} from './helpers';
 
+test('map initialization never silently chooses a delivery pin; a deliberate drag does',async({page})=>{
+  await page.addInitScript(()=>{
+    const callbacks:Record<string,()=>void>={};
+    class FakeMap {
+      center:{lat:number;lng:number};
+      constructor(_element:unknown,options:{center:{lat:number;lng:number}}){
+        this.center=options.center;
+        (window as any).__mapCallbacks=callbacks;
+      }
+      addListener(event:string,callback:()=>void){
+        callbacks[event]=callback;
+        return {remove(){}};
+      }
+      getCenter(){return {lat:()=>this.center.lat,lng:()=>this.center.lng}}
+      panTo(point:{lat:number;lng:number}){this.center=point}
+    }
+    (window as any).google={maps:{Map:FakeMap}};
+  });
+  await installApiMocks(page);
+  await page.goto('/checkout');
+  await page.getByRole('button',{name:/Add address/i}).click();
+  await expect.poll(()=>page.evaluate(()=>Boolean((window as any).__mapCallbacks?.dragend))).toBe(true);
+  // A map ready/idle event must never fabricate the default map centre as
+  // a customer-confirmed entrance.
+  await page.evaluate(()=>(window as any).__mapCallbacks.idle?.());
+  await expect(page.getByText(/Pinned coordinates:/)).toHaveCount(0);
+  await page.evaluate(()=>(window as any).__mapCallbacks.dragend());
+  await expect(page.getByText(/Pinned coordinates:/)).toBeVisible();
+});
+
 test('customer can discover and verify an exact delivery location',async({page})=>{
   await installApiMocks(page);
   await page.goto('/checkout');

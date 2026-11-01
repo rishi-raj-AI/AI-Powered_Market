@@ -73,7 +73,10 @@ export function LocationMap({latitude,longitude,onChange,editable=false,height=2
       const options:any={center:{lat:fallbackLat,lng:fallbackLng},zoom,mapTypeControl:false,streetViewControl:false,fullscreenControl:false,clickableIcons:false};
       if(mapId)options.mapId=mapId;
       const map=new maps.Map(root.current,options);mapRef.current=map;setAvailable(true);setMessage('');
-      if(editable&&onChange){map.addListener('idle',()=>{const center=map.getCenter();if(center)onChange(center.lat(),center.lng())})}
+      // Only a customer drag may choose a map-centre pin. 'idle' also fires on
+      // initial map load and programmatic panTo, which silently saved a fake
+      // fallback location as the delivery address.
+      if(editable&&onChange){map.addListener('dragend',()=>{const center=map.getCenter();if(center)onChange(center.lat(),center.lng())})}
     }).catch(()=>{if(alive){setAvailable(false);setMessage('Embedded map is not configured yet. Coordinates still work.')}});
     return()=>{alive=false;overlays.current.forEach(x=>{try{x.map=null}catch{}});overlays.current=[];routeLine.current?.setMap?.(null);routeLine.current=null;mapRef.current=null};
   },[]);
