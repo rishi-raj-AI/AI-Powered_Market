@@ -99,7 +99,9 @@ def expire_unpaid_orders(
                         continue
                     captured.append((attempt, payment["id"]))
 
-            if len(captured) == 1:
+            # A second authorized payment may still capture. Do not release an
+            # order with ambiguous provider state or multiple money movements.
+            if len(captured) == 1 and not uncertain:
                 attempt, provider_payment_id = captured[0]
                 _apply_paid(db, attempt, order, provider_payment_id)
                 if order.payment_status == PaymentStatus.PAID:
