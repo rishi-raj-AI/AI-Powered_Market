@@ -131,6 +131,10 @@ def _apply_paid(db: Session, attempt: PaymentAttempt, order: Order, provider_pay
     # Provider capture is a financial fact, but it must not reopen a cancelled
     # commercial order or recreate merchant settlement after cancellation/refund.
     attempt.status = "paid"
+    # SessionLocal uses autoflush=False. Persist the captured attempt within the
+    # current transaction before refund lookup, otherwise the refund obligation
+    # is created without its provider payment ID and cannot be dispatched.
+    db.flush()
     if order.status in {OrderStatus.CANCELLED, OrderStatus.RETURNED} or order.payment_status in {
         PaymentStatus.REFUNDED,
         PaymentStatus.REFUND_PENDING,
