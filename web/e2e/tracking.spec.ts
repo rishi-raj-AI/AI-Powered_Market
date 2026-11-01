@@ -42,14 +42,17 @@ test('customer sees live rider route estimate, distance and GPS freshness',async
 test('stale rider GPS pauses ETA and warns customer',async({page})=>{await mockTracking(page,{stale:true});await page.goto('/orders');await page.getByRole('button',{name:'Toggle order detail'}).click();await expect(page.getByText('ETA paused until a fresh rider location arrives.')).toBeVisible();await expect(page.getByText(/Rider location may be delayed/)).toBeVisible();await expect(page.getByText('Live route estimate 7 min')).toHaveCount(0)});
 test('tracking keeps the last known rider location but pauses ETA after polling fails',async({page})=>{
   await mockTracking(page);
-  let polls=0;
-  await page.route(`http://localhost:8000/api/v1/orders/${order.id}/tracking`,r=>{
-    polls+=1;
-    return polls===1?r.fulfill({json:tracking}):r.fulfill({status:503,json:{detail:'Temporary outage'}});
-  });
+  // Allow initial tracking and route requests to settle before simulating an outage.
+  // Counting requests races with background polling and can fail before the initial
+  // live ETA is rendered, particularly in slower CI browsers.
+  let failTracking=false;
+  await page.route(`http://localhost:8000/api/v1/orders/${order.id}/tracking`,r=>
+    failTracking?r.fulfill({status:503,json:{detail:'Temporary outage'}}):r.fulfill({json:tracking})
+  );
   await page.goto('/orders');
   await page.getByRole('button',{name:'Toggle order detail'}).click();
   await expect(page.getByText('Live route estimate 7 min')).toBeVisible();
+  failTracking=true;
   await expect(page.getByText('Tracking connection interrupted. Showing last known information; ETA paused until updates resume.')).toBeVisible({timeout:12000});
   await expect(page.getByText('ETA paused until a fresh rider location arrives.')).toBeVisible();
   await expect(page.getByText('Live route estimate 7 min')).toHaveCount(0);
