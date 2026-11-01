@@ -4,6 +4,7 @@ import uuid
 from pathlib import Path
 
 from sqlalchemy import select
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.models.commerce import Merchant, Store, StoreProduct
@@ -246,3 +247,41 @@ def public_store_approved_images(
         ).order_by(StoreProduct.updated_at.desc()).limit(limit)
     ).all())
     return {str(key): value for key, value in approved_listing_media(db, listing_ids).items()}
+
+
+class ListingImageMetadata(BaseModel):
+    alt_text: str | None = Field(default=None, max_length=240)
+
+
+@router.patch("/store-products/{listing_id}/images/{asset_id}")
+def update_listing_image_metadata(
+    listing_id: uuid.UUID,
+    asset_id: uuid.UUID,
+    payload: ListingImageMetadata,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles(UserRole.MERCHANT, UserRole.ADMIN)),
+) -> dict:
+    """Edit accessible descriptive metadata without changing approval or storage keys."""
+    listing = db.get(StoreProduct, listing_id)
+    store = db.get(Store, listing.store_id) if listing else None
+    merchant = db.get(Merchant, store.merchant_id) if store else None
+    if listing is None or merchant is None:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    if user.role == UserRole.ADMIN:
+        ensure_capability(user, Capability.MEDIA_MODERATE)
+    elif merchant.owner_user_id != user.id:
+        raise HTTPException(status_code=403, detail="You do not own this listing")
+    asset = db.scalar(
+        select(ProductMediaAsset)
+        .where(ProductMediaAsset.id == asset_id, ProductMediaAsset.store_product_id == listing_id)
+        .with_for_update()
+    )
+    if asset is None or asset.retired_at is not None:
+        raise HTTPException(status_code=404, detail="Image not found")
+    asset.alt_text = payload.alt_text.strip() or None if payload.alt_text is not None else None
+    audit_media_event(
+        db, asset=asset, action="media.metadata_updated",
+        request_id=str(uuid.uuid4()), actor=user,
+    )
+    db.commit()
+    return {"id": str(asset.id), "alt_text": asset.alt_text, "state": asset.state}
