@@ -11,7 +11,7 @@ from fastapi import HTTPException
 
 from app.api.v1.routes import payment_hardening
 from app.models.integrations import PaymentAttempt
-from app.models.orders import PaymentStatus
+from app.models.orders import OrderStatus, PaymentStatus
 from app.schemas.integrations import PaymentVerifyRequest
 from tests.factories import make_order, make_user, session
 
@@ -179,3 +179,33 @@ def test_success_webhook_requires_capture_and_ignores_late_failure(monkeypatch):
         db.flush()
         assert order.payment_status == PaymentStatus.PAID
         db.rollback()
+
+
+def test_late_capture_after_return_creates_refund_not_settlement(monkeypatch):
+    with session() as db:
+        customer, order, attempt = _context(db)
+        order.status = OrderStatus.RETURNED
+        db.commit()
+        monkeypatch.setattr(payment_hardening, "verify_razorpay_signature", lambda **_: True)
+        monkeypatch.setattr(
+            payment_hardening, "fetch_razorpay_payment",
+            lambda *, provider_payment_id: _payment(attempt, provider_payment_id),
+        )
+        settlements = []
+        refunds = []
+        monkeypatch.setattr(
+            payment_hardening, "ensure_settlement_entry",
+            lambda _db, _order: settlements.append(_order.id),
+        )
+        monkeypatch.setattr(
+            payment_hardening, "ensure_refund_request",
+            lambda _db, _order, *, reason: refunds.append(reason),
+        )
+        result = _verify(db, customer, attempt)
+        db.refresh(order)
+        db.refresh(attempt)
+        assert result.payment_status == "paid"
+        assert order.status == OrderStatus.RETURNED
+        assert attempt.status == "paid"
+        assert settlements == []
+        assert refunds == [payment_hardening.REFUND_REASON_RETURNED]
