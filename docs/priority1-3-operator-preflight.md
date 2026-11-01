@@ -46,9 +46,28 @@ for key in ("AUTO_DISPATCH_ENABLED", "PRODUCT_MEDIA_ENABLED"):
 PY
 ```
 
-This file check is not a substitute for inspecting the running worker's
-effective configuration. Keep both features off until their live acceptance
-gates are signed off.
+The file check is not sufficient: Docker may have a different effective
+environment, and both the API and worker can independently read these flags.
+Check the running containers without printing any other environment variables:
+
+```bash
+for service in api worker; do
+  docker compose --env-file .env.production -f docker-compose.prod.yml \
+    exec -T "$service" python - <<'PY'
+import os
+for key in ("AUTO_DISPATCH_ENABLED", "PRODUCT_MEDIA_ENABLED"):
+    value = os.environ.get(key, "").strip().lower()
+    if value not in {"false", "0", "off", "no"}:
+        raise SystemExit(f"FAIL: running {key} is not explicitly disabled")
+    print(f"PASS: running {key} is disabled")
+PY
+done
+```
+
+The check fails closed if either container is absent, a flag is missing or
+enabled, or the command cannot inspect the effective environment. Do not
+restart containers or alter flags during this read-only preflight. Keep both
+features off until their live acceptance gates are signed off.
 
 ## 3. Back up before any approved migration or deployment
 
