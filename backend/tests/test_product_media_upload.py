@@ -172,3 +172,31 @@ def test_upload_preserves_db_error_if_quarantine_cleanup_fails(monkeypatch):
     with pytest.raises(RuntimeError, match="database failure"):
         call_upload(db, SimpleNamespace(id=owner, role=UserRole.MERCHANT))
     db.rollback.assert_called_once()
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("missing secure bucket"), OSError("storage unavailable")])
+def test_private_storage_errors_fail_closed_without_public_fallback(monkeypatch, failure):
+    monkeypatch.setattr(media.settings, "PRODUCT_MEDIA_ENABLED", True)
+    monkeypatch.setattr(media.settings, "APP_ENV", "test")
+    monkeypatch.setattr(media.settings, "MEDIA_STORAGE_BACKEND", "local")
+    owner = uuid.uuid4()
+    db = MagicMock()
+    db.get.side_effect = [
+        SimpleNamespace(store_id=uuid.uuid4()),
+        SimpleNamespace(merchant_id=uuid.uuid4()),
+        SimpleNamespace(owner_user_id=owner),
+    ]
+    db.query.return_value.filter.return_value.count.return_value = 0
+    monkeypatch.setattr(media.rate_limiter, "enforce", lambda *args, **kwargs: None)
+
+    def unavailable():
+        raise failure
+
+    monkeypatch.setattr(media, "configured_media_storage", unavailable)
+    with pytest.raises(HTTPException) as exc:
+        call_upload(db, SimpleNamespace(id=owner, role=UserRole.MERCHANT))
+    assert exc.value.status_code == 503
+    assert exc.value.detail == "Secure media storage is unavailable"
+    db.rollback.assert_called_once()
+    db.add.assert_not_called()
+    db.commit.assert_not_called()
