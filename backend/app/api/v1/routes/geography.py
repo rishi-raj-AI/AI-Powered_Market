@@ -26,7 +26,9 @@ def _serviceability(db: Session, latitude: float, longitude: float) -> Serviceab
     distance_km = float(best["distance_km"])
     radius_km = float(best["radius_km"])
     return ServiceabilityRead(
-        serviceable=distance_km <= radius_km,
+        # Match checkout's PostGIS ST_DWithin predicate exactly, including
+        # radius boundaries; never infer coverage from the nearest hub alone.
+        serviceable=bool(best["covers_point"]),
         service_area_id=best["id"],
         service_area_name=best["name"],
         distance_km=round(distance_km, 2),
