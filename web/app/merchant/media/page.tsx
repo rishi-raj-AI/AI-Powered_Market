@@ -20,12 +20,13 @@ export default function MerchantMedia(){
   const[notice,setNotice]=useState('');
   useEffect(()=>()=>{if(preview)URL.revokeObjectURL(preview)},[preview]);
 
-  async function request(path:string,init:RequestInit={}){
+  async function request(path:string,init:RequestInit={},expectedStatus?:number){
     const token=getToken();
     if(!token)throw new Error('Sign in as a merchant or administrator first.');
     const res=await fetch(`${API}${path}`,{...init,headers:{...(init.headers||{}),Authorization:`Bearer ${token}`},cache:'no-store'});
     let body:any;try{body=await res.json()}catch{body=null}
     if(!res.ok)throw new Error(typeof body?.detail==='string'?body.detail:`Request failed (${res.status})`);
+    if(expectedStatus!==undefined&&res.status!==expectedStatus)throw new Error('Secure image upload returned an unexpected response.');
     return body;
   }
   async function refresh(id=listingId){
@@ -54,7 +55,8 @@ export default function MerchantMedia(){
     setBusy(true);setError('');setNotice('');
     try{
       const form=new FormData();form.append('file',file);
-      const result=await request(`/media/store-products/${encodeURIComponent(listingId)}/images`,{method:'POST',body:form});
+      const result=await request(`/media/store-products/${encodeURIComponent(listingId)}/images`,{method:'POST',body:form},202);
+      if(result?.state!=='quarantined'||typeof result?.id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(result.id))throw new Error('The image upload was not confirmed as quarantined.');
       setNotice(`Image ${result.id} securely queued for scanning. It will not appear publicly until approved.`);
       setFile(null);setPreview('');
       await refresh();
