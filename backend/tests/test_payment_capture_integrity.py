@@ -10,7 +10,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.v1.routes import payment_hardening
-from app.models.integrations import PaymentAttempt
+from app.models.integrations import PaymentAttempt, PaymentRefund
 from app.models.orders import OrderStatus, PaymentStatus
 from app.schemas.integrations import PaymentVerifyRequest
 from tests.factories import make_order, make_user, session
@@ -192,20 +192,18 @@ def test_late_capture_after_return_creates_refund_not_settlement(monkeypatch):
             lambda *, provider_payment_id: _payment(attempt, provider_payment_id),
         )
         settlements = []
-        refunds = []
         monkeypatch.setattr(
             payment_hardening, "ensure_settlement_entry",
             lambda _db, _order: settlements.append(_order.id),
         )
-        monkeypatch.setattr(
-            payment_hardening, "ensure_refund_request",
-            lambda _db, _order, *, reason: refunds.append(reason),
-        )
         result = _verify(db, customer, attempt)
         db.refresh(order)
         db.refresh(attempt)
-        assert result.payment_status == "paid"
+        refund = db.query(PaymentRefund).filter(PaymentRefund.order_id == order.id).one()
+        assert result.payment_status == "refund_pending"
         assert order.status == OrderStatus.RETURNED
+        assert order.payment_status == PaymentStatus.REFUND_PENDING
         assert attempt.status == "paid"
+        assert refund.provider_payment_id == "pay_test_capture_12345"
+        assert refund.reason == payment_hardening.REFUND_REASON_RETURNED
         assert settlements == []
-        assert refunds == [payment_hardening.REFUND_REASON_RETURNED]
