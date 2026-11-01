@@ -58,9 +58,22 @@ def evaluate_delivery(
     on legacy addresses remain usable, but are not represented as confirmed
     GPS/map pins until provenance is migrated in a later release.
     """
-    confidence = "legacy_coordinates" if (
-        address.latitude is not None and address.longitude is not None
-    ) else "unverified_manual"
+    # Additive address provenance (PR #247) is optional during rollout.
+    # A legacy coordinate pair is usable under compatibility rules, but must
+    # never be misrepresented as customer-confirmed GPS/map selection.
+    source = getattr(address, "location_source", None)
+    confirmed_at = getattr(address, "location_confirmed_at", None)
+    if (
+        address.latitude is not None
+        and address.longitude is not None
+        and source in {"gps", "map_pin", "searched_place"}
+        and confirmed_at is not None
+    ):
+        confidence = f"confirmed_{source}"
+    elif address.latitude is not None and address.longitude is not None:
+        confidence = "legacy_coordinates"
+    else:
+        confidence = "unverified_manual"
     if merchant is None:
         merchant = db.get(Merchant, store.merchant_id)
     if not store.is_active or merchant is None or merchant.status != MerchantStatus.APPROVED:
