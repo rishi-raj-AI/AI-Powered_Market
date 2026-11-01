@@ -40,6 +40,21 @@ test('customer keeps a pending UPI order recoverable when online payment is unav
 
 test('customer sees live rider route estimate, distance and GPS freshness',async({page})=>{await mockTracking(page);await page.goto('/orders');await page.getByRole('button',{name:'Toggle order detail'}).click();await expect(page.getByText('Live delivery')).toBeVisible();await expect(page.getByText('Live route estimate 7 min')).toBeVisible();await expect(page.getByText('1.8 km remaining')).toBeVisible();await expect(page.getByText('Rider location received 4s ago')).toBeVisible();await expect(page.getByText(/GPS accuracy ≈ 7 m/)).toBeVisible();await expect(page.getByRole('link',{name:'Open rider location'})).toBeVisible()});
 test('stale rider GPS pauses ETA and warns customer',async({page})=>{await mockTracking(page,{stale:true});await page.goto('/orders');await page.getByRole('button',{name:'Toggle order detail'}).click();await expect(page.getByText('ETA paused until a fresh rider location arrives.')).toBeVisible();await expect(page.getByText(/Rider location may be delayed/)).toBeVisible();await expect(page.getByText('Live route estimate 7 min')).toHaveCount(0)});
+test('tracking keeps the last known rider location but pauses ETA after polling fails',async({page})=>{
+  await mockTracking(page);
+  let polls=0;
+  await page.route(`http://localhost:8000/api/v1/orders/${order.id}/tracking`,r=>{
+    polls+=1;
+    return polls===1?r.fulfill({json:tracking}):r.fulfill({status:503,json:{detail:'Temporary outage'}});
+  });
+  await page.goto('/orders');
+  await page.getByRole('button',{name:'Toggle order detail'}).click();
+  await expect(page.getByText('Live route estimate 7 min')).toBeVisible();
+  await expect(page.getByText('Tracking connection interrupted. Showing last known information; ETA paused until updates resume.')).toBeVisible({timeout:12000});
+  await expect(page.getByText('ETA paused until a fresh rider location arrives.')).toBeVisible();
+  await expect(page.getByText('Live route estimate 7 min')).toHaveCount(0);
+  await expect(page.getByRole('link',{name:'Open rider location'})).toBeVisible();
+});
 test('delivered order stops exposing rider location for privacy',async({page})=>{await mockTracking(page,{delivered:true});await page.goto('/orders');await page.getByRole('button',{name:'Toggle order detail'}).click();await expect(page.getByText('Delivery completed. Live rider sharing has stopped for privacy.')).toBeVisible();await expect(page.getByRole('link',{name:'Open rider location'})).toHaveCount(0)});
 test('expired live tracking session clears GaonOne state and returns to provider-neutral sign-in',async({page})=>{await mockTracking(page,{expired:true});await page.addInitScript(()=>{const removeItem=Storage.prototype.removeItem;Storage.prototype.removeItem=function(key){if(key==='gaonone_token')sessionStorage.setItem('gaonone_e2e_token_cleared','true');return removeItem.call(this,key)}});await page.goto('/orders');await Promise.all([page.waitForURL(/\/login\?next=%2Forders$/),page.getByRole('button',{name:'Toggle order detail'}).click()]);expect(await page.evaluate(()=>sessionStorage.getItem('gaonone_e2e_token_cleared'))).toBe('true');await expect(page.getByRole('button',{name:'Continue with Google'})).toBeVisible()});
 test('@a11y customer live tracking has no serious accessibility violations',async({page})=>{await mockTracking(page);await page.goto('/orders');await page.getByRole('button',{name:'Toggle order detail'}).click();await expect(page.getByText('Live delivery')).toBeVisible();const results=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze();expect(results.violations.filter(item=>['serious','critical'].includes(item.impact||''))).toEqual([])});
