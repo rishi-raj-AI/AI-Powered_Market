@@ -21,6 +21,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          # Reuse verified Gradle dependencies across signed QA builds.
+          # Fresh runners otherwise repeatedly hit Maven Central HTTP 429.
+          cache: gradle
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
