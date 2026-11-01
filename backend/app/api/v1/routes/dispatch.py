@@ -31,6 +31,13 @@ def update_rider_presence(
     db: Session = Depends(get_db),
     rider: User = Depends(require_roles(UserRole.DELIVERY)),
 ):
+    # Dispatch selection locks the rider User row while checking availability.
+    # Acquire that same lock before changing online/offline presence, so a
+    # concurrent assignment cannot race against a rider going offline.
+    # Lock order stays User -> RiderPresence in both paths.
+    locked_rider = db.scalar(select(User).where(User.id == rider.id).with_for_update())
+    if locked_rider is None or not locked_rider.is_active or not locked_rider.is_verified:
+        raise HTTPException(status_code=403, detail="Verified active rider account required")
     now = datetime.now(timezone.utc)
     presence = db.get(RiderPresence, rider.id)
     if presence is None:
