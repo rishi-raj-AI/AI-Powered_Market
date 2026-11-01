@@ -2,7 +2,7 @@
 
 import {useEffect,useState} from 'react';
 import {Nav} from '@/components/Nav';
-import {getToken} from '@/lib/api';
+import {gaonApi,getToken,type Store,type StoreProduct} from '@/lib/api';
 
 const API=process.env.NEXT_PUBLIC_API_URL||'http://localhost:8000/api/v1';
 type MediaAsset={id:string;state:string;alt_text:string|null;position:number;is_primary:boolean;created_at:string};
@@ -10,6 +10,9 @@ type ApprovedAsset={id:string;url:string;alt_text:string|null;position:number;is
 
 export default function MerchantMedia(){
   const[listingId,setListingId]=useState('');
+  const[stores,setStores]=useState<Store[]>([]);
+  const[storeId,setStoreId]=useState('');
+  const[inventory,setInventory]=useState<StoreProduct[]>([]);
   const[file,setFile]=useState<File|null>(null);
   const[preview,setPreview]=useState('');
   const[assets,setAssets]=useState<MediaAsset[]>([]);
@@ -19,6 +22,23 @@ export default function MerchantMedia(){
   const[error,setError]=useState('');
   const[notice,setNotice]=useState('');
   useEffect(()=>()=>{if(preview)URL.revokeObjectURL(preview)},[preview]);
+  useEffect(()=>{
+    let active=true;
+    gaonApi.myStores().then(items=>{
+      if(!active)return;
+      setStores(items);
+      if(items.length===1)setStoreId(items[0].id);
+    }).catch(e=>{if(active)setError(e instanceof Error?e.message:'Unable to load stores')});
+    return()=>{active=false};
+  },[]);
+  useEffect(()=>{
+    let active=true;
+    setInventory([]);
+    if(!storeId)return;
+    gaonApi.storeInventory(storeId).then(items=>{if(active)setInventory(items)})
+      .catch(e=>{if(active)setError(e instanceof Error?e.message:'Unable to load product listings')});
+    return()=>{active=false};
+  },[storeId]);
 
   async function request(path:string,init:RequestInit={},expectedStatus?:number){
     const token=getToken();
@@ -67,7 +87,9 @@ export default function MerchantMedia(){
     <span className="eyebrow">Merchant media</span><h2>Product photo management</h2>
     <p className="muted">Photos are attached to a specific store product, quarantined and scanned before an approved derivative can appear in the marketplace. Original uploads remain private.</p>
     <div className="card">
-      <label htmlFor="listing-id">Store-product ID</label>
+      {stores.length>0&&<><label htmlFor="media-store">Store</label><select id="media-store" value={storeId} onChange={e=>{setStoreId(e.target.value);setListingId('');setAssets([]);setApproved([]);setFile(null)}}><option value="">Choose a store</option>{stores.map(store=><option key={store.id} value={store.id}>{store.name}</option>)}</select>
+      <label htmlFor="media-listing">Product listing</label><select id="media-listing" value={inventory.some(item=>item.id===listingId)?listingId:''} onChange={e=>{setListingId(e.target.value);setAssets([]);setApproved([]);setFile(null)}}><option value="">Choose a product</option>{inventory.map(item=><option key={item.id} value={item.id}>{item.product.name} · {item.product.unit}</option>)}</select></>}
+      <label htmlFor="listing-id">Store-product ID (advanced)</label>
       <input id="listing-id" aria-label="Store-product ID" placeholder="Store-product UUID" value={listingId} onChange={e=>{setListingId(e.target.value.trim());setAssets([]);setApproved([]);setError('')}}/>
       <button className="btn" disabled={!listingId||loading} onClick={()=>refresh()}>{loading?'Loading…':'View photo status'}</button>
     </div>
