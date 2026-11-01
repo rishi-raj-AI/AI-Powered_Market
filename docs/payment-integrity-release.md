@@ -26,7 +26,7 @@ issue refunds, or build APKs until the release owner approves.
   the opt-in worker rechecks provider capture and records completion only
   after verification. Configure `PAYMENT_WEBHOOK_REPLAY_BATCH=25` and review
   provider rate limits and aged pending events before enabling. Revision
-  `0027_payment_webhook_retry_schedule` adds `attempt_count` and
+  `0027_webhook_retry_schedule` adds `attempt_count` and
   `next_attempt_at` to persist replay backoff across worker restarts.
   Unresolved events retry after 60, 120, 240, 480, 960, 1920 and then
   at most 3600 seconds; they are never silently discarded. A deferred
