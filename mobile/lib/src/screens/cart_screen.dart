@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
-
 import '../api/gaon_api.dart';
 import '../models/models.dart';
+import '../widgets/delivery_pin_picker.dart';
 
 abstract class CheckoutGateway {
   Future<String> currentUserId();
@@ -65,7 +64,6 @@ class _CartScreenState extends State<CartScreen> {
   List<AddressModel> addresses = [];
   List<Village> villages = [];
   bool loading = true;
-  bool locating = false;
   String? changingProductId;
   String? error;
   late final CheckoutAttemptCoordinator checkoutCoordinator;
@@ -128,24 +126,6 @@ class _CartScreenState extends State<CartScreen> {
     }
   }
 
-  Future<Position?> _currentPosition() async {
-    if (!await Geolocator.isLocationServiceEnabled()) {
-      _snack('Location services are switched off. You can still save the landmark manually.');
-      return null;
-    }
-    var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-    if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
-      _snack('Location permission was not granted. Landmark-only address will still work.');
-      return null;
-    }
-    return Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium, timeLimit: Duration(seconds: 12)),
-    );
-  }
-
   Future<void> addAddress() async {
     if (villages.isEmpty) return;
     String villageId = villages.first.id;
@@ -153,7 +133,7 @@ class _CartScreenState extends State<CartScreen> {
     final house = TextEditingController();
     final landmark = TextEditingController();
     final directions = TextEditingController();
-    Position? position;
+    DeliveryPinCandidate? confirmedPin;
 
     final ok = await showDialog<bool>(
       context: context,
@@ -180,16 +160,25 @@ class _CartScreenState extends State<CartScreen> {
                 TextField(controller: directions, decoration: const InputDecoration(labelText: 'Delivery directions')),
                 const SizedBox(height: 12),
                 OutlinedButton.icon(
-                  onPressed: locating
-                      ? null
-                      : () async {
-                          setLocal(() => locating = true);
-                          position = await _currentPosition();
-                          setLocal(() => locating = false);
-                        },
-                  icon: const Icon(Icons.my_location),
-                  label: Text(position == null ? 'Attach GPS location' : 'GPS location attached'),
+                  onPressed: () async {
+                    final pin = await Navigator.of(context).push<DeliveryPinCandidate>(
+                      MaterialPageRoute(builder: (_) => const DeliveryPinPicker()),
+                    );
+                    if (!context.mounted || pin == null) return;
+                    setLocal(() => confirmedPin = pin);
+                  },
+                  icon: const Icon(Icons.location_on_outlined),
+                  label: Text(confirmedPin == null
+                      ? 'Choose and confirm delivery pin'
+                      : 'Delivery pin confirmed • Change'),
                 ),
+                if (confirmedPin == null)
+                  const Text(
+                    'You can save a landmark-only address, but checkout '
+                    'requires a confirmed map or GPS pin.',
+                  )
+                else if (confirmedPin!.accuracyMeters != null)
+                  Text('GPS accuracy: ±${confirmedPin!.accuracyMeters!.round()} m'),
               ],
             ),
           ),
@@ -209,8 +198,10 @@ class _CartScreenState extends State<CartScreen> {
           landmark: landmark.text.trim(),
           houseDetails: house.text.trim(),
           directions: directions.text.trim(),
-          latitude: position?.latitude,
-          longitude: position?.longitude,
+          latitude: confirmedPin?.latitude,
+          longitude: confirmedPin?.longitude,
+          locationSource: confirmedPin?.source,
+          locationAccuracyMeters: confirmedPin?.accuracyMeters,
         );
         await load();
       } catch (e) {
@@ -349,11 +340,11 @@ class _CartScreenState extends State<CartScreen> {
             ...addresses.map(
               (a) => Card(
                 child: ListTile(
-                  leading: Icon(a.latitude != null ? Icons.location_on : Icons.signpost_outlined),
+                  leading: Icon(a.latitude != null && a.longitude != null ? Icons.location_on : Icons.signpost_outlined),
                   title: Text(a.label),
-                  subtitle: Text('${a.houseDetails ?? ''} • ${a.landmark}'),
+                  subtitle: Text('${a.houseDetails ?? ''} • ${a.landmark}${a.latitude == null || a.longitude == null ? ' • Add a new pinned address to order' : a.locationConfirmedAt == null ? ' • Saved coordinates (confirmation unrecorded)' : ' • Confirmed pin'}'),
                   trailing: FilledButton(
-                    onPressed: checkoutCoordinator.busy || changingProductId != null || checkoutCoordinator.hasUnresolvedAttempt
+                    onPressed: a.latitude == null || a.longitude == null || checkoutCoordinator.busy || changingProductId != null || checkoutCoordinator.hasUnresolvedAttempt
                         ? null
                         : () => choosePaymentAndPlaceOrder(a),
                     child: const Text('Place order'),
