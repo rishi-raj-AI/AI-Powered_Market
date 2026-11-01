@@ -2,6 +2,7 @@ name: GaonOne QA APK
 on:
   push:
     branches:
+      - main
       - feat/marketplace-permanent-signed-apk
       - fix/cart-place-order-marketplace-actions
       - feat/priority1-integrated-release
