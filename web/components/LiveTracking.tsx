@@ -31,12 +31,13 @@ export function LiveTracking({orderId}:{orderId:string}){
   useEffect(()=>{load();loadRoute();const gpsTimer=window.setInterval(load,5000);const routeTimer=window.setInterval(loadRoute,30000);return()=>{window.clearInterval(gpsTimer);window.clearInterval(routeTimer)}},[orderId]);
 
   if(loading)return <div className="card"><p className="muted"><RefreshCw size={15}/> Loading delivery tracking…</p></div>;
-  if(error)return <div className="card"><p className="muted">{error}</p></div>;
+  if(error&&!data)return <div className="card"><p className="muted">{error}</p></div>;
   if(!data)return null;
 
   const rider=data.rider;
   const age=data.rider_location_age_seconds??0;
-  const stale=Boolean(rider&&age>STALE_LOCATION_SECONDS);
+  // A failed poll must not present a cached GPS fix and ETA as live.
+  const stale=Boolean(rider&&(age>STALE_LOCATION_SECONDS||Boolean(error)));
   const riderMap=rider?`https://www.google.com/maps/search/?api=1&query=${rider.latitude},${rider.longitude}`:null;
   const points:MapPoint[]=[];
   if(data.store.latitude!=null&&data.store.longitude!=null)points.push({lat:data.store.latitude,lng:data.store.longitude,label:data.store.label||'Store',kind:'store'});
@@ -46,6 +47,7 @@ export function LiveTracking({orderId}:{orderId:string}){
 
   return <div className="card stack" aria-live="polite">
     <div className="row space"><div className="row"><Radio size={18}/><strong>Live delivery</strong></div><span className={`badge status-${data.delivery_status||'unassigned'}`}>{label(data.delivery_status||'unassigned')}</span></div>
+    {error&&<div className="notice"><AlertTriangle size={17}/> Tracking connection interrupted. Showing last known information; ETA paused until updates resume.</div>}
     {route?.available&&!stale&&<div className="row space"><div className="row"><Clock3 size={17}/><strong>Live route estimate {duration(route.duration_seconds)}</strong></div><span className="muted">{distance(route.distance_meters)} remaining</span></div>}
     {route?.available&&stale&&<div className="notice"><AlertTriangle size={17}/> ETA paused until a fresh rider location arrives.</div>}
     {points.length>0&&<LocationMap latitude={center?.lat} longitude={center?.lng} markers={points} encodedPolyline={!stale?route?.encoded_polyline||'':''} height={320} zoom={15}/>} 
