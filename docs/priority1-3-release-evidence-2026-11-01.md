@@ -8,7 +8,7 @@ from CI results.
 ## Priority 1 integrated release candidate
 
 - Pull request: https://github.com/rishi-raj-AI/AI-Powered_Market/pull/235
-- Head SHA: `04ddf31bdcb1f197035e1605c065e8007f6b8799`
+- Previously verified CI baseline SHA: `04ddf31bdcb1f197035e1605c065e8007f6b8799` (historical, not the current head).
 - GitHub reported the PR mergeable; it was moved from draft to **ready for review**
   on 2026-11-01 IST. It remains **unmerged** pending review and acceptance.
 - Backend CI: **passed**, https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41243426895
@@ -43,8 +43,7 @@ from CI results.
 - On 2026-11-01, fixed the Playwright merchant upload quarantine test on both
   branches: Next.js renders an additional route-announcer `role=alert`, so the
   assertion now selects the alert containing the quarantine error.
-- Priority 2 and 3 **remain draft** until the new exact-head CI passes and
-  a reviewer accepts the media/rollout safety gates.
+- At the time of this earlier snapshot, Priority 2 and 3 were draft. They were subsequently marked ready for review; this does not mean release acceptance.
 
 ## Unpassed external and operational gates
 
@@ -65,3 +64,38 @@ Use [the secret-safe operator preflight](priority1-3-operator-preflight.md) and
 [the release acceptance checklist](priority1-3-release-acceptance.md)
 to record device, operator, environment, time, test result and rollback decision
 before changing any gate from pending to passed.
+
+## Subsequent integration checkpoint — 2026-11-01 IST
+
+This section supersedes the **branch-status** statements above, while retaining
+the original immutable CI and signing evidence.
+
+- Priority 1 PR #235 head: `ddcb0171d37cc48b2510a21da6da01565bf02e20`.
+  The previous `795a8a54` head passed Backend, Mobile, Production and signed
+  QA APK checks but **failed Web CI** because the onboarding Playwright test
+  attempted to click a deliberately disabled phone-registration button when
+  the authentication configuration endpoint was not mocked.
+- Commit `ddcb0171` updates the Playwright test to cover both enabled and
+  disabled phone-auth configurations and the current success message.
+  [Exact-head Web CI](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41256451753)
+  was still running when this checkpoint was written. Backend CI for that
+  head [passed](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41256451756).
+- Priority 2 PR #236 head: `e3c3857e6d87a0bcb6f1874e77981c41f4d4a7a2`.
+  This is a two-parent integration merge of Priority 1 fixes and the
+  previously CI-green media implementation. Its **new exact-head checks
+  remain pending**, regardless of earlier passes at `ed91b28f`.
+- Priority 3 PR #237 was similarly reconciled onto Priority 2 at
+  `50d769e82501c52d7bc543944b201214f844a9eb`, retaining its three
+  release-runbook files. Its new exact-head checks remain pending.
+- A permanently signed QA APK **passed** at Priority 1 commit
+  `795a8a541a9e30bf169e3738fd7e18d26d7244a0` in
+  [workflow 41252232691](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41252232691),
+  artifact ID `13061573986`. A newer exact-head build was still running.
+  Do not call any of these device-tested or production-approved.
+- PRs #235, #236 and #237 are open and ready for code review, but **unmerged**.
+  No production deployment, live dispatch activation or product-media
+  activation has been authorized or performed.
+
+Release decision: **NO-GO** until exact-head checks, code review, real-device
+acceptance, external provider verification and the production preflight gates
+are completed with recorded evidence.
