@@ -282,7 +282,7 @@ export default function Orders() {
             const current = stages.indexOf(o.status);
             const canPay =
               o.payment_method === "upi" &&
-              o.payment_status === "pending" &&
+              (o.payment_status === "pending" || o.payment_status === "failed") &&
               o.status !== "cancelled" &&
               o.status !== "returned";
             const confirmationPending = paymentConfirmation?.orderId === o.id;
@@ -293,7 +293,7 @@ export default function Orders() {
                     <div className="row">
                       <strong>{o.order_number}</strong>
                       <span className={`badge status-${o.status}`}>
-                        {label(o.status)}
+                        {o.payment_method === "upi" && (o.payment_status === "pending" || o.payment_status === "failed") && o.status === "placed" ? "Awaiting payment" : label(o.status)}
                       </span>
                     </div>
                     <p className="muted">
@@ -319,7 +319,7 @@ export default function Orders() {
                           ? "Confirmation pending"
                           : busy === o.id
                             ? "Opening…"
-                            : "Pay now"}
+                            : o.payment_status === "failed" ? "Retry payment" : "Pay now"}
                       </button>
                     )}
                     {o.status === "placed" && (
