@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'src/api/gaon_api.dart';
+import 'src/notifications/push_registration.dart';
 import 'src/auth/firebase_google_sign_in.dart';
 import 'src/screens/login_screen.dart';
 import 'src/screens/customer_shell.dart';
@@ -38,6 +40,7 @@ class _GaonOneAppState extends State<GaonOneApp> {
         final me = await GaonApi.me();
         if (!mounted) return;
         setState(() { loggedIn = true; role = me.role; loading = false; bootstrapUnavailable = false; });
+        unawaited(PushRegistration.start());
       } else if (mounted) {
         setState(() => loading = false);
       }
@@ -57,6 +60,7 @@ class _GaonOneAppState extends State<GaonOneApp> {
   /// so the app returns to login instead of leaving the person on a screen
   /// that fails every action.
   void _onSessionExpired() {
+    unawaited(PushRegistration.stop());
     if (!mounted || !loggedIn) return;
     setState(() { loggedIn = false; role = 'customer'; loading = false; });
     final messenger = _messengerKey.currentState;
@@ -66,6 +70,7 @@ class _GaonOneAppState extends State<GaonOneApp> {
   }
 
   Future<void> _logout() async {
+    await PushRegistration.stop();
     await FirebaseGoogleSignIn.signOut();
     await GaonApi.logout();
     if (mounted) setState(() { loggedIn = false; role = 'customer'; loading = false; });

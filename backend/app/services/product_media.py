@@ -1,8 +1,11 @@
-"""Small durable helpers for the product-media foundation; no public routes yet."""
+"""Durable product-media helpers and public approved-derivative selectors."""
 
 from __future__ import annotations
 
 import uuid
+from urllib.parse import quote, urlsplit
+
+from app.core.config import settings
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -65,3 +68,141 @@ def new_quarantined_asset(
         state="quarantined",
         is_primary=False,
     )
+
+
+def approved_listing_media(db: Session, listing_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[dict]]:
+    """Public-safe image descriptors; only approved, non-retired derivatives.
+
+    Never return private storage keys; use only configured HTTPS public URLs.
+    """
+    if not listing_ids or not settings.PRODUCT_MEDIA_ENABLED or not settings.MEDIA_PUBLIC_BASE_URL:
+        return {}
+    assets = db.scalars(
+        select(ProductMediaAsset).where(
+            ProductMediaAsset.store_product_id.in_(listing_ids),
+            ProductMediaAsset.state == "approved",
+            ProductMediaAsset.public_object_key.is_not(None),
+            ProductMediaAsset.retired_at.is_(None),
+        ).order_by(
+            ProductMediaAsset.store_product_id,
+            ProductMediaAsset.position,
+            ProductMediaAsset.created_at,
+        )
+    ).all()
+    result: dict[uuid.UUID, list[dict]] = {}
+    for asset in assets:
+        url = public_derivative_url(asset.public_object_key)
+        if url is None:
+            continue
+        result.setdefault(asset.store_product_id, []).append({
+            "id": str(asset.id),
+            "url": url,
+            "alt_text": asset.alt_text,
+            "position": asset.position,
+            "is_primary": asset.is_primary,
+        })
+    return result
+
+
+def public_derivative_url(key: str | None) -> str | None:
+    """Resolve only approved derivative object keys against a configured HTTPS origin.
+
+    Never accept absolute URLs, query strings, dot segments, or untrusted
+    object paths. The caller must also check database approval and retirement.
+    """
+    base = settings.MEDIA_PUBLIC_BASE_URL
+    if not settings.PRODUCT_MEDIA_ENABLED or not base or not key:
+        return None
+    parsed = urlsplit(base)
+    if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
+            or parsed.query or parsed.fragment or parsed.path not in {"", "/"}):
+        return None
+    if any(part in {"", ".", ".."} for part in key.split("/")):
+        return None
+    if key.startswith("/") or "\\" in key or "?" in key or "#" in key or "%" in key or ":" in key:
+        return None
+    if not key.startswith("public/listings/") or not key.endswith(".webp"):
+        return None
+    return base.rstrip("/") + "/" + "/".join(quote(part, safe="-_.~") for part in key.split("/"))
+
+
+def claim_due_media_job(db: Session, *, now=None) -> ProductMediaJob | None:
+    """Atomically lease one due job using a row lock; commit before external I/O."""
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import or_
+    now = now or datetime.now(timezone.utc)
+    job = db.scalar(
+        select(ProductMediaJob)
+        .where(
+            ProductMediaJob.attempt_count < settings.MEDIA_JOB_MAX_ATTEMPTS,
+            or_(
+                (ProductMediaJob.state == "queued") &
+                or_(ProductMediaJob.next_attempt_at.is_(None), ProductMediaJob.next_attempt_at <= now),
+                (ProductMediaJob.state == "processing") &
+                ProductMediaJob.lease_expires_at.is_not(None) &
+                (ProductMediaJob.lease_expires_at <= now),
+            ),
+        )
+        .order_by(ProductMediaJob.created_at, ProductMediaJob.id)
+        .with_for_update(skip_locked=True)
+        .limit(1)
+    )
+    if job is not None:
+        job.state = "processing"
+        job.attempt_count += 1
+        job.lease_expires_at = now + timedelta(seconds=settings.MEDIA_JOB_LEASE_SECONDS)
+        job.next_attempt_at = None
+    return job
+
+
+def complete_media_job(job: ProductMediaJob, *, outcome: str, failure_code: str | None = None, now=None) -> None:
+    """Finish a lease or schedule bounded exponential retries.
+
+    The caller must hold the job row lock and commit the transition.
+    """
+    from datetime import datetime, timedelta, timezone
+    now = now or datetime.now(timezone.utc)
+    if outcome == "approved":
+        job.state = "completed"
+        job.failure_code = None
+        job.next_attempt_at = None
+    elif outcome == "rejected":
+        job.state = "failed"
+        job.failure_code = (failure_code or "rejected")[:80]
+        job.next_attempt_at = None
+    elif outcome == "retry":
+        if job.attempt_count >= settings.MEDIA_JOB_MAX_ATTEMPTS:
+            job.state = "failed"
+            job.failure_code = "max_attempts_exceeded"
+            job.next_attempt_at = None
+        else:
+            job.state = "queued"
+            job.failure_code = (failure_code or "transient_failure")[:80]
+            job.next_attempt_at = now + timedelta(seconds=min(3600, 30 * 2 ** (job.attempt_count - 1)))
+    else:
+        raise ValueError("Unknown media job outcome")
+    job.lease_expires_at = None
+
+
+def expire_exhausted_media_jobs(db: Session, *, now=None, limit: int = 100) -> int:
+    """Finalize expired processing leases that consumed their final attempt.
+
+    Such jobs cannot be reclaimed by claim_due_media_job; without this
+    cleanup they would remain indefinitely in a processing state.
+    """
+    from datetime import datetime, timezone
+    now = now or datetime.now(timezone.utc)
+    jobs = db.scalars(
+        select(ProductMediaJob).where(
+            ProductMediaJob.state == "processing",
+            ProductMediaJob.attempt_count >= settings.MEDIA_JOB_MAX_ATTEMPTS,
+            ProductMediaJob.lease_expires_at.is_not(None),
+            ProductMediaJob.lease_expires_at <= now,
+        ).order_by(ProductMediaJob.created_at).limit(limit).with_for_update(skip_locked=True)
+    ).all()
+    for job in jobs:
+        job.state = "failed"
+        job.failure_code = "max_attempts_exceeded"
+        job.lease_expires_at = None
+        job.next_attempt_at = None
+    return len(jobs)

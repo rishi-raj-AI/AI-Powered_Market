@@ -1,6 +1,8 @@
 from fastapi import APIRouter
 
 from app.api.v1.routes.admin import router as admin_router
+from app.api.v1.routes.admin_onboarding import router as admin_onboarding_router
+from app.api.v1.routes.admin_merchant_details import router as admin_merchant_details_router
 from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.checkout import router as checkout_router
 from app.api.v1.routes.commerce import router as commerce_router
@@ -62,4 +64,6 @@ api_router.include_router(notifications_router)
 api_router.include_router(support_router)
 api_router.include_router(media_router)
 api_router.include_router(admin_router)
+api_router.include_router(admin_onboarding_router)
+api_router.include_router(admin_merchant_details_router)
 api_router.include_router(store_banner_admin_router)

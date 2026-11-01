@@ -14,6 +14,7 @@ export default function StorePage() {
   const {id} = useParams<{id: string}>();
   const [store, setStore] = useState<Store | null>(null);
   const [items, setItems] = useState<StoreProduct[]>([]);
+  const [approvedImages, setApprovedImages] = useState<Record<string, string>>({});
   const [qty, setQty] = useState<Record<string, number>>({});
   const [q, setQ] = useState('');
   const [msg, setMsg] = useState('');
@@ -37,6 +38,19 @@ export default function StorePage() {
       setStore(nextStore);
       setItems(nextItems);
       setLoadedStoreId(id);
+      // Optional media must never block the catalogue or checkout.
+      setApprovedImages({});
+      void gaonApi.approvedStoreImages(id).then(images => {
+        if (requestId !== loadRequest.current) return;
+        const urls: Record<string, string> = {};
+        for (const [listingId, assets] of Object.entries(images)) {
+          const first = assets.find(asset => asset.url.startsWith('https://'));
+          if (first) urls[listingId] = first.url;
+        }
+        setApprovedImages(urls);
+      }).catch(() => {
+        if (requestId === loadRequest.current) setApprovedImages({});
+      });
     } catch (error: unknown) {
       if (requestId !== loadRequest.current) return;
       setLoadError(error instanceof Error ? error.message : 'Storefront is temporarily unavailable.');
@@ -125,7 +139,7 @@ export default function StorePage() {
       <div className="panel filterBar"><div className="search" style={{flex: 1}}><Search size={18} /><input aria-label="Search store catalogue" value={q} onChange={event => setQ(event.target.value)} placeholder="Search products in this store..." /></div><span className="badge">{shown.length} available</span></div>
       <div className="grid productGrid" style={{marginTop: 20}}>{shown.map(product => {
         const discount = product.mrp ? Math.max(0, Math.round((1 - Number(product.price) / Number(product.mrp)) * 100)) : 0;
-        return <div className="card productCard" key={product.id}><div className="row space"><span className="pill">{product.product.unit}</span>{discount > 0 && <span className="badge status-approved">{discount}% off</span>}</div><h3>{product.product.name}</h3><p className="muted clamp2">{product.product.brand || product.product.description || 'Local catalogue item'}</p><div><span className="price">{money(product.price)}</span>{product.mrp && Number(product.mrp) > Number(product.price) && <span className="muted strike">{money(product.mrp)}</span>}</div><div className="row space" style={{marginTop: 14}}><div className="qtyControl"><button type="button" className="qtyBtn" aria-label={`Decrease ${product.product.name} quantity`} onClick={() => setQty(current => ({...current, [product.id]: Math.max(1, amount(product) - 1)}))}><Minus size={14} /></button><strong aria-label={`${product.product.name} quantity`}>{amount(product)}</strong><button type="button" className="qtyBtn" aria-label={`Increase ${product.product.name} quantity`} disabled={amount(product) >= product.stock_quantity} onClick={() => setQty(current => ({...current, [product.id]: Math.min(product.stock_quantity, amount(product) + 1)}))}><Plus size={14} /></button></div><button type="button" className="btn" disabled={Boolean(busy)} onClick={() => void add(product)}><ShoppingCart size={16} /> {busy === product.id ? 'Adding…' : 'Add'}</button></div><p className={`stockText ${product.stock_quantity <= 5 ? 'lowStock' : ''}`}>{product.stock_quantity <= 5 ? `Only ${product.stock_quantity} left` : `${product.stock_quantity} in stock`}</p>{product.stock_quantity <= 5 && <SubstitutionChoices listingId={product.id} onChoose={addSubstitution} cartBusy={Boolean(busy)} />}</div>;
+        return <div className="card productCard" key={product.id}><div className="row space"><span className="pill">{product.product.unit}</span>{discount > 0 && <span className="badge status-approved">{discount}% off</span>}</div>{approvedImages[product.id] && <div className="approvedProductImage"><img src={approvedImages[product.id]} alt={product.product.name} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={event => { event.currentTarget.style.display = 'none'; }} /></div>}<h3>{product.product.name}</h3><p className="muted clamp2">{product.product.brand || product.product.description || 'Local catalogue item'}</p><div><span className="price">{money(product.price)}</span>{product.mrp && Number(product.mrp) > Number(product.price) && <span className="muted strike">{money(product.mrp)}</span>}</div><div className="row space" style={{marginTop: 14}}><div className="qtyControl"><button type="button" className="qtyBtn" aria-label={`Decrease ${product.product.name} quantity`} onClick={() => setQty(current => ({...current, [product.id]: Math.max(1, amount(product) - 1)}))}><Minus size={14} /></button><strong aria-label={`${product.product.name} quantity`}>{amount(product)}</strong><button type="button" className="qtyBtn" aria-label={`Increase ${product.product.name} quantity`} disabled={amount(product) >= product.stock_quantity} onClick={() => setQty(current => ({...current, [product.id]: Math.min(product.stock_quantity, amount(product) + 1)}))}><Plus size={14} /></button></div><button type="button" className="btn" disabled={Boolean(busy)} onClick={() => void add(product)}><ShoppingCart size={16} /> {busy === product.id ? 'Adding…' : 'Add'}</button></div><p className={`stockText ${product.stock_quantity <= 5 ? 'lowStock' : ''}`}>{product.stock_quantity <= 5 ? `Only ${product.stock_quantity} left` : `${product.stock_quantity} in stock`}</p>{product.stock_quantity <= 5 && <SubstitutionChoices listingId={product.id} onChoose={addSubstitution} cartBusy={Boolean(busy)} />}</div>;
       })}</div>
       {!loading && shown.length === 0 && <div className="panel emptyState"><h3>No matching products</h3><p className="muted">Try a different search term.</p></div>}
     </>}

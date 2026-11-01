@@ -209,3 +209,103 @@ def test_enabled_production_media_accepts_complete_s3_and_scanner_contract() -> 
     )
     assert settings.PRODUCT_MEDIA_ENABLED is True
     assert settings.MEDIA_STORAGE_BACKEND == "s3"
+
+
+def test_public_media_selector_excludes_quarantine_and_retired_images(monkeypatch) -> None:
+    from app.services import product_media
+    monkeypatch.setattr(product_media.settings, "PRODUCT_MEDIA_ENABLED", True)
+    monkeypatch.setattr(product_media.settings, "MEDIA_PUBLIC_BASE_URL", "https://media.example.invalid")
+    from app.services.product_media import approved_listing_media
+    from app.models.user import User
+    with session() as db:
+        store = make_store(db)
+        listing = make_listing(db, store)
+        user = db.get(User, db.get(Merchant, store.merchant_id).owner_user_id)
+        for index, (state, retired) in enumerate([
+            ("quarantined", False),
+            ("approved", False),
+            ("approved", True),
+        ]):
+            db.add(ProductMediaAsset(
+                store_product_id=listing.id,
+                uploader_user_id=user.id,
+                state=state,
+                source_object_key=f"quarantine/listings/source-{index}",
+                public_object_key=f"public/listings/derivative-{index}.webp" if state == "approved" else None,
+                source_sha256=str(index) * 64,
+                position=index,
+                is_primary=False,
+                retired_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc) if retired else None,
+            ))
+        db.commit()
+        results = approved_listing_media(db, [listing.id])
+        assert len(results[listing.id]) == 1
+        assert results[listing.id][0]["position"] == 1
+        assert "public_object_key" not in results[listing.id][0]
+        assert approved_listing_media(db, []) == {}
+
+
+def test_public_derivative_urls_fail_closed(monkeypatch) -> None:
+    from app.services import product_media
+    monkeypatch.setattr(product_media.settings, "PRODUCT_MEDIA_ENABLED", False)
+    monkeypatch.setattr(product_media.settings, "MEDIA_PUBLIC_BASE_URL", "https://media.example.invalid")
+    assert product_media.public_derivative_url("public/listings/a.webp") is None
+    monkeypatch.setattr(product_media.settings, "PRODUCT_MEDIA_ENABLED", True)
+    assert product_media.public_derivative_url("public/listings/a.webp") == "https://media.example.invalid/public/listings/a.webp"
+    for key in ("../secret", "/absolute", "https://evil.invalid/a", "public//a.webp", "public/%2e%2e/a.webp", "public/a.webp?token=x", "quarantine/listings/private.webp", "public/listings/source.png"):
+        assert product_media.public_derivative_url(key) is None
+    monkeypatch.setattr(product_media.settings, "MEDIA_PUBLIC_BASE_URL", "http://media.example.invalid")
+    assert product_media.public_derivative_url("public/listings/a.webp") is None
+
+
+@pytest.mark.parametrize("unsafe_key", [
+    "../escape", "/absolute", "quarantine//duplicate", "quarantine/./same",
+    "quarantine/../escape", "quarantine\\\\windows", "quarantine/%2e%2e",
+    "quarantine/image.webp?token=secret", "quarantine/image.webp#fragment",
+])
+def test_local_storage_rejects_ambiguous_keys(tmp_path: Path, unsafe_key: str) -> None:
+    storage = LocalObjectStorage(tmp_path / "private", tmp_path / "public")
+    with pytest.raises(ValueError, match="relative opaque paths"):
+        storage.put_quarantine(unsafe_key, b"source", "image/webp")
+
+
+def test_database_job_claim_respects_lease_and_retry_schedule(monkeypatch):
+    """Exercise the real PostgreSQL selector rather than mocking its SQL."""
+    from datetime import datetime, timedelta, timezone
+    from app.services import product_media
+    from app.services.product_media import claim_due_media_job, complete_media_job
+    from app.models.user import User
+
+    monkeypatch.setattr(product_media.settings, "MEDIA_JOB_MAX_ATTEMPTS", 3)
+    now = datetime.now(timezone.utc)
+    with session() as db:
+        store = make_store(db)
+        listing = make_listing(db, store)
+        owner = db.get(User, db.get(Merchant, store.merchant_id).owner_user_id)
+        asset = new_quarantined_asset(
+            store_product_id=listing.id, uploader=owner,
+            source_object_key=f"quarantine/listings/{listing.id}/lease-test",
+            source_sha256=_source_hash(),
+        )
+        db.add(asset)
+        db.flush()
+        job, created = create_media_job(db, asset=asset)
+        assert created
+        db.commit()
+        first = claim_due_media_job(db, now=now)
+        assert first is not None and first.id == job.id
+        assert first.attempt_count == 1 and first.state == "processing"
+        db.commit()
+        assert claim_due_media_job(db, now=now + timedelta(seconds=1)) is None
+        reclaimed = claim_due_media_job(db, now=now + timedelta(seconds=121))
+        assert reclaimed is not None and reclaimed.id == job.id
+        assert reclaimed.attempt_count == 2
+        complete_media_job(reclaimed, outcome="retry", now=now + timedelta(seconds=121))
+        db.commit()
+        assert claim_due_media_job(db, now=now + timedelta(seconds=122)) is None
+        due = db.get(ProductMediaJob, job.id)
+        assert due.state == "queued" and due.next_attempt_at is not None
+        next_claim = claim_due_media_job(db, now=due.next_attempt_at + timedelta(seconds=1))
+        assert next_claim is not None and next_claim.attempt_count == 3
+        db.commit()
+        assert claim_due_media_job(db, now=now + timedelta(days=1)) is None

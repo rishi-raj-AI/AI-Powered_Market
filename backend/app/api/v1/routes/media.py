@@ -3,7 +3,16 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+from app.api.deps import get_db
+from app.models.commerce import Merchant, Store, StoreProduct
+from app.models.product_media import ProductMediaAsset
+from app.services.product_media import new_quarantined_asset, create_media_job, audit_media_event
+from app.services.product_media_storage import configured_media_storage
+from app.services.product_media import approved_listing_media
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 
 from app.api.deps import ensure_capability, require_roles
 from app.core.capabilities import Capability
@@ -46,6 +55,10 @@ async def upload_image(
     file: UploadFile = File(...),
     user: User = Depends(require_roles(UserRole.MERCHANT, UserRole.ADMIN)),
 ) -> dict[str, str | int]:
+    if settings.PRODUCT_MEDIA_ENABLED:
+        # The legacy endpoint publishes unscanned bytes to a public volume.
+        # Once the safe pipeline is enabled, do not allow this bypass.
+        raise HTTPException(status_code=410, detail="Use listing-scoped quarantine uploads")
     if user.role == UserRole.ADMIN:
         ensure_capability(user, Capability.MEDIA_MODERATE)
     # Uploads write to a shared volume, so an unbounded endpoint is a disk
@@ -90,3 +103,146 @@ async def upload_image(
         "filename": filename,
         "size": len(content),
     }
+
+
+@router.post("/store-products/{listing_id}/images", status_code=202)
+async def queue_listing_image(
+    listing_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles(UserRole.MERCHANT, UserRole.ADMIN)),
+) -> dict:
+    """Quarantine a listing-owned image; never expose its private object key."""
+    if not settings.PRODUCT_MEDIA_ENABLED:
+        raise HTTPException(status_code=503, detail="Product image processing is unavailable")
+    if settings.MEDIA_STORAGE_BACKEND == "local" and settings.APP_ENV not in {"development", "test"}:
+        raise HTTPException(status_code=503, detail="Secure production upload adapter is unavailable")
+    listing = db.get(StoreProduct, listing_id, with_for_update=True)
+    store = db.get(Store, listing.store_id) if listing else None
+    merchant = db.get(Merchant, store.merchant_id) if store else None
+    if listing is None or merchant is None:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    if user.role == UserRole.ADMIN:
+        ensure_capability(user, Capability.MEDIA_MODERATE)
+    elif merchant.owner_user_id != user.id:
+        raise HTTPException(status_code=403, detail="You do not own this listing")
+    try:
+        rate_limiter.enforce("product-media-upload", str(user.id), limit=UPLOAD_RATE_LIMIT, window_seconds=UPLOAD_RATE_WINDOW_SECONDS)
+    except RateLimitExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except RateLimitUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    mime = (file.content_type or "").split(";")[0].strip().lower()
+    if mime not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=415, detail="Unsupported image format")
+    content = await file.read(settings.MEDIA_UPLOAD_MAX_BYTES + 1)
+    if not content or len(content) > settings.MEDIA_UPLOAD_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Image exceeds configured size limit")
+    if not _looks_like(content, mime):
+        raise HTTPException(status_code=415, detail="Image signature mismatch")
+    count = db.query(ProductMediaAsset).filter(
+        ProductMediaAsset.store_product_id == listing_id,
+        ProductMediaAsset.retired_at.is_(None),
+        ProductMediaAsset.state != "rejected",
+    ).count()
+    if count >= settings.MEDIA_IMAGE_MAX_PER_LISTING:
+        raise HTTPException(status_code=409, detail="Listing image limit reached")
+    asset_id = uuid.uuid4()
+    key = f"quarantine/listings/{listing_id}/{asset_id.hex}"
+    storage = configured_media_storage()
+    stored = storage.put_quarantine(key, content, mime)
+    asset = new_quarantined_asset(
+        store_product_id=listing_id, uploader=user, source_object_key=key,
+        source_sha256=stored.sha256, position=count,
+    )
+    asset.id = asset_id
+    asset.detected_mime = mime
+    asset.byte_size = stored.byte_size
+    try:
+        db.add(asset)
+        db.flush()
+        create_media_job(db, asset=asset)
+        audit_media_event(db, asset=asset, action="media.upload_queued", request_id=str(asset_id), actor=user)
+        db.commit()
+    except Exception:
+        db.rollback()
+        try:
+            storage.delete_quarantine(key)
+        except Exception:
+            # Preserve the database failure. A durable storage orphan
+            # reconciler must handle deletion failures and hard crashes.
+            pass
+        raise
+    return {"id": str(asset.id), "state": "quarantined"}
+
+
+@router.get("/store-products/{listing_id}/images")
+def list_merchant_listing_images(
+    listing_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles(UserRole.MERCHANT, UserRole.ADMIN)),
+) -> list[dict]:
+    """Private listing-image status; never expose quarantine object keys or raw uploads."""
+    listing = db.get(StoreProduct, listing_id)
+    if listing is None:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    store = db.get(Store, listing.store_id)
+    merchant = db.get(Merchant, store.merchant_id) if store else None
+    if user.role == UserRole.ADMIN:
+        ensure_capability(user, Capability.MEDIA_MODERATE)
+    elif merchant is None or merchant.owner_user_id != user.id:
+        raise HTTPException(status_code=403, detail="You do not own this listing")
+    assets = db.scalars(
+        select(ProductMediaAsset)
+        .where(ProductMediaAsset.store_product_id == listing_id)
+        .order_by(ProductMediaAsset.position, ProductMediaAsset.created_at)
+        .limit(50)
+    ).all()
+    return [
+        {
+            "id": str(asset.id),
+            "state": asset.state,
+            "alt_text": asset.alt_text,
+            "position": asset.position,
+            "is_primary": asset.is_primary,
+            "created_at": asset.created_at.isoformat(),
+        }
+        for asset in assets
+    ]
+
+
+@router.get("/store-products/{listing_id}/approved-images")
+def public_approved_listing_images(
+    listing_id: uuid.UUID,
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    """Return only approved derivative descriptors for a publicly available listing."""
+    listing = db.get(StoreProduct, listing_id)
+    if listing is None or not listing.is_available or listing.stock_quantity <= 0:
+        raise HTTPException(status_code=404, detail="Listing not available")
+    store = db.get(Store, listing.store_id)
+    merchant = db.get(Merchant, store.merchant_id) if store else None
+    if store is None or not store.is_active or merchant is None or merchant.status.value != "approved":
+        raise HTTPException(status_code=404, detail="Listing not available")
+    return approved_listing_media(db, [listing_id]).get(listing_id, [])
+
+
+@router.get("/stores/{store_id}/approved-images")
+def public_store_approved_images(
+    store_id: uuid.UUID,
+    limit: int = Query(default=100, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> dict[str, list[dict]]:
+    """Batch public-approved images for a storefront, without per-product requests."""
+    store = db.get(Store, store_id)
+    merchant = db.get(Merchant, store.merchant_id) if store else None
+    if store is None or not store.is_active or merchant is None or merchant.status.value != "approved":
+        raise HTTPException(status_code=404, detail="Store not found")
+    listing_ids = list(db.scalars(
+        select(StoreProduct.id).where(
+            StoreProduct.store_id == store_id,
+            StoreProduct.is_available.is_(True),
+            StoreProduct.stock_quantity > 0,
+        ).order_by(StoreProduct.updated_at.desc()).limit(limit)
+    ).all())
+    return {str(key): value for key, value in approved_listing_media(db, listing_ids).items()}

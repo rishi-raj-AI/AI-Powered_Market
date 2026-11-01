@@ -1,13 +1,10 @@
-"""Provider-neutral product-media boundaries.
-
-Only explicit test/development adapters exist in B1.  Production S3/R2 and
-scan implementations are intentionally deferred until their credentials and
-operational dependencies are provisioned; settings reject enabling them early.
-"""
+"""Provider-neutral product-media storage and scanner boundaries."""
 
 from __future__ import annotations
 
 import hashlib
+import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Protocol
@@ -40,12 +37,12 @@ class ObjectStorage(Protocol):
 
 
 class ContentScanner(Protocol):
-    def scan(self, item: StoredMediaObject) -> ScanResult: ...
+    def scan_bytes(self, item: StoredMediaObject, content: bytes) -> ScanResult: ...
 
 
 def _safe_path(root: Path, key: str) -> Path:
     path = PurePosixPath(key)
-    if not key or path.is_absolute() or ".." in path.parts:
+    if (not key or path.is_absolute() or "\\" in key or any(part in {"", ".", ".."} for part in key.split("/")) or any(char in key for char in ("?", "#", "%", ":"))):
         raise ValueError("Object keys must be relative opaque paths")
     destination = root.joinpath(*path.parts)
     resolved_root, resolved_destination = root.resolve(), destination.resolve()
@@ -74,7 +71,18 @@ class LocalObjectStorage:
     def _put(root: Path, key: str, content: bytes, content_type: str) -> StoredMediaObject:
         destination = _safe_path(root, key)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(content)
+        # A worker must never observe a partially written quarantine object.
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=destination.parent, prefix=".media-", delete=False) as handle:
+                temporary = Path(handle.name)
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, destination)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
         return LocalObjectStorage._stored(key, content, content_type)
 
     def put_quarantine(self, key: str, content: bytes, content_type: str) -> StoredMediaObject:
@@ -131,6 +139,10 @@ class FakeContentScanner:
         self.seen.append(item)
         return self.result
 
+    def scan_bytes(self, item: StoredMediaObject, content: bytes) -> ScanResult:
+        self.seen.append(item)
+        return self.result
+
 
 class FailClosedScanner:
     """The only safe non-production default: unavailable is never approval."""
@@ -138,3 +150,75 @@ class FailClosedScanner:
     def scan(self, item: StoredMediaObject) -> ScanResult:
         del item
         return ScanResult(verdict="unavailable", reason_code="scanner_not_configured")
+
+    def scan_bytes(self, item: StoredMediaObject, content: bytes) -> ScanResult:
+        del item, content
+        return ScanResult(verdict="unavailable", reason_code="scanner_not_configured")
+
+
+class HttpContentScanner:
+    """Synchronous private byte-stream scanner; a malformed response fails closed.
+
+    The configured HTTPS service must return JSON {"verdict": "clean"}.
+    Network errors are surfaced as unavailable rather than approval.
+    """
+
+    def __init__(self, endpoint: str, token: str, *, timeout_seconds: float = 15.0):
+        from urllib.parse import urlsplit
+        parsed = urlsplit(endpoint)
+        if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
+                or parsed.fragment or parsed.query):
+            raise ValueError("Scanner endpoint must use HTTPS without URL credentials, query or fragment")
+        if not token:
+            raise ValueError("Scanner authentication token is required")
+        self.endpoint = endpoint
+        self.token = token
+        self.timeout_seconds = timeout_seconds
+
+    def scan_bytes(self, item: StoredMediaObject, content: bytes) -> ScanResult:
+        import httpx
+        try:
+            response = httpx.post(
+                self.endpoint,
+                content=content,
+                headers={
+                    "Authorization": f"Bearer {self.token}",
+                    "Content-Type": "application/octet-stream",
+                    "X-Media-Sha256": item.sha256,
+                },
+                timeout=self.timeout_seconds,
+                follow_redirects=False,
+            )
+            response.raise_for_status()
+            data = response.json()
+            if not isinstance(data, dict) or data.get("verdict") not in {"clean", "infected", "rejected"}:
+                return ScanResult(verdict="unavailable", reason_code="invalid_scan_response")
+            reason = data.get("reason_code")
+            if reason is not None and (not isinstance(reason, str) or len(reason) > 80):
+                return ScanResult(verdict="unavailable", reason_code="invalid_scan_response")
+            return ScanResult(verdict=data["verdict"], reason_code=reason)
+        except (httpx.HTTPError, ValueError, TypeError):
+            return ScanResult(verdict="unavailable", reason_code="scanner_unavailable")
+
+    def scan(self, item: StoredMediaObject) -> ScanResult:
+        # Metadata-only scanning is never sufficient for publication.
+        return ScanResult(verdict="unavailable", reason_code="source_bytes_required")
+
+
+def configured_media_storage() -> ObjectStorage:
+    """Construct only the explicitly configured storage backend."""
+    from app.core.config import settings
+
+    if settings.MEDIA_STORAGE_BACKEND == "local" and settings.APP_ENV in {"development", "test"}:
+        return LocalObjectStorage(Path("data/media/quarantine"), Path("data/media/public"))
+    if settings.MEDIA_STORAGE_BACKEND == "s3":
+        from app.services.product_media_s3 import S3ObjectStorage
+        return S3ObjectStorage(
+            endpoint=settings.MEDIA_S3_ENDPOINT_URL,
+            region=settings.MEDIA_S3_REGION,
+            quarantine_bucket=settings.MEDIA_S3_QUARANTINE_BUCKET,
+            public_bucket=settings.MEDIA_S3_PUBLIC_BUCKET,
+            access_key_id=settings.MEDIA_S3_ACCESS_KEY_ID,
+            secret_access_key=settings.MEDIA_S3_SECRET_ACCESS_KEY,
+        )
+    raise RuntimeError("Secure media storage backend is not configured")

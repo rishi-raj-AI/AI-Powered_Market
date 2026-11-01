@@ -31,3 +31,43 @@ This presentation flag never enables a backend route and must remain false for
 the Firebase launch. Production SMS activation additionally requires the
 server-side MSG91/DLT configuration and device validation; do not place any
 provider credentials in this build flag.
+
+
+## Android build and acceptance gate
+
+The pull-request workflow runs `flutter analyze lib`, `flutter test`, and
+`flutter build apk --debug`. This is a development artifact, **not** a
+production-signed APK. Build validation must not be inferred from a queued CI run.
+
+On a development Mac with Flutter and Android SDK installed:
+
+```bash
+cd mobile
+flutter doctor -v
+flutter pub get --enforce-lockfile # if pubspec.lock is committed
+flutter analyze lib
+flutter test
+flutter build apk --debug --dart-define=API_URL=https://gaonone.in/api/v1 --dart-define=GAONONE_LEGACY_OTP_ENABLED=false
+```
+
+Release builds deliberately fail unless `mobile/android/key.properties` exists.
+Create it **locally**, never in Git, with these four properties:
+
+```properties
+storePassword=YOUR_LOCAL_SECRET
+keyPassword=YOUR_LOCAL_SECRET
+keyAlias=YOUR_RELEASE_KEY_ALIAS
+storeFile=/absolute/path/to/private/upload-keystore.jks
+```
+
+Then run `flutter build apk --release --dart-define=API_URL=https://gaonone.in/api/v1 --dart-define=GAONONE_LEGACY_OTP_ENABLED=false`.
+Do not distribute the APK until the production backend supports the chosen
+mobile authentication flow and release signing is independently verified.
+
+**Real-device acceptance checklist:** Google sign-in and token exchange;
+GPS-denied village discovery; slow/failed GPS lookup; offline refresh and retry;
+store inventory and cart quantity; COD quote and idempotent checkout recovery;
+landmark-only address; order history; Hindi/Marathi text clipping; low-memory
+Android startup; flaky 2G/3G networking; delivery proof and cash collection.
+Use a real low-end Android device and preserve the test evidence. A successful
+debug build alone does not satisfy these gates.

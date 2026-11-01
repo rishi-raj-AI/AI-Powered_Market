@@ -6,6 +6,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../api/gaon_api.dart';
+import '../utils/polyline_decoder.dart';
+import '../utils/tracking_freshness.dart';
 
 class CustomerLiveTracking extends StatefulWidget {
   final String orderId;
@@ -21,6 +23,7 @@ class _CustomerLiveTrackingState extends State<CustomerLiveTracking> {
   Timer? gpsTimer;
   Timer? routeTimer;
   String? error;
+  bool trackingConnectionLost = false;
 
   @override
   void initState() {
@@ -47,11 +50,17 @@ class _CustomerLiveTrackingState extends State<CustomerLiveTracking> {
         setState(() {
           tracking = value;
           error = null;
+          trackingConnectionLost = false;
         });
       }
     } catch (_) {
-      if (mounted && tracking == null) {
-        setState(() => error = 'Live tracking is temporarily unavailable.');
+      if (mounted) {
+        if (tracking == null) {
+          setState(() => error = 'Live tracking is temporarily unavailable.');
+        } else {
+          // Keep last known markers, but never present a cached ETA as live.
+          setState(() => trackingConnectionLost = true);
+        }
       }
     }
   }
@@ -75,30 +84,6 @@ class _CustomerLiveTrackingState extends State<CustomerLiveTracking> {
     return '${(meters.toDouble() / 1000).toStringAsFixed(1)} km';
   }
 
-  List<LatLng> _decodePolyline(String encoded) {
-    final points = <LatLng>[];
-    var index = 0, latitude = 0, longitude = 0;
-    while (index < encoded.length) {
-      var shift = 0, result = 0, byte = 0;
-      do {
-        byte = encoded.codeUnitAt(index++) - 63;
-        result |= (byte & 0x1f) << shift;
-        shift += 5;
-      } while (byte >= 0x20 && index < encoded.length);
-      latitude += (result & 1) != 0 ? ~(result >> 1) : result >> 1;
-      shift = 0;
-      result = 0;
-      do {
-        byte = encoded.codeUnitAt(index++) - 63;
-        result |= (byte & 0x1f) << shift;
-        shift += 5;
-      } while (byte >= 0x20 && index < encoded.length);
-      longitude += (result & 1) != 0 ? ~(result >> 1) : result >> 1;
-      points.add(LatLng(latitude / 1e5, longitude / 1e5));
-    }
-    return points;
-  }
-
   Future<void> _openRiderMap(Map<String, dynamic> rider) async {
     final uri = Uri.https('www.google.com', '/maps/search/', {
       'api': '1',
@@ -120,8 +105,13 @@ class _CustomerLiveTrackingState extends State<CustomerLiveTracking> {
     final data = tracking!;
     final active = data['tracking_active'] == true;
     final rider = data['rider'] as Map<String, dynamic>?;
-    final age = data['rider_location_age_seconds'] as int? ?? 0;
-    final stale = rider != null && age > 30;
+    final reportedAge = data['rider_location_age_seconds'];
+    final age = reportedAge is num && reportedAge.isFinite && reportedAge >= 0
+        ? reportedAge.ceil()
+        : null;
+    final stale = rider != null &&
+        isRiderLocationStale(reportedAge,
+            connectionLost: trackingConnectionLost);
     final routeAvailable = route?['available'] == true;
     final store = data['store'] as Map<String, dynamic>?;
     final customer = data['customer'] as Map<String, dynamic>?;
@@ -146,7 +136,7 @@ class _CustomerLiveTrackingState extends State<CustomerLiveTracking> {
           rider, Icons.delivery_dining, stale ? Colors.grey : Colors.blue);
     }
     final routePolyline = route?['encoded_polyline'] is String && !stale
-        ? _decodePolyline(route!['encoded_polyline'] as String)
+        ? decodePolylineSafely(route!['encoded_polyline'] as String)
         : <LatLng>[];
     final center = markers.isNotEmpty
         ? markers.last.point
@@ -171,6 +161,15 @@ class _CustomerLiveTrackingState extends State<CustomerLiveTracking> {
                 style: const TextStyle(fontWeight: FontWeight.w700)),
             Text('${_distance(route?['distance_meters'])} remaining'),
           ],
+          if (active && trackingConnectionLost) ...[
+            const SizedBox(height: 8),
+            const Row(children: [
+              Icon(Icons.wifi_off_rounded),
+              SizedBox(width: 6),
+              Expanded(child: Text(
+                  'Tracking connection interrupted. Showing the last known rider location; ETA paused until updates resume.')),
+            ]),
+          ],
           if (active && stale) ...[
             const SizedBox(height: 8),
             const Row(children: [
@@ -183,7 +182,9 @@ class _CustomerLiveTrackingState extends State<CustomerLiveTracking> {
           ],
           if (active && rider != null) ...[
             const SizedBox(height: 8),
-            Text('Rider location received ${age}s ago'),
+            Text(age == null
+                ? 'Rider location age unavailable'
+                : 'Rider location received ${age}s ago'),
             if (rider['accuracy_m'] is num)
               Text('GPS accuracy ≈ ${(rider['accuracy_m'] as num).round()} m'),
             const SizedBox(height: 8),
