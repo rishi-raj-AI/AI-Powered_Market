@@ -68,6 +68,14 @@ def test_overlapping_zones_admit_covered_address_and_reject_outside_checkout() -
             assert quote.serviceable is True
             assert quote.checkout_ready is True
 
+            # Global coverage must never override a particular store's
+            # smaller configured delivery zone.
+            store.service_area_id = near_zone.id
+            db.flush()
+            assert cart_quote(address.id, db=db, user=customer).serviceable is False
+            store.service_area_id = covering_zone.id
+            db.flush()
+
             # A genuinely out-of-zone address must still fail both admission
             # and the authoritative place-order mutation.
             address.latitude, address.longitude = 5.2, 5.2
