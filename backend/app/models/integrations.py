@@ -77,6 +77,8 @@ class PaymentWebhookEvent(Base):
     event_type: Mapped[str] = mapped_column(String(80), nullable=False)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
 
 
