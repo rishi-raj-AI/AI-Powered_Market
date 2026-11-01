@@ -67,11 +67,17 @@ class _AddressPinRepairActionState extends State<AddressPinRepairAction> {
     } catch (error) {
       if (!mounted) return;
       setState(() {
+        // A timeout/network error may happen AFTER the server commits. Never
+        // claim the original address is unchanged when the outcome is unknown.
         _error = saved
             ? 'Pin saved, but the address list could not refresh. Reload your cart before ordering.'
-            : error is ApiException && error.statusCode == 404
-                ? 'Address confirmation is unavailable. Refresh the app and try again.'
-                : 'Could not save the pin. Your existing address is unchanged. ${error is ApiException ? error.message : ''}';
+            : error is ApiException && error.statusCode == 422
+                ? 'Pin rejected. Your existing address is unchanged. ${error.message}'
+                : error is FormatException
+                    ? 'Invalid pin. Your existing address is unchanged.'
+                    : error is ApiException && error.statusCode == 404
+                        ? 'Address or confirmation endpoint unavailable. Reload your cart before retrying.'
+                        : 'Could not confirm whether the pin was saved. Reload your cart before retrying.';
       });
     } finally {
       if (mounted) setState(() => _busy = false);
