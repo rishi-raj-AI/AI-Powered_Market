@@ -60,8 +60,9 @@ ordinary application logs.
    cycle, schema consistency, and all backend tests.
 2. Merge and deploy the additive migration **only after separate approval**.
    Until then the endpoint must not be called by mobile or web clients.
-3. Integrate Android and web explicit pin confirmation. PR #246 currently
-   confirms pins in Flutter UI but does not persist provenance; PR #245 stops
+3. Integrate Android and web explicit pin confirmation. PR #246 now
+   sends optional provenance after Flutter confirmation, but the existing
+   backend cannot persist it until this migration is released; PR #245 stops
    the web map from silently selecting a fallback point.
 4. Make legacy addresses editable via the replacement endpoint and refresh
    saved address/selected ID after confirmation. Never automatically alter
