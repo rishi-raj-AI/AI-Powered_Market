@@ -182,3 +182,45 @@ FCM credentials are valid or notifications reach handsets.
 **Release decision remains NO-GO:** all three PRs are unmerged, no human
 reviews are recorded, no real-device/provider acceptance has been completed,
 and no production deployment or feature activation was performed.
+
+## Exact-head CI and signed QA artifacts — 2026-11-01 10:48 IST checkpoint
+
+At this checkpoint, **all five GitHub Actions workflows passed on each
+branch's then-current head**. This supersedes earlier pending-status notes,
+but these immutable SHAs are now historical because further hardening commits
+were made afterward.
+
+| PR | Verified head SHA | Backend CI | Web CI | Mobile CI | Production CI | Signed QA APK |
+| --- | --- | --- | --- | --- | --- | --- |
+| [#235](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/235) | `c70a4cc85a2bc904e39113c3c76697e2e231af5b` | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41272482992) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41272483066) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41272482979) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41272482902) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41272479542) |
+| [#236](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/236) | `ad094e5049a15a0755d524c5da3d3935a0f34d88` | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41272494605) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41272494529) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41272494485) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41272494555) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41272490459) |
+| [#237](https://github.com/rishi-raj-AI/AI-Powered_Market/pull/237) | `5f2d2d6ac9e250c7bbe6ecdd0d41fd42025d2235` | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41272500704) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41272500694) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41272500702) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41272500706) | [pass](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41272496138) |
+
+The corresponding unexpired signed QA artifacts were:
+[#235 artifact 13069758414](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41272479542/artifacts/13069758414),
+[#236 artifact 13069833273](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41272490459/artifacts/13069833273),
+and [#237 artifact 13068969674](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/41272496138/artifacts/13068969674).
+GitHub reported expiry on 2026-11-15 UTC. The QA workflow verifies the
+existing permanent APK signing certificate against pinned SHA-256
+`0b936a93cc249dd83131d92d23011158e7d17536724155ca312059c58f8e935b`.
+A passing workflow is **not** evidence of physical-device installation.
+
+### Additional changes after the green checkpoint
+
+- Priority 1 now safely rejects malformed, truncated, out-of-range and
+  oversized route polylines, preserving the live-tracking screen and markers
+  if the routing provider sends invalid geometry. Added Flutter regression tests.
+- The signed QA APK workflow now fails closed when the Google OAuth server
+  client ID is absent; a signed artifact must not silently omit this Android
+  sign-in configuration. This check is configuration presence, **not** proof
+  that Google login works on a real handset.
+- Priority 2 and 3 branches were reconciled with those Priority 1 changes,
+  preserving the media implementation and release documentation.
+- New exact-head CI and signed APK checks were triggered; **do not mark these
+  newer commits verified until their workflows finish**.
+
+No PR has an approving human review, and none is merged. Real-device
+Firebase/Google, GPS/Maps, merchant/rider push, COD, payments, dispatch,
+proof-of-delivery, production backup/restore and secure media configuration
+remain unverified. **NO-GO for production; keep automatic dispatch and
+product media disabled.**
