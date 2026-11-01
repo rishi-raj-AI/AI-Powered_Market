@@ -88,7 +88,11 @@ jobs:
           for key in GAONONE_ANDROID_KEYSTORE_PASSWORD GAONONE_ANDROID_KEY_ALIAS GAONONE_ANDROID_KEY_PASSWORD; do
             if [ -z "${!key}" ]; then echo "::error::Missing signing secret $key"; exit 1; fi
           done
-          flutter build apk --release --build-number=5 \
+          # Each QA build must upgrade cleanly over the previous signed APK.
+          # Keep the existing signing identity; only the version code changes.
+          QA_BUILD_NUMBER=$((5 + GITHUB_RUN_NUMBER))
+          echo "GAONONE_QA_BUILD_NUMBER=$QA_BUILD_NUMBER" >> "$GITHUB_ENV"
+          flutter build apk --release --build-number="$QA_BUILD_NUMBER" \
             --dart-define=API_URL=https://gaonone.in/api/v1 \
             --dart-define=GAONONE_LEGACY_OTP_ENABLED=false \
             --dart-define=GAONONE_FIREBASE_ANDROID_API_KEY="$FIREBASE_API_KEY" \
@@ -116,10 +120,21 @@ jobs:
             echo "::error::APK signing certificate does not match the permanent GaonOne certificate"
             exit 1
           fi
+      - name: Write signed QA build provenance
+        run: |
+          set -euo pipefail
+          APK=mobile/build/app/outputs/flutter-apk/gaonone-qa.apk
+          printf 'commit=%s\nworkflow_run=%s\nbuild_number=%s\nsigning_cert_sha256=%s\napk_sha256=%s\n' \
+            "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GAONONE_QA_BUILD_NUMBER" \
+            "0b936a93cc249dd83131d92d23011158e7d17536724155ca312059c58f8e935b" \
+            "$(sha256sum "$APK" | cut -d' ' -f1)" \
+            > mobile/build/app/outputs/flutter-apk/gaonone-qa-provenance.txt
       - name: Publish QA APK
         uses: actions/upload-artifact@v4
         with:
           name: gaonone-qa-apk-${{ github.sha }}
-          path: mobile/build/app/outputs/flutter-apk/gaonone-qa.apk
+          path: |
+            mobile/build/app/outputs/flutter-apk/gaonone-qa.apk
+            mobile/build/app/outputs/flutter-apk/gaonone-qa-provenance.txt
           retention-days: 14
           if-no-files-found: error
