@@ -9,8 +9,9 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.v1.routes.checkout import cart_quote, safe_checkout
-from app.api.v1.routes.geography import _serviceability
+from app.api.v1.routes.geography import _serviceability, create_my_address
 from app.models.orders import Cart, CartItem
+from app.schemas.geography import AddressCreate
 from app.schemas.orders import CheckoutRequest
 from app.services.spatial import point_is_in_service_area, serviceability_for_point
 from tests import factories
@@ -44,6 +45,7 @@ def test_overlapping_zones_admit_covered_address_and_reject_outside_checkout() -
         db.add(item)
         db.commit()
 
+        saved_address = None
         try:
             # Before the fix, the nearest 50-m zone won and returned false.
             best = serviceability_for_point(db, 5.0, 5.0)
@@ -53,6 +55,14 @@ def test_overlapping_zones_admit_covered_address_and_reject_outside_checkout() -
             assert point_is_in_service_area(db, near_zone.id, 5.0, 5.0) is False
             assert point_is_in_service_area(db, covering_zone.id, 5.0, 5.0) is True
             assert _serviceability(db, 5.0, 5.0).serviceable is True
+            saved_address = create_my_address(
+                AddressCreate(
+                    village_id=covering_hub.id, landmark="Covered entrance",
+                    latitude=5.0, longitude=5.0,
+                ),
+                db=db, user=customer,
+            )
+            assert saved_address.id is not None
 
             quote = cart_quote(address.id, db=db, user=customer)
             assert quote.serviceable is True
@@ -63,6 +73,15 @@ def test_overlapping_zones_admit_covered_address_and_reject_outside_checkout() -
             address.latitude, address.longitude = 5.2, 5.2
             db.flush()
             assert _serviceability(db, 5.2, 5.2).serviceable is False
+            with pytest.raises(HTTPException) as address_error:
+                create_my_address(
+                    AddressCreate(
+                        village_id=covering_hub.id, landmark="Outside entrance",
+                        latitude=5.2, longitude=5.2,
+                    ),
+                    db=db, user=customer,
+                )
+            assert address_error.value.status_code == 422
             outside_quote = cart_quote(address.id, db=db, user=customer)
             assert outside_quote.serviceable is False
             assert outside_quote.checkout_ready is False
@@ -75,6 +94,8 @@ def test_overlapping_zones_admit_covered_address_and_reject_outside_checkout() -
             assert "does not deliver" in error.value.detail
         finally:
             db.rollback()
+            if saved_address is not None:
+                db.delete(saved_address)
             db.delete(item)
             db.delete(cart)
             db.delete(address)
