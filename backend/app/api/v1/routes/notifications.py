@@ -17,7 +17,9 @@ router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
 @router.get("/config", response_model=NotificationConfigResponse)
 def notification_config() -> NotificationConfigResponse:
-    return NotificationConfigResponse(enabled=bool(settings.FCM_PROJECT_ID))
+    # Do not advertise push as enabled when the worker lacks credentials.
+    # A configured project ID alone cannot deliver any notification.
+    return NotificationConfigResponse(enabled=bool(settings.FCM_PROJECT_ID and settings.FCM_SERVICE_ACCOUNT_JSON_B64))
 
 @router.post("/devices", response_model=DeviceRegistrationRead, status_code=status.HTTP_201_CREATED)
 def register_device(payload: DeviceRegistrationCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
