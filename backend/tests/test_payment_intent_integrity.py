@@ -286,6 +286,37 @@ def test_older_unsettled_attempt_blocks_reusing_newer_active_intent(monkeypatch)
         assert exc.value.status_code == 409
 
 
+@pytest.mark.parametrize("scenario", ["two_active", "active_without_provider_order"])
+def test_ambiguous_active_intent_history_requires_reconciliation(monkeypatch, scenario):
+    """An empty provider history cannot prove a second live checkout is safe."""
+    with session() as db:
+        customer, order, attempt = _context(db)
+        if scenario == "two_active":
+            db.add(PaymentAttempt(
+                order_id=order.id,
+                provider="razorpay",
+                provider_order_id=f"order_{uuid4().hex}",
+                status="created",
+                amount=order.total,
+                currency="INR",
+            ))
+        else:
+            attempt.provider_order_id = None
+        db.commit()
+        monkeypatch.setattr(
+            payment_routes, "list_razorpay_order_payments",
+            lambda **_kwargs: pytest.fail("Ambiguous active intents must fail before provider reads"),
+        )
+        monkeypatch.setattr(
+            payment_routes, "create_razorpay_order",
+            lambda **_kwargs: pytest.fail("Must not create another provider order"),
+        )
+        with pytest.raises(HTTPException) as exc:
+            payment_routes.create_payment_intent(order.id, db=db, user=customer)
+        assert exc.value.status_code == 409
+        assert "reconciliation" in exc.value.detail
+
+
 def test_unknown_historical_payment_provider_blocks_new_intent(monkeypatch):
     with session() as db:
         customer, order, attempt = _context(db)
