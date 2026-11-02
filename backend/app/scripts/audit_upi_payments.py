@@ -183,7 +183,7 @@ def audit_unpaid_upi(*, limit: int = 100, days: int = 30) -> dict:
             attempts = db.scalars(
                 select(PaymentAttempt).where(PaymentAttempt.order_id == order.id)
             ).all()
-            captures: set[str] = set()
+            captures: set[tuple[str, str]] = set()
             unavailable = False
             inconsistent = False
             unsettled = False
@@ -191,6 +191,8 @@ def audit_unpaid_upi(*, limit: int = 100, days: int = 30) -> dict:
             for attempt in attempts:
                 if attempt.status == "paid" or attempt.provider_payment_id:
                     local_capture = True
+                elif attempt.status not in {"created", "attempted", "failed"}:
+                    unsettled = True
                 if (
                     attempt.provider != "razorpay"
                     or attempt.currency != "INR"
@@ -215,7 +217,11 @@ def audit_unpaid_upi(*, limit: int = 100, days: int = 30) -> dict:
                     ):
                         inconsistent = True
                     if payment.get("status") == "captured":
-                        captures.add(payment["id"])
+                        payment_id = payment.get("id")
+                        if isinstance(payment_id, str) and payment_id:
+                            captures.add((attempt.provider_order_id, payment_id))
+                        else:
+                            inconsistent = True
                     elif payment.get("status") != "failed":
                         unsettled = True
 
