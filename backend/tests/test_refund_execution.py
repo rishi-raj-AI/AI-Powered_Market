@@ -13,6 +13,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
+from sqlalchemy import event
 
 from app.api.v1.routes.payment_hardening import _process_refund_event
 from app.models.integrations import PaymentRefund
@@ -387,3 +388,37 @@ def test_refund_webhook_can_resolve_single_unbound_obligation() -> None:
         assert refund.provider_refund_id == provider_refund_id
         assert refund.status == "succeeded"
         assert order.payment_status == PaymentStatus.REFUNDED
+
+
+def test_refund_dispatch_reacquires_order_before_refund_after_provider_call(monkeypatch) -> None:
+    """The post-provider transaction must not invert cancellation's lock order."""
+    _enable_provider(monkeypatch)
+    monkeypatch.setattr(
+        refund_service, "create_razorpay_refund",
+        _ProviderSpy(result={"id": _rid("rfnd_order_first"), "status": "processed"}),
+    )
+    with session() as db:
+        order = make_order(db, payment_status=PaymentStatus.PAID)
+        db.commit()
+        refund = ensure_refund_request(db, order, reason=REFUND_REASON_CANCELLED)
+        db.commit()
+        locked = []
+
+        def observe(state):
+            stmt = state.statement
+            if getattr(stmt, "_for_update_arg", None) is None:
+                return
+            sql = str(stmt)
+            if "FROM orders" in sql:
+                locked.append("order")
+            elif "FROM payment_refunds" in sql:
+                locked.append("refund")
+
+        event.listen(db, "do_orm_execute", observe)
+        try:
+            assert dispatch_refund(db, refund.id) == REFUND_SUCCEEDED
+        finally:
+            event.remove(db, "do_orm_execute", observe)
+        # Initial refund claim commits before the provider call. The next
+        # transaction must lock the order before reacquiring the refund.
+        assert locked[:3] == ["refund", "order", "refund"]
