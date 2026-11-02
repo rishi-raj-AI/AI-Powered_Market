@@ -216,6 +216,10 @@ issue refunds, or build APKs until the release owner approves.
       duplicate refund or downgrade a confirmed refund.
 - [ ] Refund webhook tests: reject missing currency as well as mismatched
       currency; verify that no refund state or settlement changes occur.
+      A signed `refund.processed` event must report a processed entity, and
+      `refund.failed` must report a failed entity. Unknown or contradictory
+      statuses remain unprocessed for replay/reconciliation; a correctly
+      labelled late failure must never downgrade a completed refund.
 - [ ] Razorpay payment-history collection: missing/non-integer/mismatched
       `count`, malformed rows, missing/non-string payment IDs, duplicate IDs
       (including contradictory captured/failed records), entries belonging to
