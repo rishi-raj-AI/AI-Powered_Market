@@ -298,8 +298,10 @@ export default function Orders() {
             const canPay =
               o.payment_method === "upi" &&
               (o.payment_status === "pending" || o.payment_status === "failed") &&
-              o.status !== "cancelled" &&
-              o.status !== "returned";
+              // Mirror the backend intent gate: only PLACED orders can pay.
+              // Never offer a checkout button on a stale accepted/delivered
+              // order even if its payment status is inconsistent.
+              o.status === "placed";
             const confirmationPending = paymentConfirmation?.orderId === o.id;
             return (
               <div className="panel orderPanel" key={o.id}>
