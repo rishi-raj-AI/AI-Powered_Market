@@ -146,6 +146,15 @@ def create_my_address(payload: AddressCreate, db: Session = Depends(get_db), use
         raise HTTPException(status_code=404, detail="Village not found")
     if (payload.latitude is None) != (payload.longitude is None):
         raise HTTPException(status_code=422, detail="Latitude and longitude must be supplied together")
+    # The NULL-provenance checkout exception is for existing historical rows,
+    # not a way for older or custom clients to mint newly trusted coordinates.
+    # Keep reads of historical addresses backward compatible; enforce this only
+    # on creation so existing AddressRead responses remain valid.
+    if payload.latitude is not None and payload.location_source is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Confirm your delivery location on the map before saving a pinned address",
+        )
     if payload.latitude is not None and payload.longitude is not None:
         coverage = _serviceability(db, payload.latitude, payload.longitude)
         if not coverage.serviceable:
