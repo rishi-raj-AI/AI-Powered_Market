@@ -74,7 +74,7 @@ jobs:
           alembic upgrade head
 
           # Geography-first upgrade in a separate disposable PostGIS database.
-          PGPASSWORD=gaonone_ci_password createdb -h localhost -U gaonone gaonone_ci_geography_first
+          PGPASSWORD=gaonone_ci_password createdb -h localhost -U gaonone -T template_postgis gaonone_ci_geography_first
           GEO_DB_URL="postgresql+psycopg://gaonone:gaonone_ci_password@localhost:5432/gaonone_ci_geography_first"
           DATABASE_URL="$GEO_DB_URL" alembic upgrade 0027_address_location_provenance
           DATABASE_URL="$GEO_DB_URL" alembic upgrade head
