@@ -224,6 +224,7 @@ export default function Orders() {
     };
     setBusy(o.id);
     setError("");
+    setMsg("");
     try {
       const intent = await gaonApi.paymentIntent(o.id);
       let paymentCallbackReceived = false;
@@ -259,7 +260,17 @@ export default function Orders() {
       });
     } catch (e: unknown) {
       clearPayment();
-      setError(paymentIntentError(e));
+      // An intent request can fail after a delayed provider capture or a
+      // webhook update. Refresh before suggesting any retry so a stale
+      // PENDING card does not invite the customer to pay twice.
+      const latest = await load(true);
+      const current = latest?.find((order) => order.id === o.id);
+      if (current?.payment_status === "paid") {
+        setError("");
+        setMsg(`Payment verified for ${o.order_number}.`);
+      } else {
+        setError(paymentIntentError(e));
+      }
     }
   }
   return (
