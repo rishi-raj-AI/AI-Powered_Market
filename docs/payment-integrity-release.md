@@ -25,6 +25,9 @@ issue refunds, or build APKs until the release owner approves.
 7. Refund obligations created for captures after cancellation or return must
    include the captured provider payment ID. Without it the refund dispatcher
    cannot execute the obligation; the captured attempt must be flushed first.
+8. A refund webhook must match the recorded Razorpay payment ID, refund ID,
+   amount in paise and currency before it can mark an order refunded. A late
+   pending/failed refund result cannot reverse an already processed refund.
 
 ## Feature flags and operator safety
 
@@ -67,6 +70,9 @@ issue refunds, or build APKs until the release owner approves.
 - [ ] Expiry tests: zero attempts, provider outage, authorized payment, captured
       payment, captured plus authorized, multiple captures, inventory restore
       once, cancellation race.
+- [ ] Refund webhook tests: mismatched payment/refund ID, amount/currency,
+      malformed payload, valid processed result and late failed result after
+      success. Inspect any indefinitely deferred refund events manually.
 - [ ] Manually investigate any second captured payment or unprocessed duplicate
       webhook. Do not clear the event or refund blindly: reconcile the provider
       transaction and customer obligation first.
