@@ -53,12 +53,25 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
             unavailable = False
             mismatch = False
             ambiguous = False
+            # Duplicate local provider identities are not two independent
+            # receipts. They may represent a broken retry/import and can
+            # conceal another charge even when one provider capture matches.
+            seen_order_ids: set[str] = set()
+            seen_payment_ids: set[str] = set()
             for attempt in attempts:
                 # Audit all attempts, not just Razorpay rows. A different
                 # provider could have collected money for the same order.
                 if attempt.provider != "razorpay":
                     mismatch = True
                     continue
+                if attempt.provider_order_id:
+                    if attempt.provider_order_id in seen_order_ids:
+                        mismatch = True
+                    seen_order_ids.add(attempt.provider_order_id)
+                if attempt.provider_payment_id:
+                    if attempt.provider_payment_id in seen_payment_ids:
+                        mismatch = True
+                    seen_payment_ids.add(attempt.provider_payment_id)
                 # A matching provider capture cannot validate an inconsistent
                 # local ledger. An attempt for a different amount, currency or
                 # non-paid status still requires explicit reconciliation.
@@ -113,7 +126,8 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
                         and bool(payment_id)
                         and payment.get("order_id") == attempt.provider_order_id
                         and payment.get("currency") == "INR"
-                        and payment.get("amount") == amount_to_subunits(order.total)
+                        and type(payment.get("amount")) is int
+                        and payment["amount"] == amount_to_subunits(order.total)
                         and payment_id == attempt.provider_payment_id
                     ):
                         matched_capture_ids.add(payment_id)
