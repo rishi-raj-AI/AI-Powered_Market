@@ -192,8 +192,10 @@ def _apply_paid(db: Session, attempt: PaymentAttempt, order: Order, provider_pay
 
 
 def _apply_failed(attempt: PaymentAttempt, order: Order) -> None:
-    # A late/invalid provider event must never overwrite terminal cancellation or
-    # refund state. Active unpaid orders may still transition to payment failed.
+    # A late failure must not erase either order-level or attempt-level capture
+    # evidence, even if an older inconsistent order still says PENDING.
+    if attempt.status == "paid" or attempt.provider_payment_id:
+        return
     if order.status in {OrderStatus.CANCELLED, OrderStatus.RETURNED} or order.payment_status in {
         PaymentStatus.PAID,
         PaymentStatus.REFUNDED,
@@ -379,6 +381,20 @@ def _process_event(db: Session, payload: dict) -> bool:
         if not previously_paid and order.payment_status == PaymentStatus.PAID and order.status == OrderStatus.PLACED:
             _notify_payment_captured(db, order)
     elif event == "payment.failed":
+        # Signed events are authentic but may refer to a different payment or
+        # contain incomplete fields. Do not let an order-only or mismatched
+        # failure overwrite the current payment attempt's state. Keep the
+        # durable event pending for reconciliation instead.
+        if (
+            not isinstance(payment_entity, dict)
+            or not provider_payment_id
+            or payment_entity.get("order_id") != attempt.provider_order_id
+            or payment_entity.get("status") != "failed"
+            or type(payment_entity.get("amount")) is not int
+            or payment_entity["amount"] != amount_to_subunits(attempt.amount)
+            or payment_entity.get("currency") != attempt.currency
+        ):
+            return False
         _apply_failed(attempt, order)
     return True
 
