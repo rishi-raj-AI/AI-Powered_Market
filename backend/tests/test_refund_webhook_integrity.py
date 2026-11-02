@@ -6,7 +6,8 @@ import pytest
 
 from app.api.v1.routes.payment_hardening import _process_refund_event
 from app.models.orders import PaymentStatus
-from app.services.refunds import REFUND_REASON_CANCELLED, ensure_refund_request
+from app.services.refunds import REFUND_REASON_CANCELLED, ensure_refund_request, apply_provider_refund_result
+from app.services.payments import PaymentProviderError
 from tests.factories import make_order, session
 
 
@@ -81,5 +82,34 @@ def test_unknown_refund_id_with_known_payment_cannot_replace_existing_refund():
         order, refund = _context(db)
         assert _process_refund_event(db, _payload(refund, id=f"rfnd_{uuid4().hex}")) is False
         db.commit()
+        db.refresh(order)
+        assert order.payment_status == PaymentStatus.REFUND_PENDING
+
+
+def test_direct_provider_result_cannot_reverse_completed_refund():
+    with session() as db:
+        order, refund = _context(db)
+        apply_provider_refund_result(db, refund, {
+            "id": refund.provider_refund_id, "status": "processed",
+        })
+        db.commit()
+        apply_provider_refund_result(db, refund, {
+            "id": refund.provider_refund_id, "status": "failed",
+        })
+        db.commit()
+        db.refresh(order)
+        db.refresh(refund)
+        assert refund.status == "succeeded"
+        assert order.payment_status == PaymentStatus.REFUNDED
+
+
+def test_direct_provider_result_rejects_conflicting_refund_id():
+    with session() as db:
+        order, refund = _context(db)
+        with pytest.raises(PaymentProviderError):
+            apply_provider_refund_result(db, refund, {
+                "id": f"rfnd_{uuid4().hex}", "status": "processed",
+            })
+        db.rollback()
         db.refresh(order)
         assert order.payment_status == PaymentStatus.REFUND_PENDING
