@@ -3,6 +3,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import event
 
 from app.api.v1.routes.payment_hardening import _process_refund_event
 from app.models.orders import PaymentStatus
@@ -113,3 +114,36 @@ def test_direct_provider_result_rejects_conflicting_refund_id():
         db.rollback()
         db.refresh(order)
         assert order.payment_status == PaymentStatus.REFUND_PENDING
+
+
+@pytest.mark.parametrize("known_refund_id", [True, False])
+def test_refund_webhook_locks_order_before_refund(known_refund_id):
+    """Avoid a PostgreSQL deadlock with cancellation's order-first locking."""
+    with session() as db:
+        order, refund = _context(db)
+        if not known_refund_id:
+            refund.provider_refund_id = None
+            db.commit()
+        observed = []
+
+        def record_lock(orm_execute_state):
+            stmt = orm_execute_state.statement
+            if getattr(stmt, "_for_update_arg", None) is None:
+                return
+            sql = str(stmt)
+            if "FROM orders" in sql:
+                observed.append("order")
+            elif "FROM payment_refunds" in sql:
+                observed.append("refund")
+
+        event.listen(db, "do_orm_execute", record_lock)
+        try:
+            assert _process_refund_event(
+                db, _payload(refund, id=refund.provider_refund_id or f"rfnd_{uuid4().hex}")
+            ) is True
+            db.commit()
+        finally:
+            event.remove(db, "do_orm_execute", record_lock)
+        assert observed[:2] == ["order", "refund"]
+        db.refresh(order)
+        assert order.payment_status == PaymentStatus.REFUNDED
