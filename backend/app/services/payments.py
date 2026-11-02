@@ -81,9 +81,9 @@ def create_razorpay_refund(
 ) -> dict:
     """Ask Razorpay to refund a captured payment.
 
-    The provider idempotency header makes a repeated call for the same logical
-    refund return the original refund instead of creating a second one, so a
-    retry after a network timeout cannot pay the customer twice.
+    Supply a stable provider idempotency header as defence in depth. A timeout,
+    5xx or malformed response is nevertheless an uncertain money movement:
+    the dispatcher must reconcile it rather than automatically resubmit.
     """
     if not razorpay_enabled():
         raise PaymentProviderUnavailable("Razorpay credentials are not configured")
