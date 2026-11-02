@@ -156,6 +156,17 @@ issue refunds, or build APKs until the release owner approves.
   provider attempt, or an unreadable payment attempt. The current audit
   scans **PAID** UPI orders only, not REFUND_PENDING/REFUNDED obligations.
   Do not automatically downgrade paid orders.
+- Pending/failed UPI triage (read-only; staging copy only):
+  `python -m app.scripts.audit_upi_payments --unpaid --limit 100 --days 30`.
+  Review `unexpected_capture`, `multiple_captures`,
+  `local_capture_evidence`, `provider_unavailable`,
+  `payment_history_mismatch`, and `provider_ambiguous` before
+  reattempting payment or expiring stock. `no_capture_found` is only a
+  point-in-time provider observation, **not** proof that a customer cannot
+  later complete an authorized checkout window. This tool never initiates
+  payments/refunds or changes orders, inventory, or financial records.
+  Both audit modes reject non-integer captured paise values; duplicate local
+  payment/order identities are treated as inconsistent evidence.
 
 ## Pre-release validation
 
@@ -279,6 +290,12 @@ issue refunds, or build APKs until the release owner approves.
 - [ ] Manually investigate any second captured payment or unprocessed duplicate
       webhook. Do not clear the event or refund blindly: reconcile the provider
       transaction and customer obligation first.
+- [ ] Run read-only `--unpaid` triage on a staging copy: detect provider
+      captures while orders remain PENDING/FAILED, multiple captures,
+      local capture evidence, missing provider orders, unknown local states,
+      provider outages, and nonterminal payment histories. Do not interpret
+      `no_capture_found` as authorization to retry/expire a live checkout.
+      Verify tests leave order and payment records unchanged.
 - [ ] Run the historical audit against a **staging copy**; reconcile discrepancies
       manually with Razorpay records and the refund ledger.
 - [ ] Confirm no production payment record is changed by staging tests.
