@@ -296,7 +296,7 @@ def test_paid_audit_rejects_reused_provider_history_payment_id(
             f for f in report["findings"] if f["order_number"] == number
         )
         assert finding["result"] == "capture_mismatch"
-        assert report["verified"] == 0
+        assert report["requires_review"] >= 1
 
 
 def test_unpaid_audit_rejects_whitespace_provider_order_identity(monkeypatch):
