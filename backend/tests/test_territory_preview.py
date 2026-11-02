@@ -12,7 +12,9 @@ from app.models.delivery_territories import (
     DeliveryTerritory, DeliveryTerritoryVersion, OperatingRegion,
     StoreDeliveryTerritory,
 )
-from app.services.territory_preview import match_active_store_territory
+from app.services.territory_preview import (
+    match_active_store_territory, snapshot_current_territory_geometry,
+)
 from tests import factories
 
 
@@ -37,10 +39,29 @@ def _active_territory(db, store, *, kind="circle", priority=0, assignment_priori
     db.add(territory)
     db.flush()
     actor = factories.make_user(db)
+    if kind == "polygon":
+        db.execute(
+            text("""
+                UPDATE delivery_territories
+                SET geometry=ST_Multi(ST_GeomFromText(
+                    'POLYGON((0 0,1 0,1 1,0 1,0 0))',4326))
+                WHERE id=:id
+            """),
+            {"id": territory.id},
+        )
+        db.execute(
+            text("""
+                INSERT INTO delivery_territory_exclusions (id, territory_id, geometry)
+                VALUES (:id, :territory_id, ST_Multi(ST_GeomFromText(
+                    'POLYGON((0.4 0.4,0.6 0.4,0.6 0.6,0.4 0.6,0.4 0.4))',
+                    4326)))
+            """),
+            {"id": uuid4(), "territory_id": territory.id},
+        )
     db.add(DeliveryTerritoryVersion(
         territory_id=territory.id,
         version=1,
-        snapshot={"geometry_type": kind},
+        snapshot=snapshot_current_territory_geometry(db, territory.id),
         changed_by=actor.id,
         change_reason="Synthetic published version",
         published_at=datetime.now(timezone.utc),
@@ -73,24 +94,6 @@ def test_polygon_includes_outer_boundary_but_excludes_holes_and_their_edges():
     with factories.session() as db:
         store = factories.make_store(db)
         _, territory, _ = _active_territory(db, store, kind="polygon")
-        db.execute(
-            text("""
-                UPDATE delivery_territories
-                SET geometry=ST_Multi(ST_GeomFromText(
-                    'POLYGON((0 0,1 0,1 1,0 1,0 0))',4326))
-                WHERE id=:id
-            """),
-            {"id": territory.id},
-        )
-        db.execute(
-            text("""
-                INSERT INTO delivery_territory_exclusions (id, territory_id, geometry)
-                VALUES (:id, :territory_id, ST_Multi(ST_GeomFromText(
-                    'POLYGON((0.4 0.4,0.6 0.4,0.6 0.6,0.4 0.6,0.4 0.4))',
-                    4326)))
-            """),
-            {"id": uuid4(), "territory_id": territory.id},
-        )
         assert match_active_store_territory(db, store.id, 0.0, 0.5) is not None
         assert match_active_store_territory(db, store.id, 0.5, 0.5) is None
         assert match_active_store_territory(db, store.id, 0.4, 0.5) is None
@@ -180,3 +183,72 @@ def test_naive_evaluation_time_rejected():
             match_active_store_territory(
                 db, uuid4(), 0, 0, evaluated_at=datetime(2026, 11, 2),
             )
+
+
+def test_unpublished_circle_edit_cannot_expand_or_shrink_published_coverage():
+    with factories.session() as db:
+        store = factories.make_store(db)
+        _, territory, _ = _active_territory(db, store)
+        assert match_active_store_territory(db, store.id, 0.0, 0.0) is not None
+        territory.radius_km = 2
+        db.flush()
+        # Even an inside point must fail closed when draft and published differ.
+        assert match_active_store_territory(db, store.id, 0.0, 0.0) is None
+        territory.radius_km = 1
+        db.flush()
+        assert match_active_store_territory(db, store.id, 0.0, 0.0) is not None
+        db.rollback()
+
+
+def test_unpublished_exclusion_edit_cannot_change_published_coverage():
+    with factories.session() as db:
+        store = factories.make_store(db)
+        _, territory, _ = _active_territory(db, store)
+        db.execute(
+            text("""
+                INSERT INTO delivery_territory_exclusions (id, territory_id, geometry)
+                VALUES (:id, :territory_id, ST_Multi(ST_GeomFromText(
+                    'POLYGON((0.1 0.1,0.2 0.1,0.2 0.2,0.1 0.2,0.1 0.1))',
+                    4326)))
+            """),
+            {"id": uuid4(), "territory_id": territory.id},
+        )
+        assert match_active_store_territory(db, store.id, 0.0, 0.0) is None
+        db.rollback()
+
+
+def test_unpublished_polygon_edit_cannot_change_published_coverage():
+    with factories.session() as db:
+        store = factories.make_store(db)
+        _, territory, _ = _active_territory(db, store, kind="polygon")
+        assert match_active_store_territory(db, store.id, 0.7, 0.7) is not None
+        db.execute(
+            text("""
+                UPDATE delivery_territories
+                SET geometry=ST_Multi(ST_GeomFromText(
+                    'POLYGON((0 0,2 0,2 2,0 2,0 0))',4326))
+                WHERE id=:id
+            """),
+            {"id": territory.id},
+        )
+        assert match_active_store_territory(db, store.id, 0.7, 0.7) is None
+        db.rollback()
+
+
+def test_incomplete_legacy_version_snapshot_never_authorizes_coverage():
+    with factories.session() as db:
+        store = factories.make_store(db)
+        _, territory, _ = _active_territory(db, store)
+        actor = factories.make_user(db)
+        db.add(DeliveryTerritoryVersion(
+            territory_id=territory.id,
+            version=2,
+            snapshot={"geometry_type": "circle"},
+            changed_by=actor.id,
+            change_reason="Incomplete legacy version for fail-closed test",
+            published_at=datetime.now(timezone.utc),
+        ))
+        territory.published_version = 2
+        db.flush()
+        assert match_active_store_territory(db, store.id, 0.0, 0.0) is None
+        db.rollback()
