@@ -67,7 +67,9 @@ issue refunds, or build APKs until the release owner approves.
     reconciliation, and exclude it from automatic retries. Explicit provider
     rejection remains separately retryable under existing policy. A webhook
     confirming success during an outbound refund call wins over a subsequent
-    API error; never downgrade `succeeded` to `failed`.
+    API error; never downgrade `succeeded` to `failed`. A pending webhook
+    that identifies the provider refund ID also blocks automatic re-dispatch
+    after a conflicting API error.
 
 ## Feature flags and operator safety
 
