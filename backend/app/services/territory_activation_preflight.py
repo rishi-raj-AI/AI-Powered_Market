@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from app.models.commerce import Merchant, MerchantStatus, Store
 from app.models.delivery_territories import (
     DeliveryTerritory, DeliveryTerritoryVersion, OperatingRegion,
     StoreDeliveryTerritory,
@@ -108,7 +109,12 @@ def inspect_territory_activation_preflight(
     total = db.scalar(select(func.count()).select_from(StoreDeliveryTerritory).where(
         StoreDeliveryTerritory.territory_id == territory_id,
     )) or 0
-    eligible = db.scalar(select(func.count()).select_from(StoreDeliveryTerritory).where(
+    eligible = db.scalar(select(func.count()).select_from(StoreDeliveryTerritory)
+        .join(Store, Store.id == StoreDeliveryTerritory.store_id)
+        .join(Merchant, Merchant.id == Store.merchant_id).where(
+        Store.is_active.is_(True),
+        Store.delivery_enabled.is_(True),
+        Merchant.status == MerchantStatus.APPROVED,
         StoreDeliveryTerritory.territory_id == territory_id,
         StoreDeliveryTerritory.status == "active",
         StoreDeliveryTerritory.delivery_enabled.is_(True),
