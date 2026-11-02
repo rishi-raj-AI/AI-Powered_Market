@@ -106,6 +106,29 @@ def test_failure_without_provider_order_id_remains_unprocessed():
 
 
 @pytest.mark.parametrize("capture_evidence", ["paid_status", "provider_payment_id"])
+def test_failure_on_second_attempt_does_not_hide_earlier_capture(capture_evidence):
+    """A stale PENDING order may already contain capture evidence elsewhere."""
+    with session() as db:
+        order, earlier = _context(db)
+        if capture_evidence == "paid_status":
+            earlier.status = "paid"
+        else:
+            earlier.provider_payment_id = f"pay_captured_{uuid4().hex}"
+        later = PaymentAttempt(
+            order_id=order.id, provider="razorpay",
+            provider_order_id=f"order_{uuid4().hex}",
+            status="attempted", amount=order.total, currency="INR",
+        )
+        db.add(later)
+        db.commit()
+        assert payment_hardening._process_event(db, _failed_event(later)) is True
+        db.flush()
+        assert later.status == "failed"
+        assert order.payment_status == PaymentStatus.PENDING
+        db.rollback()
+
+
+@pytest.mark.parametrize("capture_evidence", ["paid_status", "provider_payment_id"])
 def test_late_failure_preserves_locally_recorded_capture(capture_evidence):
     # Simulate a legacy inconsistent record: attempt has capture evidence but
     # the order-level status still says PENDING. Failure must not erase it.
