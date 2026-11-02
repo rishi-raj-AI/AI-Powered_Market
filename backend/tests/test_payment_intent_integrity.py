@@ -207,3 +207,46 @@ def test_intent_retry_defers_on_provider_read_failure(
         assert exc.value.status_code == expected_status
         db.refresh(attempt)
         assert attempt.status == "attempted"
+
+
+def test_intent_reuse_rejects_capture_on_older_failed_provider_order(monkeypatch):
+    """A newer active intent cannot hide captured money on an older failed attempt."""
+    with session() as db:
+        customer, order, active = _context(db)
+        older_provider_order_id = f"order_older_{uuid4().hex}"
+        older = PaymentAttempt(
+            order_id=order.id,
+            provider="razorpay",
+            provider_order_id=older_provider_order_id,
+            status="failed",
+            amount=order.total,
+            currency="INR",
+        )
+        db.add(older)
+        db.commit()
+        monkeypatch.setattr(payment_routes.settings, "RAZORPAY_KEY_ID", "rzp_test_mock")
+        queried = []
+
+        def history(*, provider_order_id):
+            queried.append(provider_order_id)
+            if provider_order_id == older_provider_order_id:
+                return [{
+                    "id": f"pay_late_{uuid4().hex}",
+                    "order_id": older_provider_order_id,
+                    "status": "captured",
+                    "amount": 12000,
+                    "currency": "INR",
+                }]
+            return []
+
+        monkeypatch.setattr(payment_routes, "list_razorpay_order_payments", history)
+        monkeypatch.setattr(
+            payment_routes, "create_razorpay_order",
+            lambda **_kwargs: pytest.fail("Older captured payment must block new intent"),
+        )
+        with pytest.raises(HTTPException) as exc:
+            payment_routes.create_payment_intent(order.id, db=db, user=customer)
+        assert exc.value.status_code == 409
+        assert older_provider_order_id in queried
+        db.refresh(active)
+        assert active.status == "attempted"
