@@ -263,6 +263,12 @@ def dispatch_refund(db: Session, refund_id: uuid.UUID) -> str:
         if locked.status == REFUND_SUCCEEDED:
             db.commit()
             return REFUND_SUCCEEDED
+        if locked.provider_refund_id:
+            # A signed pending webhook already identified a real provider
+            # refund. A later API rejection must not requeue that movement.
+            locked.status = REFUND_PROCESSING
+            db.commit()
+            return REFUND_PROCESSING
         if isinstance(exc, PaymentProviderIndeterminate):
             # A timeout, server error, or unreadable response may follow a
             # successful money movement. Never automatically submit again.
