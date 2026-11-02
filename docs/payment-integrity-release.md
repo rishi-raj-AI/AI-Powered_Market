@@ -60,7 +60,7 @@ issue refunds, or build APKs until the release owner approves.
     concurrent cancellation, refund-webhook and dispatch execution still
     require integration acceptance.
 
-15. A successful refund API HTTP response must independently identify the
+16. A successful refund API HTTP response must independently identify the
     expected provider payment ID, refund ID, exact amount in paise and INR
     currency before GaonOne records provider success. Missing or conflicting
     fields leave the refund obligation in `processing` for manual
@@ -68,7 +68,7 @@ issue refunds, or build APKs until the release owner approves.
     A verified webhook that completed while the API call was in flight
     remains terminal and must not be downgraded.
 
-16. A refund HTTP timeout, 5xx, unreadable response or response without a
+17. A refund HTTP timeout, 5xx, unreadable response or response without a
     provider refund ID has an **indeterminate** outcome: the provider may have
     moved money. Keep the obligation in `processing` for manual provider
     reconciliation, and exclude it from automatic retries. Explicit provider
@@ -78,21 +78,21 @@ issue refunds, or build APKs until the release owner approves.
     that identifies the provider refund ID also blocks automatic re-dispatch
     after a conflicting API error.
 
-17. Refund webhooks must explicitly include the expected currency, not merely
+18. Refund webhooks must explicitly include the expected currency, not merely
     omit a conflicting value. A signed refund event missing currency is not
     sufficient evidence to mark a refund successful; retain the obligation
     for replay/reconciliation.
-18. A read-only audit of paid UPI orders must inspect **all** local payment
+19. A read-only audit of paid UPI orders must inspect **all** local payment
     attempts, including unexpected providers, and must not report a verified
     capture when Razorpay also reports created, authorized, refunded, or
     unrecognised payments. Terminal failed payments do not by themselves
     invalidate a separately verified capture.
 
-19. A signed webhook event ID must never silently deduplicate a *different*
+20. A signed webhook event ID must never silently deduplicate a *different*
     signed payload. Conflicting provider event IDs return HTTP 409 without
     applying the second payload, even when the original event was already
     processed. Overlong event IDs are rejected before database insertion.
-20. A paid-order audit must flag a locally `paid` payment attempt missing its
+21. A paid-order audit must flag a locally `paid` payment attempt missing its
     provider payment ID even if another attempt has a matching capture.
     Malformed provider `failed` entries (missing ID, wrong order, amount or
     currency) are not reliable proof of nonpayment and must not be ignored.
