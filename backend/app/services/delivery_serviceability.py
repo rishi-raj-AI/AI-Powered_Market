@@ -127,6 +127,17 @@ def evaluate_delivery(
             store, address, "ADDRESS_LOCATION_UNCONFIRMED",
             "Confirm your delivery location on the map before placing an order", confidence,
         )
+    # Explicitly sourced provider centroids are not confirmed doorstep pins.
+    # Keep NULL-provenance historical coordinates usable for compatibility,
+    # but never promote a new unconfirmed source to checkout eligibility.
+    if source in {"gps", "map_pin", "searched_place"} and confidence not in {
+        "confirmed_gps", "confirmed_map_pin",
+    }:
+        return _reject(
+            store, address, "ADDRESS_LOCATION_UNCONFIRMED",
+            "Confirm your delivery location on the map before placing an order",
+            confidence,
+        )
     if not point_is_in_service_area(db, area.id, latitude, longitude):
         return _reject(
             store, address, "ADDRESS_OUTSIDE_TERRITORY",
