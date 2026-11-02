@@ -535,6 +535,35 @@ def test_indeterminate_refund_is_quarantined_without_automatic_retry(monkeypatch
 
 
 
+def test_pending_webhook_prevents_retry_after_provider_rejection(monkeypatch) -> None:
+    """A pending webhook proves that a refund was accepted, even if API fails."""
+    _enable_provider(monkeypatch)
+    with session() as db:
+        order = make_order(db, payment_status=PaymentStatus.PAID)
+        db.commit()
+        refund = ensure_refund_request(db, order, reason=REFUND_REASON_CANCELLED)
+        db.commit()
+        refund_id = refund.id
+        provider_refund_id = _rid("rfnd_concurrent_pending")
+
+        def provider_call(**_kwargs):
+            current = db.get(PaymentRefund, refund_id)
+            refund_service.apply_provider_refund_result(
+                db, current, {"id": provider_refund_id, "status": "pending"}
+            )
+            db.commit()
+            raise payment_service.PaymentProviderError("Provider rejected API request")
+
+        monkeypatch.setattr(refund_service, "create_razorpay_refund", provider_call)
+        assert dispatch_refund(db, refund_id) == REFUND_PROCESSING
+        db.refresh(refund)
+        db.refresh(order)
+        assert refund.provider_refund_id == provider_refund_id
+        assert refund.status == REFUND_PROCESSING
+        assert order.payment_status == PaymentStatus.REFUND_PENDING
+        assert refund_id not in refund_service.due_refund_ids(db, order_id=order.id)
+
+
 def test_refund_provider_error_reacquires_order_before_refund(monkeypatch) -> None:
     """Exception handling must use the same lock ordering as webhooks."""
     _enable_provider(monkeypatch)
