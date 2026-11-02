@@ -43,12 +43,18 @@ issue refunds, or build APKs until the release owner approves.
 12. An unknown provider refund ID may only be associated with an obligation
     by payment ID when exactly one candidate exists and it has no different
     provider refund ID. Multiple candidate obligations require manual review.
-13. Payment expiration fails closed on every nonterminal or unknown provider
+13. Razorpay order-payment history is only considered complete when the
+    collection reports an integer `count` equal to the number of returned
+    `items`, and the response is below the 100-payment page limit. Missing,
+    inconsistent, or paginated histories raise a provider error and defer
+    expiration or order-only webhook confirmation. A truncated history must
+    never be treated as evidence of no capture.
+14. Payment expiration fails closed on every nonterminal or unknown provider
     payment status (including `created` and `refunded`), malformed provider
     history, a locally recorded capture, or an attempt from an unknown
     provider. Only a verified absence of money or well-formed terminal failed
     payments may release reserved stock.
-14. Refund webhooks lock the commercial order before the refund obligation,
+15. Refund webhooks lock the commercial order before the refund obligation,
     matching cancellation lock order. Refund dispatch also reacquires the
     order lock before the refund lock after the provider call. PostgreSQL
     concurrent cancellation, refund-webhook and dispatch execution still
@@ -163,6 +169,9 @@ issue refunds, or build APKs until the release owner approves.
       duplicate refund or downgrade a confirmed refund.
 - [ ] Refund webhook tests: reject missing currency as well as mismatched
       currency; verify that no refund state or settlement changes occur.
+- [ ] Razorpay payment-history collection: missing/non-integer/mismatched
+      `count`, malformed rows and a full 100-item page fail closed; an
+      explicit zero count and a complete short page are accepted.
 - [ ] Provider-history integrity: an order-only `order.paid` event with one
       captured payment and a malformed secondary `failed` row (wrong order,
       amount, currency, or missing payment ID) remains pending; a well-formed
