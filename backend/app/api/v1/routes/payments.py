@@ -109,34 +109,6 @@ def create_payment_intent(
     if captured_attempt_id is not None:
         raise HTTPException(status_code=409, detail="Existing payment requires reconciliation")
 
-    existing = db.scalar(
-        select(PaymentAttempt)
-        .where(
-            PaymentAttempt.order_id == order.id,
-            PaymentAttempt.provider == "razorpay",
-            PaymentAttempt.status.in_(["created", "attempted"]),
-            PaymentAttempt.provider_order_id.is_not(None),
-        )
-        .order_by(PaymentAttempt.created_at.desc())
-    )
-    if existing and existing.provider_order_id:
-        if existing.amount != order.total or existing.currency != "INR":
-            raise HTTPException(status_code=409, detail="Existing payment intent requires reconciliation")
-        if not settings.RAZORPAY_KEY_ID:
-            raise HTTPException(status_code=503, detail="Payment provider is not configured")
-        _require_terminal_failed_provider_history(existing)
-        existing.status = "attempted"
-        db.commit()
-        return PaymentIntentResponse(
-            payment_attempt_id=existing.id,
-            provider="razorpay",
-            provider_order_id=existing.provider_order_id,
-            amount_subunits=amount_to_subunits(existing.amount),
-            amount=existing.amount,
-            currency=existing.currency,
-            key_id=settings.RAZORPAY_KEY_ID,
-        )
-
     # A previous attempt may have been locally marked failed just before a
     # late provider capture. Inspect all earlier attempts before opening a
     # new provider order, including unknown providers and mismatched terms.
@@ -154,6 +126,33 @@ def create_payment_intent(
         ):
             raise HTTPException(status_code=409, detail="Existing payment requires reconciliation")
         _require_terminal_failed_provider_history(prior)
+
+    existing = db.scalar(
+        select(PaymentAttempt)
+        .where(
+            PaymentAttempt.order_id == order.id,
+            PaymentAttempt.provider == "razorpay",
+            PaymentAttempt.status.in_(["created", "attempted"]),
+            PaymentAttempt.provider_order_id.is_not(None),
+        )
+        .order_by(PaymentAttempt.created_at.desc())
+    )
+    if existing and existing.provider_order_id:
+        if existing.amount != order.total or existing.currency != "INR":
+            raise HTTPException(status_code=409, detail="Existing payment intent requires reconciliation")
+        if not settings.RAZORPAY_KEY_ID:
+            raise HTTPException(status_code=503, detail="Payment provider is not configured")
+        existing.status = "attempted"
+        db.commit()
+        return PaymentIntentResponse(
+            payment_attempt_id=existing.id,
+            provider="razorpay",
+            provider_order_id=existing.provider_order_id,
+            amount_subunits=amount_to_subunits(existing.amount),
+            amount=existing.amount,
+            currency=existing.currency,
+            key_id=settings.RAZORPAY_KEY_ID,
+        )
 
     try:
         provider_order = create_razorpay_order(
