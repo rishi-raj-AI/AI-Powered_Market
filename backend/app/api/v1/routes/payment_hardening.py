@@ -267,6 +267,21 @@ def hardened_verify_payment(
 def _process_refund_event(db: Session, payload: dict) -> bool:
     """Reconcile an asynchronous refund outcome reported by the provider."""
     refund_entity = (((payload.get("payload") or {}).get("refund") or {}).get("entity") or {})
+    if not isinstance(refund_entity, dict):
+        return False
+    provider_status = refund_entity.get("status")
+    # A signed event can still contain stale or contradictory provider fields.
+    # Do not permanently acknowledge a "processed" event whose entity says
+    # failed/pending, or a "failed" event claiming a completed refund. An
+    # unknown status also cannot certify a money movement: preserve the
+    # durable event for replay or manual reconciliation.
+    if (
+        not isinstance(provider_status, str)
+        or provider_status not in {"created", "pending", "processed", "failed"}
+        or (payload.get("event") == "refund.processed" and provider_status != "processed")
+        or (payload.get("event") == "refund.failed" and provider_status != "failed")
+    ):
+        return False
     provider_refund_id = str(refund_entity.get("id") or "") or None
     refund_payment_id = str(refund_entity.get("payment_id") or "") or None
     if not provider_refund_id and not refund_payment_id:

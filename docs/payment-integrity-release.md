@@ -201,3 +201,52 @@ one mocked provider request.
 Run this with the backend integration suite against an isolated test database;
 never point it at production. CI success proves these simulated interleavings,
 not actual Razorpay sandbox lifecycle acceptance or production readiness.
+
+
+## Payment-history identity and refund-event consistency (integrated geography branch)
+
+- Treat Razorpay order-payment history as **indeterminate** when an item has a
+  missing, empty or non-string payment ID, references another provider order,
+  or repeats a payment ID (even if the collection count matches). Do not use
+  such history to expire reservations, restore stock or authorize another UPI
+  payment. Investigate the provider response and reconcile before retrying.
+- A signed `refund.processed` event requires entity status `processed`; a
+  signed `refund.failed` event requires entity status `failed`. Missing,
+  unknown or contradictory statuses must leave the webhook unprocessed for
+  replay/manual review, not transition the commercial order.
+- A later genuine `refund.failed` event must not reverse a previously
+  confirmed processed refund. Keep the existing order-first locking and
+  payment/refund identity, amount and currency validation.
+- These changes are stacked on integrated geography PR #270. The payment-only
+  branch #243 includes a temporary geography bypass and must not be merged
+  independently. Legacy service-area checks remain authoritative at quote
+  and order placement. Territory parity and preview are read-only.
+
+### Review and staging verification (never against production writes)
+
+From a disposable PostgreSQL/PostGIS-backed development or staging test
+environment with test-only credentials, run:
+
+```sh
+cd backend
+python -m pytest -q tests/test_razorpay_payment_history.py tests/test_refund_webhook_integrity.py
+python -m ruff check app/api/v1/routes/payment_hardening.py app/services/payments.py tests/test_razorpay_payment_history.py tests/test_refund_webhook_integrity.py
+```
+
+Then run the full Backend, Web, Mobile and Production CI workflows on the
+**exact PR head SHA**. Test contradictory signed refund outcomes, duplicated
+provider payment IDs, COD inside/outside legacy coverage, UPI capture/failure
+reconciliation and idempotent checkout retries. Do not enable territory
+activation, payment expiry or webhook replay without a separate approval.
+
+### Release/rollback boundaries
+
+No schema migration or new feature flag is introduced in this change.
+Deployment requires explicit authorization after staging acceptance and
+operator-reviewed rollback readiness. For rollback, revert the application
+commit(s) on the integrated release branch and redeploy the previous approved
+artifact; do not modify payment/refund records, manually mark orders paid,
+replay financial webhooks blindly, or broaden delivery territories. Preserve
+the durable webhook ledger and manually reconcile unresolved provider events.
+Production diagnosis, staging acceptance and real-device GPS/map-pin testing
+remain pending until independently evidenced.
