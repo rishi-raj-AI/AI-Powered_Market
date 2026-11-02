@@ -113,3 +113,55 @@ def test_deferred_webhook_duplicate_is_reprocessed_without_worker(monkeypatch):
                 PaymentWebhookEvent.event_key == event_key,
             ))
             db.commit()
+
+
+@pytest.mark.parametrize("processed", [False, True])
+def test_signed_webhook_event_id_collision_cannot_discard_distinct_payload(
+    monkeypatch, processed,
+):
+    event_key = f"evt_collision_{uuid4().hex}"
+    first_body = json.dumps({"event": "payment.captured", "payload": {"payment": {
+        "entity": {"id": "pay_original"},
+    }}}).encode("utf-8")
+    conflicting_body = json.dumps({"event": "payment.captured", "payload": {"payment": {
+        "entity": {"id": "pay_different"},
+    }}}).encode("utf-8")
+    monkeypatch.setattr(
+        payment_hardening, "verify_razorpay_webhook_signature", lambda **_: True,
+    )
+    calls = []
+    monkeypatch.setattr(
+        payment_hardening, "_process_event",
+        lambda *_: calls.append("processed") or processed,
+    )
+    with session() as db:
+        try:
+            assert _deliver(db, first_body, event_key) == {"ok": True}
+            with pytest.raises(HTTPException) as exc:
+                _deliver(db, conflicting_body, event_key)
+            assert exc.value.status_code == 409
+            stored = db.scalar(
+                select(PaymentWebhookEvent).where(
+                    PaymentWebhookEvent.event_key == event_key,
+                )
+            )
+            assert stored is not None
+            assert stored.payload["payload"]["payment"]["entity"]["id"] == "pay_original"
+            assert (stored.processed_at is not None) is processed
+            assert calls == ["processed"]
+        finally:
+            db.rollback()
+            db.execute(delete(PaymentWebhookEvent).where(
+                PaymentWebhookEvent.event_key == event_key,
+            ))
+            db.commit()
+
+
+def test_webhook_rejects_oversized_event_id_before_database_insert(monkeypatch):
+    monkeypatch.setattr(
+        payment_hardening, "verify_razorpay_webhook_signature", lambda **_: True,
+    )
+    with session() as db:
+        with pytest.raises(HTTPException) as exc:
+            _deliver(db, b'{"event":"payment.captured"}', "e" * 161)
+        assert exc.value.status_code == 400
