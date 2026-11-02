@@ -1,7 +1,8 @@
 # P0 payment + geography integration and release gate
 
-**Status: development-only, no production authorization.** This document accompanies
-draft PR #257 stacked on payment PR #243. It does not assert production recovery.
+**Status: development-only, no production authorization.** Originally written for
+PR #257, this runbook now tracks the draft integration stack through #264.
+It does not assert production recovery or authorize migration execution.
 
 ## Invariants
 
@@ -137,5 +138,8 @@ coordinates, contact details, address text or payment identifiers.
 6. Escalate any in-flight payment ambiguity for manual provider reconciliation;
    do not mark payments paid or retry refunds based on timeout alone.
 
-**Current gate:** production root cause unverified; merge-revision and combined
-schema tests pending; no production deployment, data mutation or APK permitted.
+**Current gate (2026-11-02):** the draft merge revision and three disposable
+upgrade paths were validated in earlier integration CI, but the latest stacked
+payment/geography head still requires exact-head CI and final review.
+Production root cause, staging COD/UPI and physical Android acceptance remain
+unverified. No production deployment, data mutation or APK is authorized.
