@@ -23,6 +23,7 @@ def test_audit_reports_multiple_captures_even_when_one_matches(monkeypatch):
             select(PaymentAttempt).where(PaymentAttempt.order_id == order.id)
         )
         db.commit()
+        order_number = order.order_number
         monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
         monkeypatch.setattr(
             audit_upi_payments, "list_razorpay_order_payments",
@@ -32,7 +33,7 @@ def test_audit_reports_multiple_captures_even_when_one_matches(monkeypatch):
             ],
         )
         report = audit_upi_payments.audit_paid_upi()
-        finding = next(f for f in report["findings"] if f["order_number"] == order.order_number)
+        finding = next(f for f in report["findings"] if f["order_number"] == order_number)
         assert finding["result"] == "multiple_captures"
 
 
