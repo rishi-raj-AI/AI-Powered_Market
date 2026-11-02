@@ -130,12 +130,18 @@ def _apply_paid(db: Session, attempt: PaymentAttempt, order: Order, provider_pay
         # Keep the webhook unprocessed for explicit financial reconciliation.
         if attempt.provider_payment_id and attempt.provider_payment_id != provider_payment_id:
             raise HTTPException(status_code=409, detail="Multiple captures require reconciliation")
+        # Either local PAID status or a recorded provider payment ID is
+        # evidence of another money movement. Legacy rows may have only one
+        # of those fields populated; requiring both could settle a second
+        # capture as if it were the original sale.
         another_capture = db.scalar(
             select(PaymentAttempt.id).where(
                 PaymentAttempt.order_id == order.id,
                 PaymentAttempt.id != attempt.id,
-                PaymentAttempt.status == "paid",
-                PaymentAttempt.provider_payment_id.is_not(None),
+                (
+                    (PaymentAttempt.status == "paid")
+                    | PaymentAttempt.provider_payment_id.is_not(None)
+                ),
             ).limit(1)
         )
         if another_capture is not None:
