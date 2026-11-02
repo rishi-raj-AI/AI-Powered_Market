@@ -54,6 +54,7 @@ def test_unpaid_audit_classifies_provider_history(monkeypatch, provider_status, 
         attempt = _attempt(db, order)
         db.commit()
         number = order.order_number
+        attempt_id = attempt.id
         monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
         monkeypatch.setattr(
             audit_upi_payments, "list_razorpay_order_payments",
@@ -64,7 +65,12 @@ def test_unpaid_audit_classifies_provider_history(monkeypatch, provider_status, 
         finding = next(f for f in report["findings"] if f["order_number"] == number)
         assert finding["result"] == expected
         assert report["requires_review"] >= (expected != "no_capture_found")
-        assert db.scalar(select(PaymentAttempt.status).where(PaymentAttempt.id == attempt.id)) == "attempted"
+        # The audit owns and closes its read-only session. Verify persisted
+        # state in a new session instead of dereferencing a detached ORM row.
+        with session() as verify_db:
+            assert verify_db.scalar(
+                select(PaymentAttempt.status).where(PaymentAttempt.id == attempt_id)
+            ) == "attempted"
 
 
 @pytest.mark.parametrize("amount", [12000.0, "12000", True])
@@ -92,6 +98,7 @@ def test_unpaid_audit_flags_multiple_captures_and_keeps_order_unpaid(monkeypatch
         attempt = _attempt(db, order, status="failed")
         db.commit()
         number = order.order_number
+        order_id = order.id
         monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
         monkeypatch.setattr(
             audit_upi_payments, "list_razorpay_order_payments",
@@ -101,7 +108,10 @@ def test_unpaid_audit_flags_multiple_captures_and_keeps_order_unpaid(monkeypatch
         finding = next(f for f in report["findings"] if f["order_number"] == number)
         assert finding["result"] == "multiple_captures"
         assert finding["provider_capture_count"] == 2
-        assert db.scalar(select(type(order).payment_status).where(type(order).id == order.id)) == PaymentStatus.FAILED
+        with session() as verify_db:
+            assert verify_db.scalar(
+                select(type(order).payment_status).where(type(order).id == order_id)
+            ) == PaymentStatus.FAILED
 
 
 @pytest.mark.parametrize(
