@@ -9,7 +9,8 @@ import pytest
 from sqlalchemy import text
 
 from app.models.delivery_territories import (
-    DeliveryTerritory, OperatingRegion, StoreDeliveryTerritory,
+    DeliveryTerritory, DeliveryTerritoryVersion, OperatingRegion,
+    StoreDeliveryTerritory,
 )
 from app.services.territory_preview import match_active_store_territory
 from tests import factories
@@ -34,6 +35,17 @@ def _active_territory(db, store, *, kind="circle", priority=0, assignment_priori
         priority=priority,
     )
     db.add(territory)
+    db.flush()
+    actor = factories.make_user(db)
+    db.add(DeliveryTerritoryVersion(
+        territory_id=territory.id,
+        version=1,
+        snapshot={"geometry_type": kind},
+        changed_by=actor.id,
+        change_reason="Synthetic published version",
+        published_at=datetime.now(timezone.utc),
+    ))
+    territory.published_version = 1
     db.flush()
     assignment = StoreDeliveryTerritory(
         store_id=store.id,
@@ -97,6 +109,10 @@ def test_inactive_region_territory_assignment_and_expired_windows_are_ignored():
             ) is not None
 
         assert matches()
+        territory.published_version = None
+        db.flush()
+        assert not matches()
+        territory.published_version = 1
         region.status = "inactive"
         db.flush()
         assert not matches()
