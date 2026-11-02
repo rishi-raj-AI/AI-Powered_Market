@@ -61,6 +61,22 @@ test('customer sees verified payment after intent fails but a webhook has alread
   expect(orderReads).toBeGreaterThanOrEqual(2);
 });
 
+test('non-placed UPI orders cannot start a new checkout from the website',async({page})=>{
+  const stale={...order,status:'accepted',payment_method:'upi',payment_status:'pending'};
+  let intentCalls=0;
+  await installApiMocks(page,customer);
+  await page.route('http://localhost:8000/api/v1/orders/me',route=>route.fulfill({json:[stale]}));
+  await page.route(`http://localhost:8000/api/v1/payments/orders/${order.id}/intent`,route=>{
+    intentCalls+=1;
+    return route.fulfill({status:409,json:{detail:'Order is not eligible for online payment'}});
+  });
+  await page.goto('/orders');
+  await expect(page.getByText('Payment: Pending')).toBeVisible();
+  await expect(page.getByRole('button',{name:'Pay now'})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Retry payment'})).toHaveCount(0);
+  expect(intentCalls).toBe(0);
+});
+
 test('customer sees live rider route estimate, distance and GPS freshness',async({page})=>{await mockTracking(page);await page.goto('/orders');await page.getByRole('button',{name:'Toggle order detail'}).click();await expect(page.getByText('Live delivery')).toBeVisible();await expect(page.getByText('Live route estimate 7 min')).toBeVisible();await expect(page.getByText('1.8 km remaining')).toBeVisible();await expect(page.getByText('Rider location received 4s ago')).toBeVisible();await expect(page.getByText(/GPS accuracy ≈ 7 m/)).toBeVisible();await expect(page.getByRole('link',{name:'Open rider location'})).toBeVisible()});
 test('stale rider GPS pauses ETA and warns customer',async({page})=>{await mockTracking(page,{stale:true});await page.goto('/orders');await page.getByRole('button',{name:'Toggle order detail'}).click();await expect(page.getByText('ETA paused until a fresh rider location arrives.')).toBeVisible();await expect(page.getByText(/Rider location may be delayed/)).toBeVisible();await expect(page.getByText('Live route estimate 7 min')).toHaveCount(0)});
 test('tracking keeps the last known rider location but pauses ETA after polling fails',async({page})=>{
