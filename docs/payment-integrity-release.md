@@ -184,6 +184,9 @@ issue refunds, or build APKs until the release owner approves.
       retry: a concurrent webhook capture must replace stale pending UI with
       a verified-paid state; a 502/503 provider outage must warn against
       blindly paying twice. Run the Playwright scenario on all browser targets.
+      Simulate an older manual refresh resolving *after* a newer verified-paid
+      refresh; the stale pending response must not reopen Pay now. Key the
+      webhook race fixture to the intent request, not a GET request count.
 
 - [ ] Intent retry provider-history acceptance: captured, authorized,
       created, refunded, unknown and malformed failed provider payments block
@@ -226,6 +229,10 @@ issue refunds, or build APKs until the release owner approves.
       mismatched amount/currency, non-failed status and order-only failure
       payloads without changing order state; preserve locally captured
       attempt evidence even if a legacy order remains pending.
+- [ ] Capture verification must quarantine a second attempt when any
+      different attempt has partial local capture evidence: either PAID status
+      without a provider payment ID or a provider payment ID without PAID
+      status. Neither case may create another settlement or mark the order paid.
 - [ ] Historical audit tests: unknown local payment provider and unsettled
       secondary Razorpay payments cannot be classified verified; a terminal
       well-formed failed retry can coexist with a verified capture. Flag
