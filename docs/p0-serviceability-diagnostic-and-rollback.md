@@ -34,8 +34,11 @@ This document describes a **proposed** fix, not production acceptance.
   still rechecks inside the transaction before inventory decrement/order write.
 - Addresses without coordinates remain in the address book, but cannot be
   treated as a confirmed pin for delivery commitment. Existing addresses with
-  coordinates remain eligible under legacy semantics; their provenance is
-  explicitly reported as `legacy_coordinates`, **not confirmed GPS**.
+  NULL provenance and coordinates remain eligible under legacy compatibility;
+  they are reported as `legacy_coordinates`, **not confirmed GPS**. Once the
+  additive provenance fields are present, explicit `searched_place` centroids
+  and `gps`/`map_pin` records without a server confirmation timestamp are
+  rejected as `ADDRESS_LOCATION_UNCONFIRMED` in both quote and checkout.
 - Quote adds the backward-compatible optional
   `serviceability_reason_code` field. Existing response fields remain.
 - Regressions use real CI PostGIS for boundary and rejection tests.
