@@ -163,6 +163,12 @@ issue refunds, or build APKs until the release owner approves.
       duplicate refund or downgrade a confirmed refund.
 - [ ] Refund webhook tests: reject missing currency as well as mismatched
       currency; verify that no refund state or settlement changes occur.
+- [ ] Provider-history integrity: an order-only `order.paid` event with one
+      captured payment and a malformed secondary `failed` row (wrong order,
+      amount, currency, or missing payment ID) remains pending; a well-formed
+      failed retry is accepted. Payment expiration must likewise defer malformed
+      failed provider rows and locally mispriced INR/payment attempts instead
+      of restoring reserved stock.
 - [ ] Historical audit tests: unknown local payment provider and unsettled
       secondary Razorpay payments cannot be classified verified; a terminal
       well-formed failed retry can coexist with a verified capture. Flag
