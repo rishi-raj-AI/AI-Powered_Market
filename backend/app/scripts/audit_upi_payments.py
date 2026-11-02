@@ -53,6 +53,15 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
             unavailable = False
             mismatch = False
             for attempt in attempts:
+                # A matching provider capture cannot validate an inconsistent
+                # local ledger. An attempt for a different amount, currency or
+                # non-paid status still requires explicit reconciliation.
+                if (
+                    attempt.amount != order.total
+                    or attempt.currency != "INR"
+                    or (attempt.provider_payment_id and attempt.status != "paid")
+                ):
+                    mismatch = True
                 if not attempt.provider_order_id:
                     mismatch = True
                     continue
