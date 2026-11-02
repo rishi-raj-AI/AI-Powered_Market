@@ -217,8 +217,13 @@ issue refunds, or build APKs until the release owner approves.
 - [ ] Refund webhook tests: reject missing currency as well as mismatched
       currency; verify that no refund state or settlement changes occur.
 - [ ] Razorpay payment-history collection: missing/non-integer/mismatched
-      `count`, malformed rows and a full 100-item page fail closed; an
-      explicit zero count and a complete short page are accepted.
+      `count`, malformed rows, missing/non-string payment IDs, duplicate IDs
+      (including contradictory captured/failed records), entries belonging to
+      another provider order and a full 100-item page fail closed; an explicit
+      zero count and a complete short page with distinct, matching payment
+      identities are accepted. No duplicated row may mask an omitted capture
+      during payment retry, order-only webhook reconciliation, expiration or
+      the read-only historical audit.
 - [ ] Authoritative capture amount types: reject float, string, boolean and
       missing paise values even when Python numeric equality would match.
       Neither callback verification nor expiration reconciliation may mark
