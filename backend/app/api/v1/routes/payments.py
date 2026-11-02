@@ -10,7 +10,7 @@ from app.api.deps import get_current_user, get_db
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.integrations import PaymentAttempt
-from app.models.orders import Order, PaymentMethod, PaymentStatus
+from app.models.orders import Order, OrderStatus, PaymentMethod, PaymentStatus
 from app.models.user import User
 from app.schemas.integrations import (
     PaymentConfigResponse,
@@ -61,10 +61,22 @@ def create_payment_intent(
         raise HTTPException(status_code=404, detail="Order not found")
     if order.payment_method != PaymentMethod.UPI:
         raise HTTPException(status_code=409, detail="This order is not configured for online payment")
-    if order.payment_status == PaymentStatus.PAID:
-        raise HTTPException(status_code=409, detail="Order is already paid")
-    if order.status.value == "cancelled":
-        raise HTTPException(status_code=409, detail="Cancelled orders cannot be paid")
+    if order.payment_status not in (PaymentStatus.PENDING, PaymentStatus.FAILED):
+        raise HTTPException(status_code=409, detail="Order is not eligible for a new payment")
+    if order.status != OrderStatus.PLACED:
+        raise HTTPException(status_code=409, detail="Order is not eligible for online payment")
+
+    # A legacy order-level PENDING/FAILED flag can disagree with an attempt
+    # that already records captured money. Never create a second provider
+    # order in that state; reconcile the original payment first.
+    captured_attempt_id = db.scalar(
+        select(PaymentAttempt.id).where(
+            PaymentAttempt.order_id == order.id,
+            (PaymentAttempt.status == "paid") | PaymentAttempt.provider_payment_id.is_not(None),
+        ).limit(1)
+    )
+    if captured_attempt_id is not None:
+        raise HTTPException(status_code=409, detail="Existing payment requires reconciliation")
 
     existing = db.scalar(
         select(PaymentAttempt)
@@ -77,6 +89,8 @@ def create_payment_intent(
         .order_by(PaymentAttempt.created_at.desc())
     )
     if existing and existing.provider_order_id:
+        if existing.amount != order.total or existing.currency != "INR":
+            raise HTTPException(status_code=409, detail="Existing payment intent requires reconciliation")
         if not settings.RAZORPAY_KEY_ID:
             raise HTTPException(status_code=503, detail="Payment provider is not configured")
         existing.status = "attempted"
