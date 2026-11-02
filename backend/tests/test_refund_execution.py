@@ -534,6 +534,40 @@ def test_indeterminate_refund_is_quarantined_without_automatic_retry(monkeypatch
         assert len(spy.calls) == 1
 
 
+
+def test_refund_provider_error_reacquires_order_before_refund(monkeypatch) -> None:
+    """Exception handling must use the same lock ordering as webhooks."""
+    _enable_provider(monkeypatch)
+    monkeypatch.setattr(
+        refund_service,
+        "create_razorpay_refund",
+        _ProviderSpy(error=payment_service.PaymentProviderError("Provider rejected refund")),
+    )
+    with session() as db:
+        order = make_order(db, payment_status=PaymentStatus.PAID)
+        db.commit()
+        refund = ensure_refund_request(db, order, reason=REFUND_REASON_CANCELLED)
+        db.commit()
+        locks = []
+
+        def observe(state):
+            stmt = state.statement
+            if getattr(stmt, "_for_update_arg", None) is None:
+                return
+            sql = str(stmt)
+            if "FROM orders" in sql:
+                locks.append("order")
+            elif "FROM payment_refunds" in sql:
+                locks.append("refund")
+
+        event.listen(db, "do_orm_execute", observe)
+        try:
+            assert dispatch_refund(db, refund.id) == REFUND_FAILED
+        finally:
+            event.remove(db, "do_orm_execute", observe)
+        assert locks[:3] == ["refund", "order", "refund"]
+
+
 def test_concurrent_refund_webhook_success_survives_provider_error(monkeypatch) -> None:
     """A webhook may settle the refund while the original HTTP call times out."""
     _enable_provider(monkeypatch)
