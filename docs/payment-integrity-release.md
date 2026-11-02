@@ -48,8 +48,10 @@ issue refunds, or build APKs until the release owner approves.
     provider. Only a verified absence of money or well-formed terminal failed
     payments may release reserved stock.
 14. Refund webhooks lock the commercial order before the refund obligation,
-    matching cancellation lock order. PostgreSQL concurrent cancellation and
-    refund-webhook execution still require integration acceptance.
+    matching cancellation lock order. Refund dispatch also reacquires the
+    order lock before the refund lock after the provider call. PostgreSQL
+    concurrent cancellation, refund-webhook and dispatch execution still
+    require integration acceptance.
 
 ## Feature flags and operator safety
 
