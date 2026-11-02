@@ -265,3 +265,62 @@ def test_unpaid_audit_rejects_duplicate_failed_provider_payment_ids(monkeypatch)
         finding = next(f for f in report["findings"] if f["order_number"] == number)
         assert finding["result"] == "payment_history_mismatch"
         assert finding["provider_capture_count"] == 0
+
+
+
+@pytest.mark.parametrize("second_status", ["captured", "failed"])
+def test_paid_audit_rejects_reused_provider_history_payment_id(
+    monkeypatch, second_status,
+):
+    # Provider adapters should reject duplicate identities, but the read-only
+    # auditor must not certify payment if a legacy adapter returns them.
+    with session() as db:
+        order = make_order(db)
+        attempt = db.scalar(
+            select(PaymentAttempt).where(PaymentAttempt.order_id == order.id)
+        )
+        db.commit()
+        number = order.order_number
+        captured = _payment(
+            attempt, status="captured", payment_id=attempt.provider_payment_id
+        )
+        duplicate = dict(captured, status=second_status)
+        monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
+        monkeypatch.setattr(
+            audit_upi_payments,
+            "list_razorpay_order_payments",
+            lambda **_: [captured, duplicate],
+        )
+        report = audit_upi_payments.audit_paid_upi()
+        finding = next(
+            f for f in report["findings"] if f["order_number"] == number
+        )
+        assert finding["result"] == "capture_mismatch"
+        assert report["verified"] == 0
+
+
+def test_unpaid_audit_rejects_whitespace_provider_order_identity(monkeypatch):
+    with session() as db:
+        order = make_order(
+            db, payment_status=PaymentStatus.FAILED, with_paid_attempt=False
+        )
+        attempt = _attempt(db, order, status="failed")
+        attempt.provider_order_id = "   "
+        db.commit()
+        number = order.order_number
+        monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
+
+        def unexpected_provider_read(**_):
+            pytest.fail("Whitespace-only provider order ID must not be queried")
+
+        monkeypatch.setattr(
+            audit_upi_payments,
+            "list_razorpay_order_payments",
+            unexpected_provider_read,
+        )
+        report = audit_upi_payments.audit_unpaid_upi()
+        finding = next(
+            f for f in report["findings"] if f["order_number"] == number
+        )
+        assert finding["result"] == "payment_history_mismatch"
+        assert report["no_capture_found"] == 0
