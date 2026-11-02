@@ -88,9 +88,10 @@ def expire_unpaid_orders(
                     # A mismatched intent is not safe evidence that the
                     # commercial order was never charged.
                     uncertain = True
-                if attempt.status == "paid" or attempt.provider_payment_id:
-                    # Local evidence of capture contradicts an unpaid order.
-                    # Do not trust an empty provider history to release stock.
+                if attempt.status not in {"created", "attempted", "failed"} or attempt.provider_payment_id:
+                    # Paid, authorized, processing, refunded, or unknown local
+                    # states contradict a terminal unpaid reservation. Even an
+                    # empty provider history cannot prove these safe to expire.
                     uncertain = True
                 if not attempt.provider_order_id:
                     # A created/failed intent without a provider order cannot
@@ -127,7 +128,8 @@ def expire_unpaid_orders(
                         uncertain = True
                         continue
                     if (
-                        payment.get("amount") != amount_to_subunits(attempt.amount)
+                        type(payment.get("amount")) is not int
+                        or payment["amount"] != amount_to_subunits(attempt.amount)
                         or payment.get("currency") != attempt.currency
                     ):
                         uncertain = True
