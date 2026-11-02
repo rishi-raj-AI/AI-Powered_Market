@@ -250,3 +250,37 @@ replay financial webhooks blindly, or broaden delivery territories. Preserve
 the durable webhook ledger and manually reconcile unresolved provider events.
 Production diagnosis, staging acceptance and real-device GPS/map-pin testing
 remain pending until independently evidenced.
+
+## Integrated capture-binding and provider-history CI gate (PR following #271)
+
+- Before dispatching a refund, require **exactly one** payment-attempt row
+  indicating possible capture. It must be Razorpay, `paid`, contain a nonempty
+  provider payment ID, use INR, and match the commercial order total. Two
+  evidence rows, a missing ID, a contradictory provider or currency, or a
+  mismatched amount must leave a durable refund obligation **unbound** for
+  manual reconciliation. Do not guess which captured payment to refund.
+- An older failed payment attempt without its provider order ID cannot be
+  proven unpaid. Reject a new UPI intent with 409 rather than opening a second
+  payment window; reconcile provider records first.
+- The payment-history count test now supplies the required provider order
+  identity in its valid fixture, and explicitly rejects missing, cross-order
+  and duplicated payment identities.
+- Reject malformed refund API status values (including arrays and objects)
+  without throwing a type error or treating them as processed.
+
+### Focused development verification
+
+Run against an isolated, disposable PostgreSQL database with mocked Razorpay:
+
+```sh
+cd backend
+python -m pytest -q tests/test_payment_history_count_integrity.py tests/test_payment_intent_integrity.py tests/test_refund_capture_binding_integrity.py
+python -m ruff check app/services/refunds.py app/api/v1/routes/payments.py tests/test_payment_history_count_integrity.py tests/test_payment_intent_integrity.py tests/test_refund_capture_binding_integrity.py
+```
+
+Require all four exact-head CI workflows and then staging payment/refund
+acceptance before merge. No production writes or provider calls are permitted.
+If a regression is found, revert this integrated application change using the
+previous approved artifact, leaving refund obligations, audit records, and
+territory configurations untouched. Review all unresolved refund obligations
+manually; never compensate by resubmitting a refund without provider proof.
