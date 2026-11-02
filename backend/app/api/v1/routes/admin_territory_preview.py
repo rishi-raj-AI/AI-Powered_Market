@@ -17,6 +17,7 @@ from app.models.commerce import Store
 from app.models.user import User
 from app.services.territory_preview import match_active_store_territory
 from app.services.territory_activation_preflight import inspect_territory_activation_preflight
+from app.services.territory_parity import compare_store_geography
 
 router = APIRouter(prefix="/admin/delivery-territories", tags=["Admin Territory Preview"])
 
@@ -89,4 +90,45 @@ def territory_activation_preflight(
         eligible_assignments=result.eligible_assignments,
         issues=list(result.issues),
         technical_checks_passed=result.technical_checks_passed,
+    )
+
+
+class TerritoryParityRequest(BaseModel):
+    store_id: UUID
+    latitude: float = Field(ge=-90, le=90, allow_inf_nan=False)
+    longitude: float = Field(ge=-180, le=180, allow_inf_nan=False)
+
+
+class TerritoryParityResponse(BaseModel):
+    store_id: UUID
+    legacy_geographic_match: bool | None
+    territory_geographic_match: bool
+    parity_status: str
+    legacy_configuration_issue: str | None = None
+    territory_id: UUID | None = None
+    checkout_authoritative: bool = False
+    activation_authorized: bool = False
+
+
+@router.post("/parity-preview", response_model=TerritoryParityResponse)
+def preview_territory_parity(
+    payload: TerritoryParityRequest,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_capability(Capability.GEOGRAPHY_MANAGE)),
+) -> TerritoryParityResponse:
+    """Compare geographic coverage only; never check out or activate a territory."""
+    if not settings.TERRITORY_ADMIN_PREVIEW_ENABLED:
+        raise HTTPException(status_code=404, detail="Territory preview unavailable")
+    report = compare_store_geography(
+        db, payload.store_id, payload.latitude, payload.longitude,
+    )
+    if report is None:
+        raise HTTPException(status_code=404, detail="Store not found")
+    return TerritoryParityResponse(
+        store_id=report.store_id,
+        legacy_geographic_match=report.legacy_geographic_match,
+        territory_geographic_match=report.territory_geographic_match,
+        parity_status=report.parity_status,
+        legacy_configuration_issue=report.legacy_configuration_issue,
+        territory_id=report.territory_id,
     )
