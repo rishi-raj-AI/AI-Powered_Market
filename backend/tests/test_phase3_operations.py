@@ -88,7 +88,6 @@ def test_operational_controls_and_customer_cancellation() -> None:
         "landmark": "Near test chowk",
         "latitude": village_latitude,
         "longitude": village_longitude,
-            "location_source": "map_pin",
         # Round-the-clock: this test is about operations, not opening hours.
         "opens_at": "00:00:00",
         "closes_at": "00:00:00",
@@ -180,6 +179,7 @@ def test_operational_controls_and_customer_cancellation() -> None:
             "directions": "Green gate",
             "latitude": village_latitude,
             "longitude": village_longitude,
+            "location_source": "map_pin",
             "is_default": True,
         },
     )
