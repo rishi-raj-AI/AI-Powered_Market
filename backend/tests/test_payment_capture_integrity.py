@@ -482,3 +482,25 @@ def test_order_paid_accepts_capture_with_wellformed_failed_retry(monkeypatch):
         db.commit()
         db.refresh(order)
         assert order.payment_status == PaymentStatus.PAID
+
+
+@pytest.mark.parametrize("malformed_amount", [12000.0, "12000", None, True])
+def test_provider_capture_requires_integer_subunits(monkeypatch, malformed_amount):
+    """Numerically equal floats are not valid Razorpay paise evidence."""
+    with session() as db:
+        customer, order, attempt = _context(db)
+        monkeypatch.setattr(payment_hardening, "verify_razorpay_signature", lambda **_: True)
+        monkeypatch.setattr(
+            payment_hardening, "fetch_razorpay_payment",
+            lambda *, provider_payment_id: _payment(
+                attempt, provider_payment_id, amount=malformed_amount,
+            ),
+        )
+        with pytest.raises(HTTPException) as exc:
+            _verify(db, customer, attempt)
+        assert exc.value.status_code == 409
+        db.refresh(order)
+        db.refresh(attempt)
+        assert order.payment_status == PaymentStatus.PENDING
+        assert attempt.status == "attempted"
+        assert attempt.provider_payment_id is None
