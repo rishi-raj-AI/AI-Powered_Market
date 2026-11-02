@@ -82,6 +82,15 @@ issue refunds, or build APKs until the release owner approves.
     unrecognised payments. Terminal failed payments do not by themselves
     invalidate a separately verified capture.
 
+19. A signed webhook event ID must never silently deduplicate a *different*
+    signed payload. Conflicting provider event IDs return HTTP 409 without
+    applying the second payload, even when the original event was already
+    processed. Overlong event IDs are rejected before database insertion.
+20. A paid-order audit must flag a locally `paid` payment attempt missing its
+    provider payment ID even if another attempt has a matching capture.
+    Malformed provider `failed` entries (missing ID, wrong order, amount or
+    currency) are not reliable proof of nonpayment and must not be ignored.
+
 ## Feature flags and operator safety
 
 - `PAYMENT_WEBHOOK_REPLAY_ENABLED=false` is the safe default. The durable
@@ -117,7 +126,9 @@ issue refunds, or build APKs until the release owner approves.
 - [ ] Web CI and Flutter analysis/tests green.
 - [ ] Webhook ingestion: provider outage after signed event persistence,
       duplicate retry without worker, concurrent duplicate delivery, and
-      replay of the original durable payload.
+      replay of the original durable payload. Reject conflicting signed
+      payloads reusing the same event ID (pending and processed cases) and
+      reject oversized event IDs.
 - [ ] Order-only `order.paid` webhook: single matching capture succeeds,
       multiple captures or any unresolved provider payment defers, and provider outage
       preserves the event.
@@ -145,7 +156,9 @@ issue refunds, or build APKs until the release owner approves.
       currency; verify that no refund state or settlement changes occur.
 - [ ] Historical audit tests: unknown local payment provider and unsettled
       secondary Razorpay payments cannot be classified verified; a terminal
-      failed retry can coexist with a verified capture.
+      well-formed failed retry can coexist with a verified capture. Flag
+      secondary paid attempts missing provider IDs and malformed failed
+      provider history even when another capture matches.
 - [ ] Refund webhook tests: order-before-refund lock acquisition under
       PostgreSQL concurrency with cancellation, mismatched payment/refund ID, amount/currency,
       ambiguous multiple obligations for one provider payment,
