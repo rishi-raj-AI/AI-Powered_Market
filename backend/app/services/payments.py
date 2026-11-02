@@ -17,6 +17,14 @@ class PaymentProviderError(RuntimeError):
     pass
 
 
+class PaymentProviderIndeterminate(PaymentProviderError):
+    """The provider may have accepted a money-moving request despite an error.
+
+    Never automatically re-issue a refund after a timeout, 5xx, or malformed
+    response without first reconciling the original request with Razorpay.
+    """
+
+
 def razorpay_enabled() -> bool:
     return bool(settings.RAZORPAY_KEY_ID and settings.RAZORPAY_KEY_SECRET)
 
@@ -99,18 +107,20 @@ def create_razorpay_refund(
             )
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
+        if exc.response.status_code >= 500:
+            raise PaymentProviderIndeterminate("Razorpay refund outcome is unknown (server error)") from exc
         raise PaymentProviderError(
             f"Razorpay rejected the refund request ({exc.response.status_code})"
         ) from exc
     except httpx.HTTPError as exc:
-        raise PaymentProviderError("Unable to reach Razorpay") from exc
+        raise PaymentProviderIndeterminate("Razorpay refund outcome is unknown (transport error)") from exc
 
     try:
         data = response.json()
     except ValueError as exc:
-        raise PaymentProviderError("Razorpay returned an invalid refund response") from exc
+        raise PaymentProviderIndeterminate("Razorpay returned an unreadable refund response") from exc
     if not isinstance(data, dict) or not data.get("id"):
-        raise PaymentProviderError("Razorpay returned an invalid refund response")
+        raise PaymentProviderIndeterminate("Razorpay returned an incomplete refund response")
     return data
 
 
