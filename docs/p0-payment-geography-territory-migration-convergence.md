@@ -15,7 +15,7 @@ and their parentage** and adds an ancestry-only merge:
 0027_webhook_retry_schedule --------------------\
                                                  0028_payment_geography_merge --\
 0027_address_location_provenance ----------------/                                \
-        \                                                                          0029_payment_geography_territories_merge
+        \                                                                          0029_payment_geo_territory_merge
          0028_delivery_territories ------------------------------------------------/
 ```
 
