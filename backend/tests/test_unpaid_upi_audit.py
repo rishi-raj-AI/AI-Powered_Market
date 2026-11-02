@@ -1,5 +1,4 @@
 """Read-only audit of unpaid UPI orders must not conceal captured money."""
-from decimal import Decimal
 from uuid import uuid4
 
 import pytest
