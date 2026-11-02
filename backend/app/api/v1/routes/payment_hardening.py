@@ -303,7 +303,7 @@ def _process_refund_event(db: Session, payload: dict) -> bool:
         or not refund.provider_payment_id
         or refund_payment_id != refund.provider_payment_id
         or (refund.provider_refund_id is not None and provider_refund_id != refund.provider_refund_id)
-        or refund_entity.get("currency") not in (None, refund.currency)
+        or refund_entity.get("currency") != refund.currency
         or type(refund_entity.get("amount")) is not int
         or refund_entity["amount"] != amount_to_subunits(refund.amount)
     ):
