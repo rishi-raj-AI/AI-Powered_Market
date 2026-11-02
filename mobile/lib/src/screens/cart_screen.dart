@@ -272,7 +272,15 @@ class _CartScreenState extends State<CartScreen> {
   Future<void> _completeCheckout(OrderModel order,String resolvedPayment) async {
       if (!mounted) return;
       if (resolvedPayment == 'upi') {
-        final paid = await GaonApi.openRazorpayCheckout(order);
+        bool paid;
+        try {
+          paid = await GaonApi.openRazorpayCheckout(order);
+        } on ApiException catch (e) {
+          // The commercial order already exists. Do not encourage a second
+          // payment if the provider cannot certify earlier attempts.
+          _snack(paymentStartError(e));
+          return;
+        }
         if (!mounted) return;
         if (!paid) {
           var confirmed = false;
