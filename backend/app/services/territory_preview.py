@@ -25,6 +25,34 @@ class TerritoryMatch:
 # For geometry, longitude is X and latitude is Y. For circles, geography
 # gives geodesic metre distances rather than planar degree distances.
 _POINT = "ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)"
+
+# Publication must capture this exact, canonical geometry/exclusion snapshot.
+# An unpublished edit to mutable draft geometry must never silently affect
+# a published geographic preview. This is a fail-closed comparison, not an
+# authoritative checkout engine or a publication endpoint.
+_EXCLUSIONS_JSON = """
+    COALESCE((
+        SELECT jsonb_agg(encode(ST_AsEWKB(e.geometry), 'hex') ORDER BY e.id)
+        FROM delivery_territory_exclusions e
+        WHERE e.territory_id = t.id
+    ), '[]'::jsonb)
+"""
+_SNAPSHOT_JSON = f"""
+    jsonb_build_object(
+        'snapshot_format', 'delivery-geometry-v1',
+        'geometry_type', t.geometry_type,
+        'center_latitude', t.center_latitude::text,
+        'center_longitude', t.center_longitude::text,
+        'radius_km', t.radius_km::text,
+        'geometry_hex', encode(ST_AsEWKB(t.geometry), 'hex'),
+        'exclusion_hex', {_EXCLUSIONS_JSON}
+    )
+"""
+_SNAPSHOT_SQL = text(f"""
+    SELECT {_SNAPSHOT_JSON} AS snapshot
+    FROM delivery_territories t
+    WHERE t.id = :territory_id
+""")
 _SQL = text(f"""
     SELECT
         t.id AS territory_id,
@@ -46,6 +74,7 @@ _SQL = text(f"""
         WHERE v.territory_id = t.id
           AND v.version = t.published_version
           AND v.published_at IS NOT NULL
+          AND v.snapshot = {_SNAPSHOT_JSON}
       )
       AND (a.effective_from IS NULL OR a.effective_from <= :evaluated_at)
       AND (a.effective_until IS NULL OR a.effective_until > :evaluated_at)
@@ -80,6 +109,22 @@ _SQL = text(f"""
     ORDER BY a.priority DESC, t.priority DESC, t.id ASC, a.id ASC
     LIMIT 1
 """)
+
+
+def snapshot_current_territory_geometry(
+    db: Session, territory_id: UUID,
+) -> dict[str, object]:
+    """Read the canonical geometry snapshot for a future audited publisher.
+
+    This does not publish, mutate, or authorize a territory. The publisher
+    must capture it transactionally with appropriate locks and approval.
+    """
+    row = db.execute(
+        _SNAPSHOT_SQL, {"territory_id": territory_id},
+    ).mappings().first()
+    if row is None:
+        raise ValueError("Territory does not exist")
+    return row["snapshot"]
 
 
 def match_active_store_territory(
