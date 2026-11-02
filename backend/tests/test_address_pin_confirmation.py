@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from app.api.v1.routes.geography import confirm_my_address_pin, create_my_address
 from app.models.geography import Address
 from app.models.orders import PaymentMethod
-from app.schemas.geography import AddressCreate, AddressPinConfirm
+from app.schemas.geography import AddressCreate, AddressPinConfirm, AddressRead
 from tests import factories
 
 
@@ -140,19 +140,32 @@ def test_new_address_persists_explicit_provenance_but_legacy_does_not():
         assert created.location_source == "gps"
         assert created.location_confirmed_at is not None
         assert created.location_accuracy_meters == 14
-        legacy = create_my_address(
-            AddressCreate(
-                village_id=village.id,
-                landmark="Near village school",
-                latitude=18.5204,
-                longitude=73.8567,
-            ),
-            db=db,
-            user=customer,
-        )
-        factories._track(legacy)
+        # Old clients may omit provenance. Their new coordinate pairs must not
+        # enter the NULL-provenance historical checkout compatibility path.
+        with pytest.raises(HTTPException) as exc:
+            create_my_address(
+                AddressCreate(
+                    village_id=village.id,
+                    landmark="Near village school",
+                    latitude=18.5204,
+                    longitude=73.8567,
+                ),
+                db=db,
+                user=customer,
+            )
+        assert exc.value.status_code == 422
+        assert "Confirm your delivery location" in exc.value.detail
+        db.rollback()
+
+
+def test_existing_null_provenance_address_remains_readable():
+    with factories.session() as db:
+        customer = factories.make_user(db)
+        village = factories.make_village(db)
+        legacy = factories.make_address(db, customer, village)
+        assert legacy.latitude is not None and legacy.longitude is not None
         assert legacy.location_source is None
-        assert legacy.location_confirmed_at is None
+        assert AddressRead.model_validate(legacy).location_source is None
         db.rollback()
 
 

@@ -56,7 +56,7 @@ def test_overlapping_zones_require_store_assigned_covering_area() -> None:
             saved_address = create_my_address(
                 AddressCreate(
                     village_id=covering_hub.id, landmark="Covered entrance",
-                    latitude=5.0, longitude=5.0,
+                    latitude=5.0, longitude=5.0, location_source="map_pin",
                 ),
                 db=db, user=customer,
             )
@@ -84,7 +84,7 @@ def test_overlapping_zones_require_store_assigned_covering_area() -> None:
                 create_my_address(
                     AddressCreate(
                         village_id=covering_hub.id, landmark="Outside entrance",
-                        latitude=5.2, longitude=5.2,
+                        latitude=5.2, longitude=5.2, location_source="map_pin",
                     ),
                     db=db, user=customer,
                 )

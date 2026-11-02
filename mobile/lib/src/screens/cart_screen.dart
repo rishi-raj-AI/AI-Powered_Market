@@ -211,6 +211,9 @@ class _CartScreenState extends State<CartScreen> {
           directions: directions.text.trim(),
           latitude: position?.latitude,
           longitude: position?.longitude,
+          // The user explicitly tapped Attach GPS location before saving.
+          // Landmark-only addresses remain unpinned until confirmed later.
+          locationSource: position == null ? null : 'gps',
         );
         await load();
       } catch (e) {
