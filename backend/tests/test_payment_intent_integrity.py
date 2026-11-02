@@ -365,10 +365,11 @@ def test_failed_attempt_without_provider_order_id_blocks_checkout(
         if ordering != "alone":
             # Force both UUID iteration orders to make the regression
             # deterministic rather than relying on random generated IDs.
-            first_id, last_id = sorted((uuid4(), uuid4()))
-            attempt.id = first_id if ordering == "unidentified_first" else last_id
+            other_id = uuid4()
+            while (other_id > attempt.id) != (ordering == "unidentified_first"):
+                other_id = uuid4()
             db.add(PaymentAttempt(
-                id=last_id if ordering == "unidentified_first" else first_id,
+                id=other_id,
                 order_id=order.id,
                 provider="razorpay",
                 provider_order_id=f"order_{uuid4().hex}",
