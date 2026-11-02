@@ -52,9 +52,11 @@ def _require_terminal_failed_provider_history(attempt: PaymentAttempt) -> None:
     attempt, before allowing another checkout payment interaction.
     """
     if not attempt.provider_order_id:
-        if attempt.status not in {"created", "failed"}:
-            raise HTTPException(status_code=409, detail="Existing payment requires reconciliation")
-        return
+        # Even a locally FAILED attempt can represent a provider order whose
+        # identifier was lost before its capture webhook arrived. Without the
+        # provider order ID there is no authoritative history to inspect.
+        # Never open a second checkout window based on that local flag.
+        raise HTTPException(status_code=409, detail="Existing payment requires reconciliation")
     try:
         history = list_razorpay_order_payments(provider_order_id=attempt.provider_order_id)
     except PaymentProviderUnavailable as exc:
