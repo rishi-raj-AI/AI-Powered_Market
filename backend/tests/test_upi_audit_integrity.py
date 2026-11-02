@@ -50,6 +50,7 @@ def test_audit_does_not_hide_unavailable_attempt_behind_verified_capture(monkeyp
         )
         db.add(second)
         db.commit()
+        order_number = order.order_number
         monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
 
         def history(*, provider_order_id):
@@ -59,7 +60,7 @@ def test_audit_does_not_hide_unavailable_attempt_behind_verified_capture(monkeyp
 
         monkeypatch.setattr(audit_upi_payments, "list_razorpay_order_payments", history)
         report = audit_upi_payments.audit_paid_upi()
-        finding = next(f for f in report["findings"] if f["order_number"] == order.order_number)
+        finding = next(f for f in report["findings"] if f["order_number"] == order_number)
         assert finding["result"] == "provider_unavailable"
 
 
