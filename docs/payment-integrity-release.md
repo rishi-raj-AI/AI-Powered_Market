@@ -177,6 +177,14 @@ issue refunds, or build APKs until the release owner approves.
       webhook-first, callback-first, replay, duplicate payment ID, mismatched
       amount/currency/order, refund after late capture.
 - [ ] Two concurrent intent requests create only one provider order.
+- [ ] A payment-intent retry with two active local provider orders, or an
+      active attempt lacking its provider order ID, is quarantined for manual
+      reconciliation before any new provider request or checkout window.
+- [ ] Website intent-error recovery refreshes the order before offering a
+      retry: a concurrent webhook capture must replace stale pending UI with
+      a verified-paid state; a 502/503 provider outage must warn against
+      blindly paying twice. Run the Playwright scenario on all browser targets.
+
 - [ ] Intent retry provider-history acceptance: captured, authorized,
       created, refunded, unknown and malformed failed provider payments block
       both reusing an active intent and creating a new one after a local
