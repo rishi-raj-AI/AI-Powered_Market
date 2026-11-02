@@ -45,7 +45,7 @@ def test_empty_history_with_explicit_zero_count_is_complete(monkeypatch):
 
 
 def test_complete_payment_history_is_returned(monkeypatch):
-    items = [{"id": "pay_failed", "status": "failed"}]
+    items = [{"id": "pay_failed", "order_id": "order_test_history", "status": "failed"}]
     assert _lookup(monkeypatch, {"count": 1, "items": items}) == items
 
 
@@ -59,9 +59,29 @@ def test_complete_payment_history_is_returned(monkeypatch):
     {"count": 0.0, "items": []},
     {"count": 1, "items": [None]},
     {"count": 100, "items": [{} for _ in range(100)]},  # Pagination boundary.
+    {"count": 1, "items": [{"status": "failed", "order_id": "order_test_history"}]},
+    {"count": 1, "items": [{"id": 123, "order_id": "order_test_history"}]},
+    {"count": 1, "items": [{"id": "", "order_id": "order_test_history"}]},
+    {"count": 1, "items": [{"id": "pay_unrelated", "order_id": "order_elsewhere"}]},
+    {"count": 2, "items": [
+        {"id": "pay_duplicate", "order_id": "order_test_history", "status": "failed"},
+        {"id": "pay_duplicate", "order_id": "order_test_history", "status": "failed"},
+    ]},
+    {"count": 2, "items": [
+        {"id": "pay_conflicting", "order_id": "order_test_history", "status": "captured"},
+        {"id": "pay_conflicting", "order_id": "order_test_history", "status": "failed"},
+    ]},
 ])
 def test_incomplete_or_malformed_history_never_certifies_nonpayment(
     monkeypatch, response,
 ):
     with pytest.raises(payments.PaymentProviderError, match="incomplete"):
         _lookup(monkeypatch, response)
+
+
+def test_distinct_payment_ids_on_same_order_remain_eligible_for_reconciliation(monkeypatch):
+    items = [
+        {"id": "pay_first", "order_id": "order_test_history", "status": "failed"},
+        {"id": "pay_second", "order_id": "order_test_history", "status": "captured"},
+    ]
+    assert _lookup(monkeypatch, {"count": 2, "items": items}) == items
