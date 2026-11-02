@@ -2,6 +2,9 @@ from decimal import Decimal
 from unittest.mock import MagicMock
 from uuid import uuid4
 
+import pytest
+from fastapi import HTTPException
+
 from app.api.v1.routes import payment_hardening
 from app.models.integrations import PaymentAttempt
 from app.models.orders import Order, OrderStatus, PaymentMethod, PaymentStatus
@@ -104,3 +107,31 @@ def test_payment_failure_does_not_overwrite_refund_or_cancelled_state() -> None:
     payment_hardening._apply_failed(pending_attempt, cancelled_pending)
     assert pending_attempt.status == "attempted"
     assert cancelled_pending.payment_status == PaymentStatus.PENDING
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("amount", Decimal("119.00")),
+        ("amount", Decimal("121.00")),
+        ("currency", "USD"),
+        ("provider", "unknown"),
+    ],
+)
+def test_mismatched_capture_never_marks_paid_or_creates_settlement(monkeypatch, field, value) -> None:
+    order = _order(status=OrderStatus.PLACED, payment_status=PaymentStatus.PENDING)
+    attempt = _attempt(order)
+    setattr(attempt, field, value)
+    db = MagicMock()
+    settlement = MagicMock()
+    monkeypatch.setattr(payment_hardening, "ensure_settlement_entry", settlement)
+
+    with pytest.raises(HTTPException) as error:
+        payment_hardening._apply_paid(db, attempt, order, "pay_mismatch")
+
+    assert error.value.status_code == 409
+    assert order.payment_status == PaymentStatus.PENDING
+    assert attempt.status == "attempted"
+    assert attempt.provider_payment_id is None
+    db.flush.assert_not_called()
+    settlement.assert_not_called()
