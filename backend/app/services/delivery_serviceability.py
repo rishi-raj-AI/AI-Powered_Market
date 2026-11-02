@@ -72,6 +72,9 @@ def evaluate_delivery(
         confidence = f"confirmed_{source}"
     elif has_coordinates and source in {"gps", "map_pin"}:
         confidence = f"unconfirmed_{source}"
+    elif has_coordinates and source is not None:
+        # Unknown non-NULL provenance must not inherit legacy compatibility.
+        confidence = "unrecognized_location_source"
     elif has_coordinates:
         confidence = "legacy_coordinates"
     else:
@@ -132,7 +135,7 @@ def evaluate_delivery(
     # Explicitly sourced provider centroids are not confirmed doorstep pins.
     # Keep NULL-provenance historical coordinates usable for compatibility,
     # but never promote a new unconfirmed source to checkout eligibility.
-    if source in {"gps", "map_pin", "searched_place"} and confidence not in {
+    if source is not None and confidence not in {
         "confirmed_gps", "confirmed_map_pin",
     }:
         return _reject(
