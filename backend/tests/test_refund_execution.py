@@ -359,3 +359,31 @@ def test_unknown_refund_webhook_cannot_guess_between_multiple_obligations() -> N
         assert second.provider_refund_id is None
         assert first.status == "requested"
         assert second.status == "requested"
+
+
+def test_refund_webhook_can_resolve_single_unbound_obligation() -> None:
+    """Fallback matching is safe only when exactly one candidate exists."""
+    with session() as db:
+        order = make_order(db, payment_status=PaymentStatus.PAID)
+        db.commit()
+        refund = ensure_refund_request(db, order, reason=REFUND_REASON_CANCELLED)
+        db.commit()
+        assert refund is not None and refund.provider_payment_id
+        assert refund.provider_refund_id is None
+        provider_refund_id = f"rfnd_{uuid4().hex}"
+
+        handled = _process_refund_event(db, {
+            "event": "refund.processed",
+            "payload": {"refund": {"entity": {
+                "id": provider_refund_id,
+                "payment_id": refund.provider_payment_id,
+                "amount": 12000, "currency": "INR", "status": "processed",
+            }}},
+        })
+        assert handled is True
+        db.commit()
+        db.refresh(refund)
+        db.refresh(order)
+        assert refund.provider_refund_id == provider_refund_id
+        assert refund.status == "succeeded"
+        assert order.payment_status == PaymentStatus.REFUNDED
