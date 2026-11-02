@@ -20,6 +20,7 @@ from app.services.payments import (
     PaymentProviderUnavailable,
     amount_to_subunits,
     fetch_razorpay_payment,
+    list_razorpay_order_payments,
     verify_razorpay_signature,
     verify_razorpay_webhook_signature,
 )
@@ -297,6 +298,30 @@ def _process_event(db: Session, payload: dict) -> bool:
     if attempt is None or order is None:
         return False
     if event in {"order.paid", "payment.captured"}:
+        if event == "order.paid" and not provider_payment_id:
+            # Razorpay order.paid webhooks may carry only an order entity.
+            # Reconcile from the provider rather than leaving every such
+            # signed event unprocessed indefinitely. Ambiguous payments
+            # require review: never guess which capture belongs to the sale.
+            try:
+                payments = list_razorpay_order_payments(
+                    provider_order_id=attempt.provider_order_id,
+                )
+            except PaymentProviderUnavailable as exc:
+                raise HTTPException(status_code=503, detail="Payment verification is unavailable") from exc
+            except PaymentProviderError as exc:
+                raise HTTPException(status_code=502, detail="Unable to verify payment with provider") from exc
+            captures = [p for p in payments if p.get("status") == "captured"]
+            if (
+                len(captures) != 1
+                or any(p.get("status") == "authorized" for p in payments)
+                or captures[0].get("order_id") != attempt.provider_order_id
+                or captures[0].get("currency") != attempt.currency
+                or captures[0].get("amount") != amount_to_subunits(attempt.amount)
+                or not isinstance(captures[0].get("id"), str)
+            ):
+                return False
+            provider_payment_id = captures[0]["id"]
         if not provider_payment_id:
             return False
         try:
