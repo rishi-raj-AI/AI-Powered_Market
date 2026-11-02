@@ -219,6 +219,13 @@ issue refunds, or build APKs until the release owner approves.
 - [ ] Razorpay payment-history collection: missing/non-integer/mismatched
       `count`, malformed rows and a full 100-item page fail closed; an
       explicit zero count and a complete short page are accepted.
+- [ ] Authoritative capture amount types: reject float, string, boolean and
+      missing paise values even when Python numeric equality would match.
+      Neither callback verification nor expiration reconciliation may mark
+      the order paid or release merchant fulfilment on malformed evidence.
+- [ ] Expiration must defer any locally authorized, processing, refunded or
+      unknown payment-attempt status even if provider history is empty; do
+      not restore stock until all local and provider evidence is unambiguous.
 - [ ] Provider-history integrity: an order-only `order.paid` event with one
       captured payment and a malformed secondary `failed` row (wrong order,
       amount, currency, or missing payment ID) remains pending; a well-formed
