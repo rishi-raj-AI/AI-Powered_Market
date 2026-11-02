@@ -66,26 +66,29 @@ test('customer sees verified payment after intent fails but a webhook has alread
 
 test('a slow older orders refresh cannot undo a verified payment',async({page})=>{
   const upiOrder={...order,status:'placed',payment_method:'upi',payment_status:'pending'};
-  let reads=0;let intentCalls=0;let staleRequested!:()=>void;let releaseStale!:()=>void;
+  let intentCalls=0;let holdRefresh=false;let refreshHeld=false;let providerCaptured=false;
+  let staleRequested!:()=>void;let releaseStale!:()=>void;
   const staleStarted=new Promise<void>(resolve=>{staleRequested=resolve});
   const staleGate=new Promise<void>(resolve=>{releaseStale=resolve});
   await installApiMocks(page,customer);
   await page.route('http://localhost:8000/api/v1/orders/me',async route=>{
-    reads+=1;
-    if(reads===2){
+    if(holdRefresh && !refreshHeld){
+      refreshHeld=true;
       staleRequested();
       await staleGate;
       return route.fulfill({json:[upiOrder],headers:{'x-e2e-stale':'1'}});
     }
-    return route.fulfill({json:[reads>=3?{...upiOrder,payment_status:'paid'}:upiOrder]});
+    return route.fulfill({json:[providerCaptured?{...upiOrder,payment_status:'paid'}:upiOrder]});
   });
   await page.route(`http://localhost:8000/api/v1/payments/orders/${order.id}/intent`,route=>{
     intentCalls+=1;
+    providerCaptured=true;
     return route.fulfill({status:409,json:{detail:'Payment requires reconciliation'}});
   });
   await page.goto('/orders');
   const pay=page.getByRole('button',{name:'Pay now'});
   await expect(pay).toBeVisible();
+  holdRefresh=true;
   await page.getByRole('button',{name:'Refresh',exact:true}).click();
   await staleStarted;
   await pay.click();
