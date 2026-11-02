@@ -35,6 +35,13 @@ issue refunds, or build APKs until the release owner approves.
 10. An `order.paid` event without a payment entity may be reconciled using
     provider order-payment history, but only if exactly one matching captured
     payment exists and no authorized payments make the outcome ambiguous.
+11. Before any capture is applied (callback, webhook, expiry), the stored
+    attempt must be a Razorpay INR attempt for **exactly** the commercial
+    order total. An underpaid/overpaid attempt never creates settlement or
+    releases fulfilment even if its own provider capture is genuine.
+12. An unknown provider refund ID may only be associated with an obligation
+    by payment ID when exactly one candidate exists and it has no different
+    provider refund ID. Multiple candidate obligations require manual review.
 
 ## Feature flags and operator safety
 
@@ -87,6 +94,7 @@ issue refunds, or build APKs until the release owner approves.
       payment, captured plus authorized, multiple captures, inventory restore
       once, cancellation race.
 - [ ] Refund webhook tests: mismatched payment/refund ID, amount/currency,
+      ambiguous multiple obligations for one provider payment,
       malformed payload, valid processed result and late failed result after
       success. Inspect any indefinitely deferred refund events manually.
 - [ ] Manually investigate any second captured payment or unprocessed duplicate
