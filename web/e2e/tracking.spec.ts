@@ -40,14 +40,18 @@ test('customer keeps a pending UPI order recoverable when online payment is unav
 
 test('customer sees verified payment after intent fails but a webhook has already captured it',async({page})=>{
   const upiOrder={...order,status:'placed',payment_method:'upi',payment_status:'pending'};
-  let orderReads=0;let intentCalls=0;
+  let orderReads=0;let intentCalls=0;let webhookCaptured=false;
   await installApiMocks(page,customer);
   await page.route('http://localhost:8000/api/v1/orders/me',route=>{
     orderReads+=1;
-    return route.fulfill({json:[orderReads>1?{...upiOrder,payment_status:'paid'}:upiOrder]});
+    // React Strict Mode may load orders twice on mount. Payment must only
+    // become paid after the attempted intent discovers the webhook capture,
+    // not after an arbitrary number of initial GET requests.
+    return route.fulfill({json:[webhookCaptured?{...upiOrder,payment_status:'paid'}:upiOrder]});
   });
   await page.route(`http://localhost:8000/api/v1/payments/orders/${order.id}/intent`,route=>{
     intentCalls+=1;
+    webhookCaptured=true;
     return route.fulfill({status:409,json:{detail:'Existing payment requires reconciliation'}});
   });
   await page.goto('/orders');
