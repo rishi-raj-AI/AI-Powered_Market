@@ -223,4 +223,21 @@ def list_razorpay_order_payments(*, provider_order_id: str) -> list[dict]:
         or not all(isinstance(item, dict) for item in items)
     ):
         raise PaymentProviderError("Razorpay payment history is incomplete")
+
+    # A duplicated payment ID can conceal a missing row while preserving the
+    # reported page count. Contradictory statuses for the same payment must
+    # never be interpreted as one valid capture plus a harmless failed retry.
+    # Require unique, attributable identities before any caller uses this
+    # history to release stock, settle an order, or offer another payment.
+    seen_payment_ids: set[str] = set()
+    for item in items:
+        payment_id = item.get("id")
+        if (
+            not isinstance(payment_id, str)
+            or not payment_id
+            or item.get("order_id") != provider_order_id
+            or payment_id in seen_payment_ids
+        ):
+            raise PaymentProviderError("Razorpay payment history is incomplete")
+        seen_payment_ids.add(payment_id)
     return items
