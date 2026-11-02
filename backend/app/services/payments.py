@@ -67,8 +67,19 @@ def create_razorpay_order(*, amount: Decimal, receipt: str, gaonone_order_id: st
         data = response.json()
     except ValueError as exc:
         raise PaymentProviderError("Razorpay returned an invalid order response") from exc
-    if not isinstance(data, dict) or not data.get("id"):
-        raise PaymentProviderError("Razorpay returned an invalid order response")
+    # A successful HTTP response is not proof that Razorpay created the
+    # intended amount/currency. Never expose a mismatched provider order to
+    # Checkout: the customer could pay a different amount than the reserved
+    # commercial order, leaving an ambiguous capture and stock obligation.
+    if (
+        not isinstance(data, dict)
+        or not isinstance(data.get("id"), str)
+        or not data["id"]
+        or type(data.get("amount")) is not int
+        or data["amount"] != payload["amount"]
+        or data.get("currency") != payload["currency"]
+    ):
+        raise PaymentProviderError("Razorpay returned a mismatched order response")
     return data
 
 

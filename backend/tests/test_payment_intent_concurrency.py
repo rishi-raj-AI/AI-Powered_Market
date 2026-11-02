@@ -69,6 +69,9 @@ def test_concurrent_payment_intents_reuse_one_provider_order(monkeypatch) -> Non
                 second_order_lock_attempted.set()
 
     monkeypatch.setattr(payment_routes.settings, "RAZORPAY_KEY_ID", "rzp_test_payment_intent")
+    # Provider history is read before an existing intent can be shown again.
+    # Simulate a provider order with no payments, without network I/O.
+    monkeypatch.setattr(payment_routes, "list_razorpay_order_payments", lambda **_kwargs: [])
     monkeypatch.setattr(payment_routes, "create_razorpay_order", create_provider_order)
     sqlalchemy_event.listen(engine, "before_cursor_execute", observe_order_lock)
 
@@ -131,6 +134,9 @@ def test_intent_retry_and_verify_lock_order_without_deadlock(monkeypatch) -> Non
     token = _token(customer_phone)
 
     monkeypatch.setattr(payment_routes.settings, "RAZORPAY_KEY_ID", "rzp_test_payment_intent")
+    # Provider history is read before an existing intent can be shown again.
+    # Simulate a provider order with no payments, without network I/O.
+    monkeypatch.setattr(payment_routes, "list_razorpay_order_payments", lambda **_kwargs: [])
     monkeypatch.setattr(payment_hardening, "verify_razorpay_signature", lambda **_kwargs: True)
     monkeypatch.setattr(
         payment_hardening,
