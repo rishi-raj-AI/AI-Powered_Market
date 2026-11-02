@@ -119,6 +119,11 @@ def _notify_payment_captured(db: Session, order: Order) -> None:
 
 
 def _apply_paid(db: Session, attempt: PaymentAttempt, order: Order, provider_payment_id: str | None) -> None:
+    # A capture for an incorrectly priced attempt must never release an order
+    # or create a settlement. Every entry point (callback, webhook, expiry)
+    # converges here, so enforce the commercial amount invariant centrally.
+    if attempt.provider != "razorpay" or attempt.currency != "INR" or attempt.amount != order.total:
+        raise HTTPException(status_code=409, detail="Payment attempt does not match order total")
     if provider_payment_id:
         # A second capture is a separate financial obligation. Never silently
         # replace an already captured payment ID or settle it as the same sale.
