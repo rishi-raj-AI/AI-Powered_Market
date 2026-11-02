@@ -326,7 +326,7 @@ def _process_event(db: Session, payload: dict) -> bool:
     provider_payment_id = str(payment_entity.get("id") or "") or None
     provider_order_id = str(payment_entity.get("order_id") or order_entity.get("id") or "") or None
     if not provider_order_id:
-        return event not in {"order.paid", "payment.captured"}
+        return event not in {"order.paid", "payment.captured", "payment.failed"}
     attempt, order, _ = _lock_payment_context(db, provider_order_id=provider_order_id)
     if attempt is None or order is None:
         return False
