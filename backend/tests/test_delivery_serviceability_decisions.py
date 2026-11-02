@@ -153,7 +153,10 @@ def test_provenance_is_confirmed_only_with_source_and_server_timestamp():
         # These attributes become mapped nullable fields in additive PR #247.
         # Until then, getattr keeps the P0 engine compatible with the old schema.
         address.location_source = "gps"
-        assert evaluate_delivery(db, store, address).location_confidence == "legacy_coordinates"
+        unconfirmed = evaluate_delivery(db, store, address)
+        assert unconfirmed.location_confidence == "legacy_coordinates"
+        assert unconfirmed.reason_code == "ADDRESS_LOCATION_UNCONFIRMED"
+        assert unconfirmed.serviceable is False
         address.location_confirmed_at = datetime.now(timezone.utc)
         assert evaluate_delivery(db, store, address).location_confidence == "confirmed_gps"
         address.location_source = "map_pin"
@@ -161,6 +164,35 @@ def test_provenance_is_confirmed_only_with_source_and_server_timestamp():
         # A Places centroid is approximate even if a client saved it and the
         # backend timestamped that event; it is not a doorstep confirmation.
         address.location_source = "searched_place"
-        assert evaluate_delivery(db, store, address).location_confidence == "approximate_searched_place"
-        assert evaluate_delivery(db, store, address).serviceable is True
+        approximate = evaluate_delivery(db, store, address)
+        assert approximate.location_confidence == "approximate_searched_place"
+        assert approximate.reason_code == "ADDRESS_LOCATION_UNCONFIRMED"
+        assert approximate.serviceable is False
+        db.rollback()
+
+
+def test_searched_place_centroid_cannot_create_order_even_inside_territory():
+    """Quote and authoritative checkout both require a deliberate pin."""
+    with factories.session() as db:
+        customer = factories.make_user(db)
+        store = factories.make_store(db, is_active=True)
+        address = factories.make_address(
+            db, customer, db.get(factories.Village, store.village_id),
+        )
+        _cart_for(db, customer, store)
+        db.commit()
+        # PR #247 maps this optional attribute to the provenance column.
+        address.location_source = "searched_place"
+        before = db.scalar(select(func.count(Order.id)).where(Order.user_id == customer.id))
+        quote = cart_quote(address.id, db=db, user=customer)
+        assert quote.serviceable is False
+        assert quote.checkout_ready is False
+        assert quote.serviceability_reason_code == "ADDRESS_LOCATION_UNCONFIRMED"
+        with pytest.raises(HTTPException) as exc:
+            safe_checkout(
+                CheckoutRequest(address_id=address.id),
+                idempotency_key=str(uuid4()), db=db, user=customer,
+            )
+        assert exc.value.status_code == 409
+        assert db.scalar(select(func.count(Order.id)).where(Order.user_id == customer.id)) == before
         db.rollback()
