@@ -10,7 +10,7 @@ from app.api.deps import get_current_user, get_db
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.integrations import PaymentAttempt
-from app.models.orders import Order, PaymentMethod, PaymentStatus
+from app.models.orders import Order, OrderStatus, PaymentMethod, PaymentStatus
 from app.models.user import User
 from app.schemas.integrations import (
     PaymentConfigResponse,
@@ -23,6 +23,7 @@ from app.services.payments import (
     PaymentProviderUnavailable,
     amount_to_subunits,
     fetch_razorpay_payment,
+    list_razorpay_order_payments,
     create_razorpay_order,
     razorpay_enabled,
     verify_razorpay_signature,
@@ -43,6 +44,36 @@ def payment_config() -> PaymentConfigResponse:
     )
 
 
+def _require_terminal_failed_provider_history(attempt: PaymentAttempt) -> None:
+    """Fail closed before reusing or replacing an older provider payment order.
+
+    A local FAILED flag is not evidence that the provider never captured a
+    payment. Check all previous provider orders, not only the newest active
+    attempt, before allowing another checkout payment interaction.
+    """
+    if not attempt.provider_order_id:
+        if attempt.status not in {"created", "failed"}:
+            raise HTTPException(status_code=409, detail="Existing payment requires reconciliation")
+        return
+    try:
+        history = list_razorpay_order_payments(provider_order_id=attempt.provider_order_id)
+    except PaymentProviderUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Payment verification is unavailable") from exc
+    except PaymentProviderError as exc:
+        raise HTTPException(status_code=502, detail="Unable to verify previous payment") from exc
+    if any(
+        payment.get("status") != "failed"
+        or not isinstance(payment.get("id"), str)
+        or not payment["id"]
+        or payment.get("order_id") != attempt.provider_order_id
+        or type(payment.get("amount")) is not int
+        or payment["amount"] != amount_to_subunits(attempt.amount)
+        or payment.get("currency") != attempt.currency
+        for payment in history
+    ):
+        raise HTTPException(status_code=409, detail="Existing payment requires reconciliation")
+
+
 @router.post("/orders/{order_id}/intent", response_model=PaymentIntentResponse)
 def create_payment_intent(
     order_id: uuid.UUID,
@@ -61,10 +92,22 @@ def create_payment_intent(
         raise HTTPException(status_code=404, detail="Order not found")
     if order.payment_method != PaymentMethod.UPI:
         raise HTTPException(status_code=409, detail="This order is not configured for online payment")
-    if order.payment_status == PaymentStatus.PAID:
-        raise HTTPException(status_code=409, detail="Order is already paid")
-    if order.status.value == "cancelled":
-        raise HTTPException(status_code=409, detail="Cancelled orders cannot be paid")
+    if order.payment_status not in (PaymentStatus.PENDING, PaymentStatus.FAILED):
+        raise HTTPException(status_code=409, detail="Order is not eligible for a new payment")
+    if order.status != OrderStatus.PLACED:
+        raise HTTPException(status_code=409, detail="Order is not eligible for online payment")
+
+    # A legacy order-level PENDING/FAILED flag can disagree with an attempt
+    # that already records captured money. Never create a second provider
+    # order in that state; reconcile the original payment first.
+    captured_attempt_id = db.scalar(
+        select(PaymentAttempt.id).where(
+            PaymentAttempt.order_id == order.id,
+            (PaymentAttempt.status == "paid") | PaymentAttempt.provider_payment_id.is_not(None),
+        ).limit(1)
+    )
+    if captured_attempt_id is not None:
+        raise HTTPException(status_code=409, detail="Existing payment requires reconciliation")
 
     existing = db.scalar(
         select(PaymentAttempt)
@@ -77,8 +120,11 @@ def create_payment_intent(
         .order_by(PaymentAttempt.created_at.desc())
     )
     if existing and existing.provider_order_id:
+        if existing.amount != order.total or existing.currency != "INR":
+            raise HTTPException(status_code=409, detail="Existing payment intent requires reconciliation")
         if not settings.RAZORPAY_KEY_ID:
             raise HTTPException(status_code=503, detail="Payment provider is not configured")
+        _require_terminal_failed_provider_history(existing)
         existing.status = "attempted"
         db.commit()
         return PaymentIntentResponse(
@@ -90,6 +136,24 @@ def create_payment_intent(
             currency=existing.currency,
             key_id=settings.RAZORPAY_KEY_ID,
         )
+
+    # A previous attempt may have been locally marked failed just before a
+    # late provider capture. Inspect all earlier attempts before opening a
+    # new provider order, including unknown providers and mismatched terms.
+    prior_attempts = db.scalars(
+        select(PaymentAttempt).where(PaymentAttempt.order_id == order.id)
+        .order_by(PaymentAttempt.id)
+    ).all()
+    for prior in prior_attempts:
+        if (
+            prior.provider != "razorpay"
+            or prior.currency != "INR"
+            or prior.amount != order.total
+            or prior.status == "paid"
+            or prior.provider_payment_id
+        ):
+            raise HTTPException(status_code=409, detail="Existing payment requires reconciliation")
+        _require_terminal_failed_provider_history(prior)
 
     try:
         provider_order = create_razorpay_order(
