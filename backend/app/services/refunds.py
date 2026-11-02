@@ -232,8 +232,22 @@ def dispatch_refund(db: Session, refund_id: uuid.UUID) -> str:
         db.commit()
         return REFUND_FAILED
 
+    # Provider calls happen outside a transaction. On return, take the
+    # commercial order lock BEFORE the refund lock: cancellation and webhook
+    # reconciliation use the same ordering, avoiding a refund -> order
+    # deadlock when the provider reports immediate success.
+    refund_order_id = db.scalar(
+        select(PaymentRefund.order_id).where(PaymentRefund.id == refund_id)
+    )
+    if refund_order_id is None:
+        return "missing"
+    order = db.scalar(select(Order).where(Order.id == refund_order_id).with_for_update())
+    if order is None:
+        db.rollback()
+        return "missing"
     locked = db.scalar(select(PaymentRefund).where(PaymentRefund.id == refund_id).with_for_update())
     if locked is None:
+        db.rollback()
         return "missing"
     apply_provider_refund_result(db, locked, payload)
     status = locked.status
