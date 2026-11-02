@@ -351,3 +351,44 @@ def test_unrecognized_local_attempt_state_cannot_open_another_intent(
         with pytest.raises(HTTPException) as exc:
             payment_routes.create_payment_intent(order.id, db=db, user=customer)
         assert exc.value.status_code == 409
+
+
+@pytest.mark.parametrize("with_newer_active", [False, True])
+def test_failed_attempt_without_provider_order_id_blocks_checkout(
+    monkeypatch, with_newer_active,
+):
+    """A local FAILED flag cannot prove that an unidentified provider order is unpaid."""
+    with session() as db:
+        customer, order, attempt = _context(db)
+        attempt.status = "failed"
+        attempt.provider_order_id = None
+        if with_newer_active:
+            db.add(PaymentAttempt(
+                order_id=order.id,
+                provider="razorpay",
+                provider_order_id=f"order_{uuid4().hex}",
+                status="attempted",
+                amount=order.total,
+                currency="INR",
+            ))
+        db.commit()
+
+        monkeypatch.setattr(
+            payment_routes, "list_razorpay_order_payments",
+            lambda **_kwargs: pytest.fail(
+                "An unidentified historical attempt must block before provider reads"
+            ),
+        )
+        monkeypatch.setattr(
+            payment_routes, "create_razorpay_order",
+            lambda **_kwargs: pytest.fail(
+                "An unidentified historical attempt must not open a new checkout"
+            ),
+        )
+        with pytest.raises(HTTPException) as exc:
+            payment_routes.create_payment_intent(order.id, db=db, user=customer)
+        assert exc.value.status_code == 409
+        assert "reconciliation" in exc.value.detail
+        db.refresh(attempt)
+        assert attempt.status == "failed"
+        assert attempt.provider_order_id is None
