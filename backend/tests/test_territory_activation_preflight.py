@@ -53,7 +53,7 @@ def test_preflight_never_activates_or_authorizes_checkout():
     with factories.session() as db:
         _, territory, actor = _draft(db)
         _publish(db, territory, actor)
-        store = factories.make_store(db)
+        store = factories.make_store(db, is_active=True)
         db.add(StoreDeliveryTerritory(
             store_id=store.id, territory_id=territory.id,
             status="active", delivery_enabled=True,
@@ -87,7 +87,7 @@ def test_preflight_detects_unpublished_edit_and_inactive_region():
     with factories.session() as db:
         region, territory, actor = _draft(db)
         _publish(db, territory, actor)
-        store = factories.make_store(db)
+        store = factories.make_store(db, is_active=True)
         db.add(StoreDeliveryTerritory(
             store_id=store.id, territory_id=territory.id,
             status="active", delivery_enabled=True,
@@ -106,7 +106,7 @@ def test_preflight_rejects_stale_history_and_disabled_assignment():
     with factories.session() as db:
         _, territory, actor = _draft(db)
         _publish(db, territory, actor)
-        store = factories.make_store(db)
+        store = factories.make_store(db, is_active=True)
         db.add(StoreDeliveryTerritory(
             store_id=store.id, territory_id=territory.id,
             status="active", delivery_enabled=False,
@@ -118,6 +118,23 @@ def test_preflight_rejects_stale_history_and_disabled_assignment():
         assert "NO_ELIGIBLE_STORE_ASSIGNMENTS" in report.issues
         db.rollback()
 
+
+
+def test_preflight_excludes_inactive_store_even_with_active_assignment():
+    with factories.session() as db:
+        _, territory, actor = _draft(db)
+        _publish(db, territory, actor)
+        store = factories.make_store(db)  # Factory defaults to inactive.
+        db.add(StoreDeliveryTerritory(
+            store_id=store.id, territory_id=territory.id,
+            status="active", delivery_enabled=True,
+        ))
+        db.flush()
+        report = inspect_territory_activation_preflight(db, territory.id)
+        assert report.total_assignments == 1
+        assert report.eligible_assignments == 0
+        assert "NO_ELIGIBLE_STORE_ASSIGNMENTS" in report.issues
+        db.rollback()
 
 def test_preflight_missing_territory_and_naive_time():
     with factories.session() as db:
