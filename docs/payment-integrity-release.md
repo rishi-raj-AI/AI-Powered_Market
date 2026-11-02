@@ -162,7 +162,7 @@ issue refunds, or build APKs until the release owner approves.
       webhook-first, callback-first, replay, duplicate payment ID, mismatched
       amount/currency/order, refund after late capture.
 - [ ] Two concurrent intent requests create only one provider order.
-- [ ] Verify and webhook acquire order lock before payment-attempt lock.
+- [ ] New provider order responses must contain a nonempty string ID, exact\n      integer amount in paise and INR currency. Any missing/mismatched field\n      blocks checkout intent creation without recording a local payment attempt.\n- [ ] Intent retries on legacy inconsistent orders: captured local attempt\n      with order-level PENDING/FAILED, stale provider amount/currency, already\n      paid/refunding/refunded or non-PLACED orders must fail closed. Test both\n      direct routes and HTTP responses using disposable records.\n- [ ] Verify and webhook acquire order lock before payment-attempt lock.
 - [ ] Merchant acceptance and preparation reject unpaid UPI but accept COD.
 - [ ] Rider offers, assignment, pickup and delivery completion reject unpaid UPI.
 - [ ] Expiry tests: zero attempts, provider outage, created/authorized/refunded/
