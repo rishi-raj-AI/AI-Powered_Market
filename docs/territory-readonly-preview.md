@@ -12,7 +12,8 @@ The existing hub-centred legacy `service_areas` evaluator remains authoritative.
 
 The read-only query:
 
-- Requires active operating region, territory, and store assignment.
+- Requires active operating region, territory, and store assignment, plus a
+  matching immutable territory version with a publication timestamp.
 - Requires the assignment's delivery-enabled flag and half-open effective dates.
 - Evaluates circles using PostGIS `ST_DWithin` on geography in metres.
 - Evaluates polygons with boundary-inclusive `ST_Covers` in SRID 4326.
