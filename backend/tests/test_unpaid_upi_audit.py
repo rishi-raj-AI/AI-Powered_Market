@@ -160,3 +160,55 @@ def test_unpaid_audit_requires_review_when_no_payment_attempt_exists(monkeypatch
         report = audit_upi_payments.audit_unpaid_upi()
         finding = next(f for f in report["findings"] if f["order_number"] == number)
         assert finding["result"] == "missing_payment_attempt"
+
+
+@pytest.mark.parametrize(
+    ("provider", "currency", "provider_order", "expected"),
+    [
+        ("other_provider", "INR", True, "payment_history_mismatch"),
+        ("razorpay", "USD", True, "payment_history_mismatch"),
+        ("razorpay", "INR", False, "payment_history_mismatch"),
+    ],
+)
+def test_unpaid_audit_quarantines_unverifiable_attempts(
+    monkeypatch, provider, currency, provider_order, expected,
+):
+    with session() as db:
+        order = make_order(
+            db, payment_status=PaymentStatus.FAILED, with_paid_attempt=False
+        )
+        attempt = _attempt(db, order, status="failed", provider=provider)
+        attempt.currency = currency
+        if not provider_order:
+            attempt.provider_order_id = None
+        db.commit()
+        number = order.order_number
+        monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
+        def unexpected_provider_read(**_):
+            pytest.fail("Unverifiable attempts must not be treated as safe provider histories")
+        monkeypatch.setattr(
+            audit_upi_payments, "list_razorpay_order_payments", unexpected_provider_read
+        )
+        report = audit_upi_payments.audit_unpaid_upi()
+        finding = next(f for f in report["findings"] if f["order_number"] == number)
+        assert finding["result"] == expected
+
+
+def test_unpaid_audit_rejects_malformed_capture_money(monkeypatch):
+    with session() as db:
+        order = make_order(
+            db, payment_status=PaymentStatus.PENDING, with_paid_attempt=False
+        )
+        attempt = _attempt(db, order)
+        db.commit()
+        number = order.order_number
+        monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
+        monkeypatch.setattr(
+            audit_upi_payments, "list_razorpay_order_payments",
+            lambda **_: [_payment(attempt, amount="12000")],
+        )
+        report = audit_upi_payments.audit_unpaid_upi()
+        finding = next(f for f in report["findings"] if f["order_number"] == number)
+        # A malformed capture still means the provider might have moved money.
+        assert finding["result"] == "unexpected_capture"
+        assert finding["provider_capture_count"] == 1
