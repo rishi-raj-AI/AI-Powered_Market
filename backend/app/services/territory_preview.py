@@ -40,6 +40,13 @@ _SQL = text(f"""
       AND a.delivery_enabled = true
       AND t.status = 'active'
       AND r.status = 'active'
+      AND t.published_version IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM delivery_territory_versions v
+        WHERE v.territory_id = t.id
+          AND v.version = t.published_version
+          AND v.published_at IS NOT NULL
+      )
       AND (a.effective_from IS NULL OR a.effective_from <= :evaluated_at)
       AND (a.effective_until IS NULL OR a.effective_until > :evaluated_at)
       AND (t.effective_from IS NULL OR t.effective_from <= :evaluated_at)
