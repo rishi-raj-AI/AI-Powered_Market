@@ -114,6 +114,17 @@ issue refunds, or build APKs until the release owner approves.
     of inviting a duplicate charge. Empty histories and verified terminal
     failures may safely reuse the same intent or create a new one.
 
+24. A historical payment attempt missing its provider order ID is not
+    safely retryable, even when its local status is `failed`. Without that
+    identity GaonOne cannot ask Razorpay whether the earlier payment captured;
+    quarantine the commercial order before reusing or creating an intent.
+25. An automatic refund must bind to exactly one local captured-payment
+    evidence row, with paid status, provider payment ID, Razorpay provider,
+    matching commercial total and INR currency. A second capture-evidence
+    row (including a locally failed row carrying a payment ID) or inconsistent
+    single row creates an unbound refund obligation for manual reconciliation,
+    not a guessed provider refund target.
+
 ## Feature flags and operator safety
 
 - `PAYMENT_WEBHOOK_REPLAY_ENABLED=false` is the safe default. The durable
