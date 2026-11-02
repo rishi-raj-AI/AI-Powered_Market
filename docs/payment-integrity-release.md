@@ -201,3 +201,18 @@ one mocked provider request.
 Run this with the backend integration suite against an isolated test database;
 never point it at production. CI success proves these simulated interleavings,
 not actual Razorpay sandbox lifecycle acceptance or production readiness.
+
+## Cancellation, capture and refund lock-race acceptance (development-only)
+
+The disposable PostgreSQL tests in
+`backend/tests/test_cancellation_refund_concurrency.py` hold the commercial
+order lock in both directions: cancellation before a processed refund webhook,
+and a processed refund webhook before cancellation. They assert neither worker
+bypasses the lock, no deadlock occurs, stock is restored exactly once, and
+only one settlement reversal is recorded. The same module checks cancellation
+versus independently verified capture in both orders: a capture after
+cancellation must create a durable refund obligation with the provider payment
+ID, not reopen fulfilment or emit a merchant new-order notification; a capture
+before cancellation must also leave the obligation. These tests mock provider
+reads and settlement side effects; they do not prove real Razorpay sandbox
+behaviour. Run them only against the isolated PostgreSQL test database.
