@@ -31,7 +31,17 @@ class _Client:
 
 @pytest.mark.parametrize(("payload", "accepted"), [
     ({"items": [], "count": 0}, True),
-    ({"items": [{"id": "pay_1"}], "count": 1}, True),
+    ({"items": [{"id": "pay_1", "order_id": "order_test"}], "count": 1}, True),
+    ({"items": [
+        {"id": "pay_1", "order_id": "order_test"},
+        {"id": "pay_2", "order_id": "order_test"},
+    ], "count": 2}, True),
+    ({"items": [{"id": "pay_1"}], "count": 1}, False),
+    ({"items": [{"id": "pay_1", "order_id": "other"}], "count": 1}, False),
+    ({"items": [
+        {"id": "pay_1", "order_id": "order_test"},
+        {"id": "pay_1", "order_id": "order_test"},
+    ], "count": 2}, False),
     ({"items": [], "count": 1}, False),
     ({"items": [{"id": "pay_1"}], "count": 2}, False),
     ({"items": [{"id": "pay_1"}]}, False),
