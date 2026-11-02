@@ -61,6 +61,14 @@ issue refunds, or build APKs until the release owner approves.
     A verified webhook that completed while the API call was in flight
     remains terminal and must not be downgraded.
 
+16. A refund HTTP timeout, 5xx, unreadable response or response without a
+    provider refund ID has an **indeterminate** outcome: the provider may have
+    moved money. Keep the obligation in `processing` for manual provider
+    reconciliation, and exclude it from automatic retries. Explicit provider
+    rejection remains separately retryable under existing policy. A webhook
+    confirming success during an outbound refund call wins over a subsequent
+    API error; never downgrade `succeeded` to `failed`.
+
 ## Feature flags and operator safety
 
 - `PAYMENT_WEBHOOK_REPLAY_ENABLED=false` is the safe default. The durable
@@ -112,7 +120,13 @@ issue refunds, or build APKs until the release owner approves.
       unknown status, malformed failed payment, local capture evidence, unknown
       provider, captured plus authorized, multiple captures, inventory restore
       once, cancellation race.
-- [ ] Refund dispatch API tests: matching payment ID, refund ID, amount and\n      currency; truncated/mismatched provider response quarantined without\n      automatic re-dispatch or false refunded state.\n- [ ] Refund webhook tests: order-before-refund lock acquisition under
+- [ ] Refund dispatch API tests: matching payment ID, refund ID, amount and
+      currency; truncated/mismatched provider response quarantined without
+      automatic re-dispatch or false refunded state.
+- [ ] Refund provider ambiguity: timeout, 5xx, malformed HTTP 200, and
+      webhook success racing a provider error; none can cause an automatic
+      duplicate refund or downgrade a confirmed refund.
+- [ ] Refund webhook tests: order-before-refund lock acquisition under
       PostgreSQL concurrency with cancellation, mismatched payment/refund ID, amount/currency,
       ambiguous multiple obligations for one provider payment,
       malformed payload, valid processed result and late failed result after
