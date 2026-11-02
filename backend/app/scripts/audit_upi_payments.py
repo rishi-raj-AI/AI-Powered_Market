@@ -43,7 +43,7 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
         for order in orders:
             attempts = db.scalars(
                 select(PaymentAttempt)
-                .where(PaymentAttempt.order_id == order.id, PaymentAttempt.provider == "razorpay")
+                .where(PaymentAttempt.order_id == order.id)
             ).all()
             if not attempts:
                 findings.append({"order_number": order.order_number, "result": "missing_payment_attempt"})
@@ -52,7 +52,13 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
             captured_ids: set[str] = set()
             unavailable = False
             mismatch = False
+            ambiguous = False
             for attempt in attempts:
+                # Audit all attempts, not just Razorpay rows. A different
+                # provider could have collected money for the same order.
+                if attempt.provider != "razorpay":
+                    mismatch = True
+                    continue
                 # A matching provider capture cannot validate an inconsistent
                 # local ledger. An attempt for a different amount, currency or
                 # non-paid status still requires explicit reconciliation.
@@ -73,7 +79,13 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
                     unavailable = True
                     continue
                 for payment in payments:
-                    if payment.get("status") != "captured":
+                    provider_status = payment.get("status")
+                    if provider_status == "failed":
+                        continue
+                    if provider_status != "captured":
+                        # An authorized/created or unrecognised provider
+                        # payment could still move money after this audit.
+                        ambiguous = True
                         continue
                     payment_id = payment.get("id")
                     if isinstance(payment_id, str):
@@ -98,6 +110,8 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
                 result = "provider_unavailable"
             elif mismatch:
                 result = "capture_mismatch"
+            elif ambiguous:
+                result = "provider_ambiguous"
             elif matched_capture_ids:
                 result = "verified_capture"
             else:
