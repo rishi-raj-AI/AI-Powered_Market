@@ -156,6 +156,12 @@ def apply_provider_refund_result(db: Session, refund: PaymentRefund, payload: di
     """Fold a provider refund object (API response or webhook) into our state."""
     provider_refund_id = str(payload.get("id") or "") or None
     provider_status = str(payload.get("status") or "") or None
+    # A provider retry may deliver older pending/failed results after a
+    # processed refund. Financial success is terminal and cannot be undone.
+    if refund.status == REFUND_SUCCEEDED and provider_status != "processed":
+        return
+    if refund.provider_refund_id and provider_refund_id and provider_refund_id != refund.provider_refund_id:
+        raise PaymentProviderError("Provider refund ID does not match the recorded refund")
     if provider_refund_id and not refund.provider_refund_id:
         refund.provider_refund_id = provider_refund_id
     refund.provider_status = provider_status
