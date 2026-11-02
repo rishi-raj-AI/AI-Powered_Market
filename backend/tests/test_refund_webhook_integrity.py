@@ -102,6 +102,8 @@ def test_late_failed_webhook_cannot_reverse_processed_refund():
     ("refund.failed", "pending"),
     ("refund.processed", "unrecognized"),
     ("refund.failed", None),
+    ("refund.processed", []),
+    ("refund.failed", {"unexpected": "object"}),
 ])
 def test_refund_webhook_defers_contradictory_or_unknown_outcome(
     event_name, provider_status,
@@ -119,6 +121,19 @@ def test_refund_webhook_defers_contradictory_or_unknown_outcome(
         assert refund.status == "requested"
         assert refund.provider_status is None
 
+
+
+@pytest.mark.parametrize("entity", [[], "not-an-entity", 123])
+def test_malformed_refund_entity_is_deferred_without_mutation(entity):
+    with session() as db:
+        order, refund = _context(db)
+        payload = {"event": "refund.processed", "payload": {"refund": {"entity": entity}}}
+        assert _process_refund_event(db, payload) is False
+        db.commit()
+        db.refresh(order)
+        db.refresh(refund)
+        assert order.payment_status == PaymentStatus.REFUND_PENDING
+        assert refund.status == "requested"
 
 def test_unknown_refund_id_with_known_payment_cannot_replace_existing_refund():
     with session() as db:
