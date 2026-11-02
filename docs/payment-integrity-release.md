@@ -42,6 +42,14 @@ issue refunds, or build APKs until the release owner approves.
 12. An unknown provider refund ID may only be associated with an obligation
     by payment ID when exactly one candidate exists and it has no different
     provider refund ID. Multiple candidate obligations require manual review.
+13. Payment expiration fails closed on every nonterminal or unknown provider
+    payment status (including `created` and `refunded`), malformed provider
+    history, a locally recorded capture, or an attempt from an unknown
+    provider. Only a verified absence of money or well-formed terminal failed
+    payments may release reserved stock.
+14. Refund webhooks lock the commercial order before the refund obligation,
+    matching cancellation lock order. PostgreSQL concurrent cancellation and
+    refund-webhook execution still require integration acceptance.
 
 ## Feature flags and operator safety
 
@@ -90,10 +98,12 @@ issue refunds, or build APKs until the release owner approves.
 - [ ] Verify and webhook acquire order lock before payment-attempt lock.
 - [ ] Merchant acceptance and preparation reject unpaid UPI but accept COD.
 - [ ] Rider offers, assignment, pickup and delivery completion reject unpaid UPI.
-- [ ] Expiry tests: zero attempts, provider outage, authorized payment, captured
-      payment, captured plus authorized, multiple captures, inventory restore
+- [ ] Expiry tests: zero attempts, provider outage, created/authorized/refunded/
+      unknown status, malformed failed payment, local capture evidence, unknown
+      provider, captured plus authorized, multiple captures, inventory restore
       once, cancellation race.
-- [ ] Refund webhook tests: mismatched payment/refund ID, amount/currency,
+- [ ] Refund webhook tests: order-before-refund lock acquisition under
+      PostgreSQL concurrency with cancellation, mismatched payment/refund ID, amount/currency,
       ambiguous multiple obligations for one provider payment,
       malformed payload, valid processed result and late failed result after
       success. Inspect any indefinitely deferred refund events manually.
