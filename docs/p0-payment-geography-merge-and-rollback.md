@@ -47,17 +47,17 @@ At the inspected heads, both independent migrations descend from
 - Territory: `0028_delivery_territories`, descends from
   `0027_address_location_provenance`.
 
-The numeric filename prefix is not the revision identifier. Both 0027 revisions
-are distinct heads until an integration merge revision is added. Do **not**
-silently rewrite a revision ID or `down_revision` on an already-applied branch.
+The numeric filename prefix is not the revision identifier. The two independent
+0027 revisions are reconciled by a draft integration merge, not by rewriting
+an existing revision ID or `down_revision`.
 
-For the eventual combined integration branch, include both independent
-migration files and add an **empty Alembic merge revision** whose
-`down_revision` is the tuple
-`("0027_webhook_retry_schedule", "0028_delivery_territories")`.
-Use a unique revision ID and verify `alembic heads` reports one head.
-An empty merge only reconciles ancestry; it must not change existing columns,
-data, boundaries, or payment records.
+Draft PR #259 added the ancestry-only `0029_payment_geo_territory_merge`
+revision preserving both histories. Its disposable PostGIS CI exercised
+payment-first, geography-first and territory-first upgrades successfully.
+This is **development CI evidence**, not evidence of a production migration.
+Before release, re-run the full matrix against the final integrated commit,
+verify `alembic heads` reports one head, and review the upgrade SQL.
+The merge must not change existing columns, data, boundaries or payments.
 
 In a **disposable PostgreSQL/PostGIS database only**, exercise:
 - Upgrade from deployed schema revision to the combined single head.
