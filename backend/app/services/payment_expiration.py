@@ -69,30 +69,54 @@ def expire_unpaid_orders(
                 db.rollback()
                 continue
 
+            # Inspect every attempt, not just Razorpay attempts: an unknown
+            # provider or locally recorded capture must block stock release.
+            # Otherwise a stale order-level PENDING flag can conceal money.
             attempts = db.scalars(
                 select(PaymentAttempt)
-                .where(PaymentAttempt.order_id == order.id, PaymentAttempt.provider == "razorpay")
+                .where(PaymentAttempt.order_id == order.id)
                 .order_by(PaymentAttempt.id)
                 .with_for_update()
             ).all()
             captured: list[tuple[PaymentAttempt, str]] = []
             uncertain = False
             for attempt in attempts:
+                if attempt.provider != "razorpay":
+                    uncertain = True
+                    continue
+                if attempt.status == "paid" or attempt.provider_payment_id:
+                    # Local evidence of capture contradicts an unpaid order.
+                    # Do not trust an empty provider history to release stock.
+                    uncertain = True
                 if not attempt.provider_order_id:
+                    # A created/failed intent without a provider order cannot
+                    # be paid. Other states need manual reconciliation.
+                    if attempt.status not in {"created", "failed"}:
+                        uncertain = True
                     continue
                 payments = list_razorpay_order_payments(
                     provider_order_id=attempt.provider_order_id,
                 )
                 for payment in payments:
                     provider_status = payment.get("status")
-                    if provider_status == "authorized":
+                    if (
+                        payment.get("order_id") != attempt.provider_order_id
+                        or not isinstance(payment.get("id"), str)
+                        or not payment["id"]
+                    ):
                         uncertain = True
+                        continue
+                    if provider_status == "failed":
+                        # Only a well-formed, terminal failed payment is safe
+                        # to disregard when deciding whether stock can return.
+                        continue
                     if provider_status != "captured":
+                        # Created, authorized, refunded, unrecognised or
+                        # missing statuses are not proof of nonpayment.
+                        uncertain = True
                         continue
                     if (
-                        not isinstance(payment.get("id"), str)
-                        or payment.get("order_id") != attempt.provider_order_id
-                        or payment.get("amount") != amount_to_subunits(attempt.amount)
+                        payment.get("amount") != amount_to_subunits(attempt.amount)
                         or payment.get("currency") != attempt.currency
                     ):
                         uncertain = True
