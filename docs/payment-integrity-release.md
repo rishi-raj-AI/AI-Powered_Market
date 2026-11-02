@@ -34,7 +34,8 @@ issue refunds, or build APKs until the release owner approves.
    unprocessed event, even before the replay worker is enabled.
 10. An `order.paid` event without a payment entity may be reconciled using
     provider order-payment history, but only if exactly one matching captured
-    payment exists and no other nonfailed payment (created, authorized,\n    processing, refunded, or unknown) makes the outcome ambiguous.
+    payment exists and no other nonfailed payment (created, authorized,
+    processing, refunded, or unknown) makes the outcome ambiguous.
 11. Before any capture is applied (callback, webhook, expiry), the stored
     attempt must be a Razorpay INR attempt for **exactly** the commercial
     order total. An underpaid/overpaid attempt never creates settlement or
