@@ -117,3 +117,62 @@ def test_audit_flags_inconsistent_local_ledger_despite_valid_capture(monkeypatch
         report = audit_upi_payments.audit_paid_upi()
         finding = next(f for f in report["findings"] if f["order_number"] == order_number)
         assert finding["result"] == "capture_mismatch"
+
+
+def test_audit_does_not_ignore_attempts_from_other_payment_providers(monkeypatch):
+    with session() as db:
+        order = make_order(db)
+        razorpay_attempt = db.scalar(
+            select(PaymentAttempt).where(PaymentAttempt.order_id == order.id)
+        )
+        db.add(PaymentAttempt(
+            order_id=order.id, provider="unrecognised_provider",
+            status="attempted", amount=order.total, currency="INR",
+        ))
+        db.commit()
+        order_number = order.order_number
+        monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
+        monkeypatch.setattr(
+            audit_upi_payments, "list_razorpay_order_payments",
+            lambda **_: [_capture(razorpay_attempt, razorpay_attempt.provider_payment_id)],
+        )
+        report = audit_upi_payments.audit_paid_upi()
+        finding = next(f for f in report["findings"] if f["order_number"] == order_number)
+        assert finding["result"] == "capture_mismatch"
+        assert report["requires_review"] >= 1
+
+
+@pytest.mark.parametrize(("extra_status", "expected"), [
+    ("authorized", "provider_ambiguous"),
+    ("created", "provider_ambiguous"),
+    ("refunded", "provider_ambiguous"),
+    ("unexpected", "provider_ambiguous"),
+    ("failed", "verified_capture"),
+])
+def test_audit_does_not_hide_unsettled_provider_payment_behind_capture(
+    monkeypatch, extra_status, expected,
+):
+    with session() as db:
+        order = make_order(db)
+        attempt = db.scalar(
+            select(PaymentAttempt).where(PaymentAttempt.order_id == order.id)
+        )
+        db.commit()
+        order_number = order.order_number
+        monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
+        monkeypatch.setattr(
+            audit_upi_payments, "list_razorpay_order_payments",
+            lambda **_: [
+                _capture(attempt, attempt.provider_payment_id),
+                {
+                    "id": f"pay_{uuid4().hex}",
+                    "order_id": attempt.provider_order_id,
+                    "status": extra_status,
+                    "amount": 12000,
+                    "currency": "INR",
+                },
+            ],
+        )
+        report = audit_upi_payments.audit_paid_upi()
+        finding = next(f for f in report["findings"] if f["order_number"] == order_number)
+        assert finding["result"] == expected
