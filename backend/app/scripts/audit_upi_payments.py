@@ -208,7 +208,24 @@ def audit_unpaid_upi(*, limit: int = 100, days: int = 30) -> dict:
                 except (PaymentProviderUnavailable, PaymentProviderError):
                     unavailable = True
                     continue
+                # The provider helper already rejects incomplete histories.
+                # Keep the audit conservative when reading historical/mock
+                # evidence too: malformed or duplicate failed rows must not
+                # produce the reassuring "no_capture_found" classification.
+                seen_payment_ids: set[str] = set()
                 for payment in history:
+                    if not isinstance(payment, dict):
+                        inconsistent = True
+                        continue
+                    payment_id = payment.get("id")
+                    if (
+                        not isinstance(payment_id, str)
+                        or not payment_id
+                        or payment_id in seen_payment_ids
+                    ):
+                        inconsistent = True
+                    else:
+                        seen_payment_ids.add(payment_id)
                     if (
                         type(payment.get("amount")) is not int
                         or payment["amount"] != amount_to_subunits(order.total)
@@ -217,7 +234,6 @@ def audit_unpaid_upi(*, limit: int = 100, days: int = 30) -> dict:
                     ):
                         inconsistent = True
                     if payment.get("status") == "captured":
-                        payment_id = payment.get("id")
                         if isinstance(payment_id, str) and payment_id:
                             captures.add((attempt.provider_order_id, payment_id))
                         else:
