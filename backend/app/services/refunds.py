@@ -30,6 +30,7 @@ from app.models.orders import Order, PaymentMethod, PaymentStatus
 from app.services.payments import (
     PaymentProviderError,
     PaymentProviderUnavailable,
+    amount_to_subunits,
     create_razorpay_refund,
     razorpay_enabled,
 )
@@ -176,6 +177,28 @@ def apply_provider_refund_result(db: Session, refund: PaymentRefund, payload: di
         refund.status = REFUND_PROCESSING
 
 
+def _matches_dispatched_refund(refund: PaymentRefund, payload: object) -> bool:
+    """Require a provider response to identify the exact money movement.
+
+    A successful HTTP response alone is not proof that the requested refund
+    belongs to this payment, amount or currency. Unverifiable responses must
+    be reconciled manually rather than marking the customer refunded.
+    """
+    if not isinstance(payload, dict):
+        return False
+    refund_id = payload.get("id")
+    return (
+        isinstance(refund_id, str)
+        and bool(refund_id)
+        and (refund.provider_refund_id is None or refund.provider_refund_id == refund_id)
+        and payload.get("payment_id") == refund.provider_payment_id
+        and type(payload.get("amount")) is int
+        and payload["amount"] == amount_to_subunits(refund.amount)
+        and payload.get("currency") == refund.currency
+        and payload.get("status") in {"created", "pending", "processed", "failed"}
+    )
+
+
 def dispatch_refund(db: Session, refund_id: uuid.UUID) -> str:
     """Send one owed refund to the provider. Safe to call repeatedly.
 
@@ -249,6 +272,19 @@ def dispatch_refund(db: Session, refund_id: uuid.UUID) -> str:
     if locked is None:
         db.rollback()
         return "missing"
+    if locked.status == REFUND_SUCCEEDED:
+        # A verified webhook may have completed the refund while the HTTP
+        # request was in flight. Never downgrade that terminal outcome.
+        db.commit()
+        return REFUND_SUCCEEDED
+    if not _matches_dispatched_refund(locked, payload):
+        # The provider may already have moved money. Do NOT retry blindly or
+        # claim success: quarantine this obligation for reconciliation.
+        locked.status = REFUND_PROCESSING
+        locked.failure_reason = "Unverifiable provider refund response; manual reconciliation required"
+        logger.warning("Refund provider response requires reconciliation refund_id=%s", refund_id)
+        db.commit()
+        return REFUND_PROCESSING
     apply_provider_refund_result(db, locked, payload)
     status = locked.status
     logger.info(
