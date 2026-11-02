@@ -28,6 +28,13 @@ issue refunds, or build APKs until the release owner approves.
 8. A refund webhook must match the recorded Razorpay payment ID, refund ID,
    amount in paise and currency before it can mark an order refunded. A late
    pending/failed refund result cannot reverse an already processed refund.
+9. Every valid signed webhook is committed to the event ledger **before** any
+   Razorpay read or financial transition. A provider outage rolls back only
+   processing, not the durable event. Duplicate delivery may safely retry an
+   unprocessed event, even before the replay worker is enabled.
+10. An `order.paid` event without a payment entity may be reconciled using
+    provider order-payment history, but only if exactly one matching captured
+    payment exists and no authorized payments make the outcome ambiguous.
 
 ## Feature flags and operator safety
 
@@ -57,6 +64,12 @@ issue refunds, or build APKs until the release owner approves.
 - [ ] Backend CI lint, migration checks and full pytest suite green,
       including Alembic upgrade/downgrade of revision 0027.
 - [ ] Web CI and Flutter analysis/tests green.
+- [ ] Webhook ingestion: provider outage after signed event persistence,
+      duplicate retry without worker, concurrent duplicate delivery, and
+      replay of the original durable payload.
+- [ ] Order-only `order.paid` webhook: single matching capture succeeds,
+      multiple captures or authorized payments defer, and provider outage
+      preserves the event.
 - [ ] Replay worker: repeated authorized capture, provider outage,
       retry scheduling, worker restart, and a newer capture behind an older
       deferred event (no head-of-line starvation).
