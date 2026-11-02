@@ -260,12 +260,16 @@ def _process_refund_event(db: Session, payload: dict) -> bool:
             select(PaymentRefund).where(PaymentRefund.provider_refund_id == provider_refund_id).with_for_update()
         )
     if refund is None and refund_payment_id:
-        refund = db.scalar(
+        # Never guess which obligation a provider refund belongs to. Multiple
+        # refund rows can share the same captured payment, and choosing the
+        # newest one would let a webhook complete the wrong obligation.
+        candidates = db.scalars(
             select(PaymentRefund)
             .where(PaymentRefund.provider_payment_id == refund_payment_id)
-            .order_by(PaymentRefund.requested_at.desc())
             .with_for_update()
-        )
+        ).all()
+        if len(candidates) == 1 and candidates[0].provider_refund_id is None:
+            refund = candidates[0]
     if refund is None:
         return False
     # A signed provider event is not proof that it belongs to this refund.
