@@ -46,7 +46,7 @@ def test_capture_replay_and_competing_delivery_settle_once(
 ):
     """A competing worker or duplicate delivery cannot process a locked event.
 
-    The first worker is held inside the mocked provider read *after* acquiring
+    The event is oldest in the disposable test DB, and the one-row batch\n    isolates its lock contention from unrelated pending webhook fixtures.\n    The first worker is held inside the mocked provider read *after* acquiring
     the webhook row lock. A second PostgreSQL session must skip the locked
     event rather than confirm payment or emit a second merchant notification.
     """
@@ -79,7 +79,7 @@ def test_capture_replay_and_competing_delivery_settle_once(
             event_key=event_key,
             event_type="payment.captured",
             payload=payload,
-            created_at=datetime.now(timezone.utc) - timedelta(minutes=2),
+            created_at=datetime.now(timezone.utc) - timedelta(days=1),
         )
         db.add(event)
         db.commit()
@@ -120,7 +120,7 @@ def test_capture_replay_and_competing_delivery_settle_once(
 
     def worker():
         with session() as db:
-            return replay_pending_payment_webhooks(db, min_age_seconds=0)
+            return replay_pending_payment_webhooks(db, limit=1, min_age_seconds=0)
 
     def duplicate():
         with session() as db:
