@@ -29,6 +29,7 @@ from app.models.integrations import PaymentAttempt, PaymentRefund
 from app.models.orders import Order, PaymentMethod, PaymentStatus
 from app.services.payments import (
     PaymentProviderError,
+    PaymentProviderIndeterminate,
     PaymentProviderUnavailable,
     amount_to_subunits,
     create_razorpay_refund,
@@ -242,16 +243,42 @@ def dispatch_refund(db: Session, refund_id: uuid.UUID) -> str:
             notes={"gaonone_order_id": order_id},
         )
     except (PaymentProviderError, PaymentProviderUnavailable) as exc:
+        # A signed refund webhook can complete while the outbound API request
+        # is still in flight. Preserve that success, and keep the same
+        # order -> refund lock ordering as cancellation and webhook handling.
+        refund_order_id = db.scalar(
+            select(PaymentRefund.order_id).where(PaymentRefund.id == refund_id)
+        )
+        if refund_order_id is None:
+            db.rollback()
+            return "missing"
+        order = db.scalar(select(Order).where(Order.id == refund_order_id).with_for_update())
+        if order is None:
+            db.rollback()
+            return "missing"
         locked = db.scalar(select(PaymentRefund).where(PaymentRefund.id == refund_id).with_for_update())
-        if locked is not None:
-            _mark_failed(db, locked, message=str(exc))
-            logger.warning(
-                "Refund dispatch failed refund_id=%s order_id=%s attempt=%s: %s",
-                refund_id,
-                order_id,
-                locked.attempt_count,
-                exc,
-            )
+        if locked is None:
+            db.rollback()
+            return "missing"
+        if locked.status == REFUND_SUCCEEDED:
+            db.commit()
+            return REFUND_SUCCEEDED
+        if isinstance(exc, PaymentProviderIndeterminate):
+            # A timeout, server error, or unreadable response may follow a
+            # successful money movement. Never automatically submit again.
+            locked.status = REFUND_PROCESSING
+            locked.failure_reason = "Refund outcome unknown; manual reconciliation required"
+            logger.warning("Refund dispatch outcome uncertain refund_id=%s", refund_id)
+            db.commit()
+            return REFUND_PROCESSING
+        _mark_failed(db, locked, message=str(exc))
+        logger.warning(
+            "Refund dispatch rejected refund_id=%s order_id=%s attempt=%s: %s",
+            refund_id,
+            order_id,
+            locked.attempt_count,
+            exc,
+        )
         db.commit()
         return REFUND_FAILED
 
