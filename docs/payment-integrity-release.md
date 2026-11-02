@@ -105,6 +105,15 @@ issue refunds, or build APKs until the release owner approves.
     attempt's existing `paid` status or provider payment ID even if the
     order-level status is inconsistent.
 
+23. A retry must never expose an existing Razorpay payment order or
+    create a replacement order solely because GaonOne still says PENDING or
+    FAILED. Under the commercial order lock, inspect **every** previous
+    attempt: reject unknown providers, mismatched terms, local capture evidence
+    and any provider payment that is not a well-formed terminal failure.
+    Provider read failures and incomplete histories defer checkout instead
+    of inviting a duplicate charge. Empty histories and verified terminal
+    failures may safely reuse the same intent or create a new one.
+
 ## Feature flags and operator safety
 
 - `PAYMENT_WEBHOOK_REPLAY_ENABLED=false` is the safe default. The durable
@@ -162,7 +171,20 @@ issue refunds, or build APKs until the release owner approves.
       webhook-first, callback-first, replay, duplicate payment ID, mismatched
       amount/currency/order, refund after late capture.
 - [ ] Two concurrent intent requests create only one provider order.
-- [ ] New provider order responses must contain a nonempty string ID, exact\n      integer amount in paise and INR currency. Any missing/mismatched field\n      blocks checkout intent creation without recording a local payment attempt.\n- [ ] Intent retries on legacy inconsistent orders: captured local attempt\n      with order-level PENDING/FAILED, stale provider amount/currency, already\n      paid/refunding/refunded or non-PLACED orders must fail closed. Test both\n      direct routes and HTTP responses using disposable records.\n- [ ] Verify and webhook acquire order lock before payment-attempt lock.
+- [ ] Intent retry provider-history acceptance: captured, authorized,
+      created, refunded, unknown and malformed failed provider payments block
+      both reusing an active intent and creating a new one after a local
+      failure. A provider outage defers retry; verified empty/terminal-failed
+      histories allow retry. An older unsettled attempt cannot be hidden by a
+      newer active attempt. Mock all provider I/O in automated tests.
+- [ ] New provider order responses must contain a nonempty string ID, exact
+      integer amount in paise and INR currency. Any missing/mismatched field
+      blocks checkout intent creation without recording a local payment attempt.
+- [ ] Intent retries on legacy inconsistent orders: captured local attempt
+      with order-level PENDING/FAILED, stale provider amount/currency, already
+      paid/refunding/refunded or non-PLACED orders must fail closed. Test both
+      direct routes and HTTP responses using disposable records.
+- [ ] Verify and webhook acquire order lock before payment-attempt lock.
 - [ ] Merchant acceptance and preparation reject unpaid UPI but accept COD.
 - [ ] Rider offers, assignment, pickup and delivery completion reject unpaid UPI.
 - [ ] Expiry tests: zero attempts, provider outage, created/authorized/refunded/
