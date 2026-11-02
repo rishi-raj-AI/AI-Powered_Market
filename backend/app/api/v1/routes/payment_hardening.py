@@ -91,7 +91,11 @@ def _confirmed_capture(attempt: PaymentAttempt, provider_payment_id: str) -> boo
         entity.get("id") != provider_payment_id
         or entity.get("order_id") != attempt.provider_order_id
         or entity.get("currency") != attempt.currency
-        or entity.get("amount") != amount_to_subunits(attempt.amount)
+        # Razorpay represents subunits as an integer. Python would otherwise
+        # accept a float such as 12000.0 as equal to 12000, or True as 1.
+        # Malformed provider money fields must never release fulfilment.
+        or type(entity.get("amount")) is not int
+        or entity["amount"] != amount_to_subunits(attempt.amount)
     ):
         raise HTTPException(status_code=409, detail="Provider payment does not match this order")
     return entity.get("status") == "captured"
