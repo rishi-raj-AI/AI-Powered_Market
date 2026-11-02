@@ -1,6 +1,8 @@
 """Deferred capture events remain durable and can be reconciled by the worker."""
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from app.api.v1.routes import payment_hardening
 from app.models.integrations import PaymentWebhookEvent
 from app.models.orders import PaymentStatus
@@ -11,7 +13,8 @@ from decimal import Decimal
 from uuid import uuid4
 
 
-def test_authorized_capture_is_deferred_then_replayed_once(monkeypatch):
+@pytest.mark.parametrize("first_evidence", ["authorized", "malformed_amount"])
+def test_uncertain_capture_is_deferred_then_replayed_once(monkeypatch, first_evidence):
     with session() as db:
         customer = make_user(db)
         order = make_order(
@@ -39,12 +42,16 @@ def test_authorized_capture_is_deferred_then_replayed_once(monkeypatch):
         )
         db.add(event)
         db.commit()
-        status = {"value": "authorized"}
+        provider_state = {
+            "status": "authorized" if first_evidence == "authorized" else "captured",
+            "amount": 12000 if first_evidence == "authorized" else 12000.0,
+        }
         monkeypatch.setattr(
             payment_hardening, "fetch_razorpay_payment",
             lambda *, provider_payment_id: {
                 "id": provider_payment_id, "order_id": attempt.provider_order_id,
-                "amount": 12000, "currency": "INR", "status": status["value"],
+                "amount": provider_state["amount"], "currency": "INR",
+                "status": provider_state["status"],
             },
         )
         settlements = []
@@ -66,7 +73,7 @@ def test_authorized_capture_is_deferred_then_replayed_once(monkeypatch):
         assert event.attempt_count == 1
         assert event.next_attempt_at is not None
 
-        status["value"] = "captured"
+        provider_state.update(status="captured", amount=12000)
         # Deferred events must wait for their due time rather than being
         # repeatedly polled on every worker tick.
         assert replay_pending_payment_webhooks(db)["considered"] == 0

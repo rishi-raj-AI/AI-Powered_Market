@@ -285,3 +285,53 @@ def test_expiry_defers_mispriced_local_attempt_even_with_empty_history(
         assert order.status == OrderStatus.PLACED
         assert order.stock_restored_at is None
         assert db.get(StoreProduct, listing_id).stock_quantity == 9
+
+
+@pytest.mark.parametrize("local_status", ["authorized", "processing", "refunded", "unknown"])
+def test_expiry_defers_unknown_local_attempt_even_with_empty_provider_history(
+    monkeypatch, local_status,
+):
+    """An empty provider page does not invalidate conflicting local evidence."""
+    with session() as db:
+        order_id, provider_order_id, listing_id = _old_unpaid_order(db)
+        attempt = db.query(PaymentAttempt).filter(
+            PaymentAttempt.provider_order_id == provider_order_id,
+        ).one()
+        attempt.status = local_status
+        db.commit()
+        monkeypatch.setattr(
+            payment_expiration, "list_razorpay_order_payments", lambda **_: [],
+        )
+        result = payment_expiration.expire_unpaid_orders(db, limit=10)
+        assert result["deferred"] >= 1
+        order = db.get(Order, order_id)
+        assert order.status == OrderStatus.PLACED
+        assert order.payment_status == PaymentStatus.PENDING
+        assert order.stock_restored_at is None
+        assert db.get(StoreProduct, listing_id).stock_quantity == 9
+
+
+@pytest.mark.parametrize("malformed_amount", [12000.0, "12000", None, True])
+def test_expiry_does_not_confirm_malformed_captured_amount(
+    monkeypatch, malformed_amount,
+):
+    """Provider captures require integer paise before stock/fulfilment changes."""
+    with session() as db:
+        order_id, provider_order_id, listing_id = _old_unpaid_order(db)
+        monkeypatch.setattr(
+            payment_expiration, "list_razorpay_order_payments",
+            lambda **_: [{
+                "id": f"pay_{uuid4().hex}",
+                "order_id": provider_order_id,
+                "amount": malformed_amount,
+                "currency": "INR",
+                "status": "captured",
+            }],
+        )
+        result = payment_expiration.expire_unpaid_orders(db, limit=10)
+        assert result["deferred"] >= 1
+        order = db.get(Order, order_id)
+        assert order.status == OrderStatus.PLACED
+        assert order.payment_status == PaymentStatus.PENDING
+        assert order.stock_restored_at is None
+        assert db.get(StoreProduct, listing_id).stock_quantity == 9
