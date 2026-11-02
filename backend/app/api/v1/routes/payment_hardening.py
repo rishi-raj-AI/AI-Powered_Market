@@ -345,7 +345,7 @@ def _process_event(db: Session, payload: dict) -> bool:
             captures = [p for p in payments if p.get("status") == "captured"]
             if (
                 len(captures) != 1
-                or any(p.get("status") == "authorized" for p in payments)
+                or any(p.get("status") not in {"captured", "failed"} for p in payments)
                 or captures[0].get("order_id") != attempt.provider_order_id
                 or captures[0].get("currency") != attempt.currency
                 or captures[0].get("amount") != amount_to_subunits(attempt.amount)
