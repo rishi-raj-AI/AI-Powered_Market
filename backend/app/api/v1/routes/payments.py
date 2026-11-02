@@ -142,7 +142,6 @@ def create_payment_intent(
             raise HTTPException(status_code=409, detail="Existing payment intent requires reconciliation")
         if not settings.RAZORPAY_KEY_ID:
             raise HTTPException(status_code=503, detail="Payment provider is not configured")
-        _require_terminal_failed_provider_history(existing)
         existing.status = "attempted"
         db.commit()
         return PaymentIntentResponse(
