@@ -48,7 +48,8 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
             if not attempts:
                 findings.append({"order_number": order.order_number, "result": "missing_payment_attempt"})
                 continue
-            captured = False
+            matched_capture_ids: set[str] = set()
+            captured_ids: set[str] = set()
             unavailable = False
             mismatch = False
             for attempt in attempts:
@@ -65,21 +66,29 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
                 for payment in payments:
                     if payment.get("status") != "captured":
                         continue
+                    payment_id = payment.get("id")
+                    if isinstance(payment_id, str):
+                        captured_ids.add(payment_id)
                     if (
                         payment.get("order_id") == attempt.provider_order_id
                         and payment.get("currency") == "INR"
                         and payment.get("amount") == amount_to_subunits(order.total)
                         and payment.get("id") == attempt.provider_payment_id
                     ):
-                        captured = True
+                        matched_capture_ids.add(payment_id)
                     else:
                         mismatch = True
-            if captured:
-                result = "verified_capture"
+            # Never hide an extra captured payment or an unavailable attempt
+            # just because another attempt matches the order. This is an
+            # audit, not a payment-state mutation; uncertainty must be visible.
+            if len(captured_ids) > 1:
+                result = "multiple_captures"
             elif unavailable:
                 result = "provider_unavailable"
             elif mismatch:
                 result = "capture_mismatch"
+            elif matched_capture_ids:
+                result = "verified_capture"
             else:
                 result = "no_matching_capture"
             findings.append({"order_number": order.order_number, "result": result})
