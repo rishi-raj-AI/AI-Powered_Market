@@ -1,5 +1,8 @@
 """Read-only UPI audit must surface every ambiguous captured payment."""
+from decimal import Decimal
 from uuid import uuid4
+
+import pytest
 
 from sqlalchemy import select
 
@@ -83,6 +86,34 @@ def test_audit_rejects_capture_with_missing_payment_identifier(monkeypatch):
                 "status": "captured", "amount": 12000, "currency": "INR",
             }],
         )
+        report = audit_upi_payments.audit_paid_upi()
+        finding = next(f for f in report["findings"] if f["order_number"] == order_number)
+        assert finding["result"] == "capture_mismatch"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("amount", Decimal("119.00")),
+        ("currency", "USD"),
+        ("status", "attempted"),
+    ],
+)
+def test_audit_flags_inconsistent_local_ledger_despite_valid_capture(monkeypatch, field, value):
+    with session() as db:
+        order = make_order(db)
+        attempt = db.scalar(
+            select(PaymentAttempt).where(PaymentAttempt.order_id == order.id)
+        )
+        setattr(attempt, field, value)
+        db.commit()
+        order_number = order.order_number
+        monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
+        monkeypatch.setattr(
+            audit_upi_payments, "list_razorpay_order_payments",
+            lambda **_: [_capture(attempt, attempt.provider_payment_id)],
+        )
+
         report = audit_upi_payments.audit_paid_upi()
         finding = next(f for f in report["findings"] if f["order_number"] == order_number)
         assert finding["result"] == "capture_mismatch"
