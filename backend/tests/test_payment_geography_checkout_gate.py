@@ -67,6 +67,7 @@ def test_checkout_rejects_unserviceable_without_order_or_stock_change(scenario, 
         assert decision.reason_code == reason
         quote = cart_quote(address.id, db=db, user=customer)
         assert quote.serviceable is False
+        assert quote.serviceability_reason_code == reason
         assert quote.checkout_ready is False
         assert quote.blockers
         before = db.scalar(select(func.count(Order.id)).where(Order.user_id == customer.id))
@@ -92,6 +93,7 @@ def test_inside_assigned_hub_area_is_eligible_without_expanding_coverage():
         assert decision.matched_territory_id == store.service_area_id
         quote = cart_quote(address.id, db=db, user=customer)
         assert quote.serviceable is True
+        assert quote.serviceability_reason_code == "SERVICEABLE"
         assert quote.checkout_ready is True
         db.rollback()
 
