@@ -89,6 +89,22 @@ def test_order_only_failure_cannot_mark_order_failed():
         assert attempt.status == "attempted"
 
 
+def test_failure_without_provider_order_id_remains_unprocessed():
+    with session() as db:
+        order, attempt = _context(db)
+        event = {
+            "event": "payment.failed",
+            "payload": {"payment": {"entity": {
+                "id": "pay_failed_without_order", "status": "failed",
+                "amount": 12000, "currency": "INR",
+            }}},
+        }
+        assert payment_hardening._process_event(db, event) is False
+        db.flush()
+        assert order.payment_status == PaymentStatus.PENDING
+        assert attempt.status == "attempted"
+
+
 @pytest.mark.parametrize("capture_evidence", ["paid_status", "provider_payment_id"])
 def test_late_failure_preserves_locally_recorded_capture(capture_evidence):
     # Simulate a legacy inconsistent record: attempt has capture evidence but
