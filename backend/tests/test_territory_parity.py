@@ -9,7 +9,7 @@ from app.core.config import settings
 from app.core.security import create_access_token
 from app.db.session import SessionLocal
 from app.main import app
-from app.models.geography import ServiceArea, Village
+from app.models.geography import Village
 from app.models.user import UserRole
 from app.services.territory_parity import GeographyParity, compare_store_geography
 from tests import factories
