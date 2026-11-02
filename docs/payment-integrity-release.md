@@ -53,6 +53,14 @@ issue refunds, or build APKs until the release owner approves.
     concurrent cancellation, refund-webhook and dispatch execution still
     require integration acceptance.
 
+15. A successful refund API HTTP response must independently identify the
+    expected provider payment ID, refund ID, exact amount in paise and INR
+    currency before GaonOne records provider success. Missing or conflicting
+    fields leave the refund obligation in `processing` for manual
+    reconciliation, with no blind retry or false `refunded` state.
+    A verified webhook that completed while the API call was in flight
+    remains terminal and must not be downgraded.
+
 ## Feature flags and operator safety
 
 - `PAYMENT_WEBHOOK_REPLAY_ENABLED=false` is the safe default. The durable
@@ -104,7 +112,7 @@ issue refunds, or build APKs until the release owner approves.
       unknown status, malformed failed payment, local capture evidence, unknown
       provider, captured plus authorized, multiple captures, inventory restore
       once, cancellation race.
-- [ ] Refund webhook tests: order-before-refund lock acquisition under
+- [ ] Refund dispatch API tests: matching payment ID, refund ID, amount and\n      currency; truncated/mismatched provider response quarantined without\n      automatic re-dispatch or false refunded state.\n- [ ] Refund webhook tests: order-before-refund lock acquisition under
       PostgreSQL concurrency with cancellation, mismatched payment/refund ID, amount/currency,
       ambiguous multiple obligations for one provider payment,
       malformed payload, valid processed result and late failed result after
