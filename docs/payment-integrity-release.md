@@ -97,6 +97,14 @@ issue refunds, or build APKs until the release owner approves.
     Malformed provider `failed` entries (missing ID, wrong order, amount or
     currency) are not reliable proof of nonpayment and must not be ignored.
 
+22. A signed `payment.failed` event must identify a specific provider payment
+    and order, report status `failed`, and match the attempt's amount in
+    paise and INR currency before it can change local failure state. An
+    order-only, incomplete, or mismatched failure remains in the durable
+    webhook ledger for reconciliation. A late failure must not erase an
+    attempt's existing `paid` status or provider payment ID even if the
+    order-level status is inconsistent.
+
 ## Feature flags and operator safety
 
 - `PAYMENT_WEBHOOK_REPLAY_ENABLED=false` is the safe default. The durable
@@ -178,6 +186,10 @@ issue refunds, or build APKs until the release owner approves.
       failed retry is accepted. Payment expiration must likewise defer malformed
       failed provider rows and locally mispriced INR/payment attempts instead
       of restoring reserved stock.
+- [ ] Failed-payment webhook integrity: reject missing payment/order IDs,
+      mismatched amount/currency, non-failed status and order-only failure
+      payloads without changing order state; preserve locally captured
+      attempt evidence even if a legacy order remains pending.
 - [ ] Historical audit tests: unknown local payment provider and unsettled
       secondary Razorpay payments cannot be classified verified; a terminal
       well-formed failed retry can coexist with a verified capture. Flag
