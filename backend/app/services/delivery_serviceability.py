@@ -70,6 +70,8 @@ def evaluate_delivery(
         confidence = "approximate_searched_place"
     elif has_coordinates and source in {"gps", "map_pin"} and confirmed_at is not None:
         confidence = f"confirmed_{source}"
+    elif has_coordinates and source in {"gps", "map_pin"}:
+        confidence = f"unconfirmed_{source}"
     elif has_coordinates:
         confidence = "legacy_coordinates"
     else:
