@@ -106,6 +106,10 @@ issue refunds, or build APKs until the release owner approves.
   Check `processed_at IS NULL` and `next_attempt_at` for backlog health.
 - `PAYMENT_EXPIRY_ENABLED=false` is the safe default. Leave it disabled until
   sandbox testing, historical reconciliation and business approval.
+- The Mobile CI workflow runs Flutter analysis and tests for this payment PR
+  but skips its debug APK build. APK generation (including CI smoke builds)
+  remains deferred for this branch until release approval. Other PRs and main
+  retain their existing mobile build validation.
 - `PAYMENT_EXPIRY_MINUTES=15` and `PAYMENT_EXPIRY_BATCH=25` only apply if enabled.
 - Never print Razorpay credentials, raw webhook signatures, customer addresses
   or payment method details in logs.
