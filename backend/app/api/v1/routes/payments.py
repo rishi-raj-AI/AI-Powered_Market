@@ -116,12 +116,25 @@ def create_payment_intent(
         select(PaymentAttempt).where(PaymentAttempt.order_id == order.id)
         .order_by(PaymentAttempt.id)
     ).all()
+    # More than one active local intent means there may be multiple provider
+    # checkout windows in circulation. Even an empty provider history does
+    # not prove an older window cannot capture money after we issue another.
+    # Likewise, an active row without a provider order ID is not a safe
+    # candidate for reuse or replacement. Quarantine both histories.
+    active_attempts = [
+        prior for prior in prior_attempts
+        if prior.status in {"created", "attempted"}
+    ]
+    if len(active_attempts) > 1 or any(
+        not prior.provider_order_id for prior in active_attempts
+    ):
+        raise HTTPException(status_code=409, detail="Existing payment requires reconciliation")
     for prior in prior_attempts:
         if (
             prior.provider != "razorpay"
             or prior.currency != "INR"
             or prior.amount != order.total
-            or prior.status == "paid"
+            or prior.status not in {"created", "attempted", "failed"}
             or prior.provider_payment_id
         ):
             raise HTTPException(status_code=409, detail="Existing payment requires reconciliation")
