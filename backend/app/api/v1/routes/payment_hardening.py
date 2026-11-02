@@ -339,32 +339,54 @@ async def hardened_razorpay_webhook(request: Request, db: Session = Depends(get_
 
     event_key = request.headers.get("x-razorpay-event-id") or hashlib.sha256(raw_body).hexdigest()
     existing = db.scalar(
-        select(PaymentWebhookEvent).where(
+        select(PaymentWebhookEvent.id).where(
             PaymentWebhookEvent.provider == "razorpay",
             PaymentWebhookEvent.event_key == event_key,
         )
     )
-    if existing is not None:
-        # A duplicate delivery cannot discard an earlier deferred capture.
-        # The durable replay worker will retry rows without processed_at.
-        return {"ok": True}
+    if existing is None:
+        event = PaymentWebhookEvent(
+            provider="razorpay",
+            event_key=event_key,
+            event_type=str(payload.get("event") or "unknown"),
+            payload=payload,
+        )
+        db.add(event)
+        try:
+            db.flush()
+        except IntegrityError:
+            # A concurrent webhook request inserted this same event first.
+            # Do not discard it: the committed row may still need processing.
+            db.rollback()
+        else:
+            # Persist the signed event BEFORE any provider read or financial
+            # transition. A provider outage must never erase the replay record.
+            db.commit()
 
-    event = PaymentWebhookEvent(
-        provider="razorpay",
-        event_key=event_key,
-        event_type=str(payload.get("event") or "unknown"),
-        payload=payload,
+    # Both new and duplicate deliveries may retry an unprocessed event. Lock
+    # the event before taking order/attempt locks, matching the replay worker.
+    event = db.scalar(
+        select(PaymentWebhookEvent)
+        .where(
+            PaymentWebhookEvent.provider == "razorpay",
+            PaymentWebhookEvent.event_key == event_key,
+        )
+        .with_for_update(skip_locked=True)
     )
-    db.add(event)
-    try:
-        db.flush()
-    except IntegrityError:
+    if event is None or event.processed_at is not None:
         db.rollback()
         return {"ok": True}
-
-    if _process_event(db, payload):
-        event.processed_at = datetime.now(timezone.utc)
-    db.commit()
+    try:
+        if _process_event(db, event.payload):
+            event.processed_at = datetime.now(timezone.utc)
+            event.next_attempt_at = None
+        db.commit()
+    except Exception:
+        # The signed event was already committed in its own transaction.
+        # Roll back only the incomplete processing; Razorpay can retry and
+        # the opt-in replay worker can recover the same durable event.
+        db.rollback()
+        raise
     return {"ok": True}
 
 
