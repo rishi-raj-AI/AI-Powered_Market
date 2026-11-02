@@ -149,6 +149,7 @@ def cart_quote(
         delivery_fee=delivery_fee,
         total=order_total(subtotal, delivery_fee),
         serviceable=serviceable,
+        serviceability_reason_code=delivery_decision.reason_code,
         inventory_valid=inventory_valid,
         store_open=open_now,
         checkout_ready=serviceable and inventory_valid and open_now,
