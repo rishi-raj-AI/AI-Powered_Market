@@ -7,12 +7,14 @@ to reintroduce.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
 import httpx
 import pytest
 
+from app.api.v1.routes.payment_hardening import _process_refund_event
 from app.models.integrations import PaymentRefund
 from app.models.orders import OrderStatus, PaymentMethod, PaymentStatus
 from app.services import payments as payment_service
@@ -317,3 +319,43 @@ def test_refund_obligation_is_independent_of_order_status(order_status) -> None:
         order = make_order(db, status=order_status, payment_status=PaymentStatus.PAID)
         db.commit()
         assert ensure_refund_request(db, order, reason=REFUND_REASON_CANCELLED) is not None
+
+
+def test_unknown_refund_webhook_cannot_guess_between_multiple_obligations() -> None:
+    """A shared provider payment ID is insufficient to identify a refund row."""
+    with session() as db:
+        order = make_order(db, payment_status=PaymentStatus.PAID)
+        db.commit()
+        first = ensure_refund_request(db, order, reason=REFUND_REASON_CANCELLED)
+        db.commit()
+        assert first is not None and first.provider_payment_id
+        second = PaymentRefund(
+            order_id=order.id,
+            payment_attempt_id=first.payment_attempt_id,
+            provider="razorpay",
+            provider_payment_id=first.provider_payment_id,
+            amount=first.amount,
+            currency=first.currency,
+            status="requested",
+            reason="duplicate_capture_review",
+            idempotency_key=f"test-ambiguous-refund-{uuid4()}",
+            requested_at=datetime.now(timezone.utc),
+        )
+        db.add(second)
+        db.commit()
+
+        handled = _process_refund_event(db, {
+            "event": "refund.processed",
+            "payload": {"refund": {"entity": {
+                "id": f"rfnd_{uuid4().hex}",
+                "payment_id": first.provider_payment_id,
+                "amount": 12000, "currency": "INR", "status": "processed",
+            }}},
+        })
+        assert handled is False
+        db.refresh(first)
+        db.refresh(second)
+        assert first.provider_refund_id is None
+        assert second.provider_refund_id is None
+        assert first.status == "requested"
+        assert second.status == "requested"
