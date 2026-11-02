@@ -121,7 +121,7 @@ def create_payment_intent(
             prior.provider != "razorpay"
             or prior.currency != "INR"
             or prior.amount != order.total
-            or prior.status == "paid"
+            or prior.status not in {"created", "attempted", "failed"}
             or prior.provider_payment_id
         ):
             raise HTTPException(status_code=409, detail="Existing payment requires reconciliation")
