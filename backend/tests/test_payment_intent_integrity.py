@@ -353,17 +353,23 @@ def test_unrecognized_local_attempt_state_cannot_open_another_intent(
         assert exc.value.status_code == 409
 
 
-@pytest.mark.parametrize("with_newer_active", [False, True])
+@pytest.mark.parametrize("ordering", ["alone", "unidentified_first", "unidentified_last"])
 def test_failed_attempt_without_provider_order_id_blocks_checkout(
-    monkeypatch, with_newer_active,
+    monkeypatch, ordering,
 ):
-    """A local FAILED flag cannot prove that an unidentified provider order is unpaid."""
+    """All local attempts must pass preflight before any provider-history lookup."""
     with session() as db:
         customer, order, attempt = _context(db)
         attempt.status = "failed"
         attempt.provider_order_id = None
-        if with_newer_active:
+        if ordering != "alone":
+            # Force both UUID iteration orders to make the regression
+            # deterministic rather than relying on random generated IDs.
+            other_id = uuid4()
+            while (other_id > attempt.id) != (ordering == "unidentified_first"):
+                other_id = uuid4()
             db.add(PaymentAttempt(
+                id=other_id,
                 order_id=order.id,
                 provider="razorpay",
                 provider_order_id=f"order_{uuid4().hex}",
