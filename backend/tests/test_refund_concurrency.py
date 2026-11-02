@@ -151,3 +151,55 @@ def test_refund_webhook_success_survives_inflight_dispatch_timeout(monkeypatch):
         assert refund.status == refunds.REFUND_SUCCEEDED
         assert refund.provider_refund_id == provider_refund_id
         assert refund.attempt_count == 1
+
+
+def test_two_refund_dispatchers_claim_once_before_provider_io(monkeypatch):
+    """Concurrent workers must not issue duplicate refund API requests."""
+    order_id, refund_id, payment_id, amount = _refund_context()
+    provider_refund_id = f"rfnd_dispatch_{uuid4().hex}"
+    provider_entered = Event()
+    release_provider = Event()
+    provider_calls = []
+    call_lock = Lock()
+
+    def mock_provider(*, provider_payment_id, amount, idempotency_key, notes):
+        with call_lock:
+            provider_calls.append(provider_payment_id)
+        provider_entered.set()
+        assert release_provider.wait(timeout=15), "Timed out waiting for second dispatcher"
+        return {
+            "id": provider_refund_id,
+            "payment_id": provider_payment_id,
+            "amount": amount_to_subunits(amount),
+            "currency": "INR",
+            "status": "pending",
+        }
+
+    monkeypatch.setattr(refunds, "razorpay_enabled", lambda: True)
+    monkeypatch.setattr(refunds, "create_razorpay_refund", mock_provider)
+
+    def dispatch():
+        with session() as db:
+            return refunds.dispatch_refund(db, refund_id)
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            first_future = executor.submit(dispatch)
+            assert provider_entered.wait(timeout=15), "First dispatcher never claimed refund"
+            second_future = executor.submit(dispatch)
+            try:
+                assert second_future.result(timeout=15) == refunds.REFUND_PROCESSING
+            finally:
+                release_provider.set()
+            assert first_future.result(timeout=15) == refunds.REFUND_PROCESSING
+    finally:
+        release_provider.set()
+
+    assert provider_calls == [payment_id]
+    with session() as db:
+        order = db.get(Order, order_id)
+        refund = db.get(PaymentRefund, refund_id)
+        assert order.payment_status == PaymentStatus.REFUND_PENDING
+        assert refund.status == refunds.REFUND_PROCESSING
+        assert refund.provider_refund_id == provider_refund_id
+        assert refund.attempt_count == 1
