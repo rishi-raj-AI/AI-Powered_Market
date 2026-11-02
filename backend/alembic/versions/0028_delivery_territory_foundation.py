@@ -139,6 +139,22 @@ def upgrade() -> None:
     ]
     for statement in statements:
         op.execute(statement)
+    # Published snapshots and change records are append-only, including
+    # protection against accidental UPDATE/DELETE from future admin APIs.
+    op.execute("""
+        CREATE FUNCTION reject_delivery_territory_history_mutation()
+        RETURNS trigger LANGUAGE plpgsql AS $
+        BEGIN
+            RAISE EXCEPTION 'delivery territory history is append-only';
+        END;
+        $
+    """)
+    for table in ("delivery_territory_versions", "territory_change_audit"):
+        op.execute(f"""
+            CREATE TRIGGER trg_{table}_immutable
+            BEFORE UPDATE OR DELETE ON {table}
+            FOR EACH ROW EXECUTE FUNCTION reject_delivery_territory_history_mutation()
+        """)
 
 
 def downgrade() -> None:
@@ -149,3 +165,4 @@ def downgrade() -> None:
         "delivery_territories", "delivery_hubs", "operating_regions",
     ):
         op.execute(f"DROP TABLE {table}")
+    op.execute("DROP FUNCTION reject_delivery_territory_history_mutation()")
