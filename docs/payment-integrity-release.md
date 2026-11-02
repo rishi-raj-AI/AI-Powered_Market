@@ -34,7 +34,7 @@ issue refunds, or build APKs until the release owner approves.
    unprocessed event, even before the replay worker is enabled.
 10. An `order.paid` event without a payment entity may be reconciled using
     provider order-payment history, but only if exactly one matching captured
-    payment exists and no authorized payments make the outcome ambiguous.
+    payment exists and no other nonfailed payment (created, authorized,\n    processing, refunded, or unknown) makes the outcome ambiguous.
 11. Before any capture is applied (callback, webhook, expiry), the stored
     attempt must be a Razorpay INR attempt for **exactly** the commercial
     order total. An underpaid/overpaid attempt never creates settlement or
@@ -118,7 +118,7 @@ issue refunds, or build APKs until the release owner approves.
       duplicate retry without worker, concurrent duplicate delivery, and
       replay of the original durable payload.
 - [ ] Order-only `order.paid` webhook: single matching capture succeeds,
-      multiple captures or authorized payments defer, and provider outage
+      multiple captures or any unresolved provider payment defers, and provider outage
       preserves the event.
 - [ ] Replay worker: repeated authorized capture, provider outage,
       retry scheduling, worker restart, and a newer capture behind an older
