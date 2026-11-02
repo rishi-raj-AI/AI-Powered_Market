@@ -199,6 +199,17 @@ def list_razorpay_order_payments(*, provider_order_id: str) -> list[dict]:
     if not isinstance(data, dict) or not isinstance(data.get("items"), list):
         raise PaymentProviderError("Razorpay returned invalid payment history")
     items = data["items"]
-    if len(items) >= 100 or not all(isinstance(item, dict) for item in items):
+    # The collection's count must describe the *entire* returned page. A
+    # short or inconsistent response is not evidence that the remaining
+    # payments failed or never existed: an omitted capture could otherwise
+    # make the expiration worker cancel an order and release reserved stock.
+    # Refuse a full page too, since additional payments may be paginated.
+    count = data.get("count")
+    if (
+        type(count) is not int
+        or count != len(items)
+        or len(items) >= 100
+        or not all(isinstance(item, dict) for item in items)
+    ):
         raise PaymentProviderError("Razorpay payment history is incomplete")
     return items
