@@ -61,3 +61,27 @@ def test_audit_does_not_hide_unavailable_attempt_behind_verified_capture(monkeyp
         report = audit_upi_payments.audit_paid_upi()
         finding = next(f for f in report["findings"] if f["order_number"] == order.order_number)
         assert finding["result"] == "provider_unavailable"
+
+
+def test_audit_rejects_capture_with_missing_payment_identifier(monkeypatch):
+    with session() as db:
+        order = make_order(db, with_paid_attempt=False)
+        attempt = PaymentAttempt(
+            order_id=order.id, provider="razorpay",
+            provider_order_id=f"order_{uuid4().hex}",
+            status="paid", amount=order.total, currency="INR",
+        )
+        db.add(attempt)
+        db.commit()
+        order_number = order.order_number
+        monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
+        monkeypatch.setattr(
+            audit_upi_payments, "list_razorpay_order_payments",
+            lambda **_: [{
+                "id": None, "order_id": attempt.provider_order_id,
+                "status": "captured", "amount": 12000, "currency": "INR",
+            }],
+        )
+        report = audit_upi_payments.audit_paid_upi()
+        finding = next(f for f in report["findings"] if f["order_number"] == order_number)
+        assert finding["result"] == "capture_mismatch"
