@@ -349,7 +349,8 @@ def test_order_paid_webhook_without_payment_entity_reconciles_one_capture(monkey
         assert settlements == [order.id]
 
 
-def test_order_paid_webhook_defers_ambiguous_provider_history(monkeypatch):
+@pytest.mark.parametrize("secondary_status", ["authorized", "created", "refunded", "processing", None])
+def test_order_paid_webhook_defers_ambiguous_provider_history(monkeypatch, secondary_status):
     with session() as db:
         _customer, order, attempt = _context(db)
         payment_id = f"pay_{uuid4().hex}"
@@ -357,7 +358,7 @@ def test_order_paid_webhook_defers_ambiguous_provider_history(monkeypatch):
             payment_hardening, "list_razorpay_order_payments",
             lambda **_: [
                 _payment(attempt, payment_id),
-                _payment(attempt, f"pay_{uuid4().hex}", status="authorized"),
+                _payment(attempt, f"pay_{uuid4().hex}", status=secondary_status),
             ],
         )
         monkeypatch.setattr(
