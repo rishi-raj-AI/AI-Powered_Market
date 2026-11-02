@@ -262,6 +262,23 @@ def _process_refund_event(db: Session, payload: dict) -> bool:
         )
     if refund is None:
         return False
+    # A signed provider event is not proof that it belongs to this refund.
+    # Never apply a refund outcome for another payment, refund ID, or amount.
+    # Amount is in paise in Razorpay's refund entity.
+    if (
+        not provider_refund_id
+        or not refund_payment_id
+        or not refund.provider_payment_id
+        or refund_payment_id != refund.provider_payment_id
+        or (refund.provider_refund_id is not None and provider_refund_id != refund.provider_refund_id)
+        or refund_entity.get("currency") not in (None, refund.currency)
+        or type(refund_entity.get("amount")) is not int
+        or refund_entity["amount"] != amount_to_subunits(refund.amount)
+    ):
+        return False
+    # Do not allow a late failed/pending event to reverse a completed refund.
+    if refund.status == "succeeded" and refund_entity.get("status") != "processed":
+        return True
     apply_provider_refund_result(db, refund, refund_entity)
     return True
 
