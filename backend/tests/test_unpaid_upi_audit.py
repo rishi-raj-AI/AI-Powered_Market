@@ -221,3 +221,47 @@ def test_unpaid_audit_rejects_malformed_capture_money(monkeypatch):
         # A malformed capture still means the provider might have moved money.
         assert finding["result"] == "unexpected_capture"
         assert finding["provider_capture_count"] == 1
+
+
+@pytest.mark.parametrize("bad_payment_id", [None, "", 123, True])
+def test_unpaid_audit_rejects_failed_history_without_valid_payment_identity(
+    monkeypatch, bad_payment_id,
+):
+    with session() as db:
+        order = make_order(
+            db, payment_status=PaymentStatus.FAILED, with_paid_attempt=False
+        )
+        attempt = _attempt(db, order, status="failed")
+        db.commit()
+        number = order.order_number
+        malformed = _payment(attempt, status="failed")
+        malformed["id"] = bad_payment_id
+        monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
+        monkeypatch.setattr(
+            audit_upi_payments, "list_razorpay_order_payments",
+            lambda **_: [malformed],
+        )
+        report = audit_upi_payments.audit_unpaid_upi()
+        finding = next(f for f in report["findings"] if f["order_number"] == number)
+        assert finding["result"] == "payment_history_mismatch"
+        assert report["no_capture_found"] == 0
+
+
+def test_unpaid_audit_rejects_duplicate_failed_provider_payment_ids(monkeypatch):
+    with session() as db:
+        order = make_order(
+            db, payment_status=PaymentStatus.PENDING, with_paid_attempt=False
+        )
+        attempt = _attempt(db, order, status="failed")
+        db.commit()
+        number = order.order_number
+        failed_payment = _payment(attempt, status="failed")
+        monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
+        monkeypatch.setattr(
+            audit_upi_payments, "list_razorpay_order_payments",
+            lambda **_: [failed_payment, dict(failed_payment)],
+        )
+        report = audit_upi_payments.audit_unpaid_upi()
+        finding = next(f for f in report["findings"] if f["order_number"] == number)
+        assert finding["result"] == "payment_history_mismatch"
+        assert finding["provider_capture_count"] == 0
