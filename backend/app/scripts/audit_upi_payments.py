@@ -70,10 +70,12 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
                     if isinstance(payment_id, str):
                         captured_ids.add(payment_id)
                     if (
-                        payment.get("order_id") == attempt.provider_order_id
+                        isinstance(payment_id, str)
+                        and bool(payment_id)
+                        and payment.get("order_id") == attempt.provider_order_id
                         and payment.get("currency") == "INR"
                         and payment.get("amount") == amount_to_subunits(order.total)
-                        and payment.get("id") == attempt.provider_payment_id
+                        and payment_id == attempt.provider_payment_id
                     ):
                         matched_capture_ids.add(payment_id)
                     else:
