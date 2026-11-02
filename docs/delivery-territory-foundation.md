@@ -1,7 +1,7 @@
 # Delivery territory foundation — additive schema only
 
 This PR is **stacked on address provenance PR #247**. Its Alembic revision
-`0028_delivery_territory_foundation` follows
+`0028_delivery_territories` follows
 `0027_address_location_provenance`. Do not merge independently or rename the
 migration without reconciling Alembic heads. It is not a delivery-engine rollout.
 
