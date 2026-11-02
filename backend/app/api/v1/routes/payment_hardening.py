@@ -254,22 +254,44 @@ def _process_refund_event(db: Session, payload: dict) -> bool:
     if not provider_refund_id and not refund_payment_id:
         return False
 
-    refund = None
+    # Resolve the candidate without locking its row. Cancellation holds the
+    # order lock before it creates/locks a refund obligation. Locking the refund
+    # first here and then locking the order in _mark_succeeded can deadlock with
+    # cancellation (or payment verification). Preserve order -> refund ordering.
+    refund_id = None
+    matched_by_payment_only = False
     if provider_refund_id:
-        refund = db.scalar(
-            select(PaymentRefund).where(PaymentRefund.provider_refund_id == provider_refund_id).with_for_update()
+        refund_id = db.scalar(
+            select(PaymentRefund.id).where(PaymentRefund.provider_refund_id == provider_refund_id)
         )
-    if refund is None and refund_payment_id:
-        # Never guess which obligation a provider refund belongs to. Multiple
-        # refund rows can share the same captured payment, and choosing the
-        # newest one would let a webhook complete the wrong obligation.
-        candidates = db.scalars(
-            select(PaymentRefund)
+    if refund_id is None and refund_payment_id:
+        # Never guess between multiple obligations for the same payment.
+        candidates = db.execute(
+            select(PaymentRefund.id, PaymentRefund.provider_refund_id)
             .where(PaymentRefund.provider_payment_id == refund_payment_id)
-            .with_for_update()
         ).all()
         if len(candidates) == 1 and candidates[0].provider_refund_id is None:
-            refund = candidates[0]
+            refund_id = candidates[0].id
+            matched_by_payment_only = True
+    if refund_id is None:
+        return False
+    order_id = db.scalar(select(PaymentRefund.order_id).where(PaymentRefund.id == refund_id))
+    if order_id is None:
+        return False
+    order = db.scalar(select(Order).where(Order.id == order_id).with_for_update())
+    if order is None:
+        return False
+    if matched_by_payment_only:
+        # Recheck after taking the commercial lock: another refund obligation
+        # may have appeared while this webhook was waiting for the order.
+        current_candidates = db.scalars(
+            select(PaymentRefund.id).where(PaymentRefund.provider_payment_id == refund_payment_id)
+        ).all()
+        if len(current_candidates) != 1 or current_candidates[0] != refund_id:
+            return False
+    refund = db.scalar(
+        select(PaymentRefund).where(PaymentRefund.id == refund_id).with_for_update()
+    )
     if refund is None:
         return False
     # A signed provider event is not proof that it belongs to this refund.
