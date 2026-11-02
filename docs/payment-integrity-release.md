@@ -228,7 +228,9 @@ issue refunds, or build APKs until the release owner approves.
 - [ ] Failed-payment webhook integrity: reject missing payment/order IDs,
       mismatched amount/currency, non-failed status and order-only failure
       payloads without changing order state; preserve locally captured
-      attempt evidence even if a legacy order remains pending.
+      attempt evidence even if a legacy order remains pending. A valid failure
+      on a *different* attempt must not downgrade a stale PENDING order when
+      another attempt has either PAID status or a provider payment ID.
 - [ ] Capture verification must quarantine a second attempt when any
       different attempt has partial local capture evidence: either PAID status
       without a provider payment ID or a provider payment ID without PAID
