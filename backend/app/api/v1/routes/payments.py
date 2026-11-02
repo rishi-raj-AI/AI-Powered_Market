@@ -23,6 +23,7 @@ from app.services.payments import (
     PaymentProviderUnavailable,
     amount_to_subunits,
     fetch_razorpay_payment,
+    list_razorpay_order_payments,
     create_razorpay_order,
     razorpay_enabled,
     verify_razorpay_signature,
@@ -93,6 +94,28 @@ def create_payment_intent(
             raise HTTPException(status_code=409, detail="Existing payment intent requires reconciliation")
         if not settings.RAZORPAY_KEY_ID:
             raise HTTPException(status_code=503, detail="Payment provider is not configured")
+        # A locally attempted intent may already have captured money while
+        # its callback/webhook is delayed. Never return a payable Razorpay
+        # order until the provider confirms that every prior payment on it
+        # is a well-formed terminal failure. A provider outage is not proof
+        # that the customer has not paid.
+        try:
+            history = list_razorpay_order_payments(provider_order_id=existing.provider_order_id)
+        except PaymentProviderUnavailable as exc:
+            raise HTTPException(status_code=503, detail="Payment verification is unavailable") from exc
+        except PaymentProviderError as exc:
+            raise HTTPException(status_code=502, detail="Unable to verify previous payment") from exc
+        if any(
+            payment.get("status") != "failed"
+            or not isinstance(payment.get("id"), str)
+            or not payment["id"]
+            or payment.get("order_id") != existing.provider_order_id
+            or type(payment.get("amount")) is not int
+            or payment["amount"] != amount_to_subunits(existing.amount)
+            or payment.get("currency") != existing.currency
+            for payment in history
+        ):
+            raise HTTPException(status_code=409, detail="Existing payment requires reconciliation")
         existing.status = "attempted"
         db.commit()
         return PaymentIntentResponse(
