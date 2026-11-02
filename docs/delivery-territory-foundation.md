@@ -35,10 +35,11 @@ priority and a stable ID tie-breaker. The geometry GiST indexes support
 polygon lookups. Drafts may be incomplete, but invalid geometries cannot be
 persisted. The publish endpoint must reject incomplete drafts.
 
-The new version/audit tables are append-only **by application contract**;
-database-enforced immutability and publish/rollback authorization must be
-implemented before any write API is exposed. Do not claim that these tables
-alone provide approved publishing or rollback.
+The new version/audit tables are protected by database UPDATE/DELETE rejection
+triggers. Publishing and rollback authorization, immutable approved-version
+semantics, and transaction-safe publication must still be implemented before
+any write API is exposed. These tables alone do not provide approved publishing
+or rollback.
 
 ## Proposed staged migration
 
@@ -74,5 +75,5 @@ alone provide approved publishing or rollback.
 ## Remaining gates
 
 Real PostgreSQL/PostGIS CI, migration head consistency, shadow evaluator,
-repeatable backfill, publication immutability, authorization, audit, map editor,
+repeatable backfill, publication authorization, audit APIs, map editor,
 real-device tests and production checkout verification.
