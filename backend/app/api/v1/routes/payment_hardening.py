@@ -386,8 +386,11 @@ def _process_event(db: Session, payload: dict) -> bool:
             captured = _confirmed_capture(attempt, provider_payment_id)
         except HTTPException as exc:
             if exc.status_code == 409:
-                # Mismatched signed events must never change the order.
-                return True
+                # A mismatched provider read is not proof that the signed
+                # capture was harmless. Keep its durable ledger entry pending
+                # for provider reconciliation/replay instead of permanently
+                # marking an unresolved money movement processed.
+                return False
             raise
         if not captured:
             # Authorized/processing is not terminal; keep the event for replay.
