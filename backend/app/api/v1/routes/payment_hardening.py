@@ -394,12 +394,19 @@ async def hardened_razorpay_webhook(request: Request, db: Session = Depends(get_
         raise HTTPException(status_code=400, detail="Invalid Razorpay webhook payload")
 
     event_key = request.headers.get("x-razorpay-event-id") or hashlib.sha256(raw_body).hexdigest()
+    if len(event_key) > 160:
+        raise HTTPException(status_code=400, detail="Invalid Razorpay event ID")
     existing = db.scalar(
-        select(PaymentWebhookEvent.id).where(
+        select(PaymentWebhookEvent).where(
             PaymentWebhookEvent.provider == "razorpay",
             PaymentWebhookEvent.event_key == event_key,
         )
     )
+    if existing is not None and existing.payload != payload:
+        # A provider event ID is an idempotency key, not proof that two
+        # differently signed payloads are interchangeable. Never acknowledge
+        # and silently discard a conflicting financial event.
+        raise HTTPException(status_code=409, detail="Conflicting Razorpay event ID")
     if existing is None:
         event = PaymentWebhookEvent(
             provider="razorpay",
@@ -429,7 +436,24 @@ async def hardened_razorpay_webhook(request: Request, db: Session = Depends(get_
         )
         .with_for_update(skip_locked=True)
     )
-    if event is None or event.processed_at is not None:
+    if event is None:
+        # The row may be locked by a concurrent webhook/replay worker. A
+        # non-locking read still detects a conflicting signed payload rather
+        # than silently treating it as a duplicate.
+        stored_payload = db.scalar(
+            select(PaymentWebhookEvent.payload).where(
+                PaymentWebhookEvent.provider == "razorpay",
+                PaymentWebhookEvent.event_key == event_key,
+            )
+        )
+        db.rollback()
+        if stored_payload is not None and stored_payload != payload:
+            raise HTTPException(status_code=409, detail="Conflicting Razorpay event ID")
+        return {"ok": True}
+    if event.payload != payload:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Conflicting Razorpay event ID")
+    if event.processed_at is not None:
         db.rollback()
         return {"ok": True}
     try:
