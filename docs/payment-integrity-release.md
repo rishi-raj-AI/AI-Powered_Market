@@ -300,6 +300,7 @@ issue refunds, or build APKs until the release owner approves.
       not `no_capture_found`. Verify tests leave order and payment records
       unchanged; read-only audit tests must re-query persisted state using a
       fresh session after the audit closes its own session.
+- [ ] Read-only paid audit must quarantine duplicate provider-history payment IDs, including a captured/failed pair sharing the same ID; a single valid capture must not conceal duplicated rows returned by a historical adapter. Unpaid audit must reject whitespace-only provider order IDs and duplicate local provider-order identities rather than reporting `no_capture_found`. Verify using mocked provider responses and disposable database records.
 - [ ] Run the historical audit against a **staging copy**; reconcile discrepancies
       manually with Razorpay records and the refund ledger.
 - [ ] Confirm no production payment record is changed by staging tests.
