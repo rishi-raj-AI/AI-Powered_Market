@@ -39,6 +39,7 @@ def _context(db):
     {"id": "rfnd_another_refund"},
     {"amount": 1},
     {"currency": "USD"},
+    {"currency": None},
     {"amount": None},
     {"payment_id": None},
 ])
@@ -46,6 +47,20 @@ def test_mismatched_refund_webhook_cannot_mark_order_refunded(change):
     with session() as db:
         order, refund = _context(db)
         assert _process_refund_event(db, _payload(refund, **change)) is False
+        db.commit()
+        db.refresh(order)
+        db.refresh(refund)
+        assert order.payment_status == PaymentStatus.REFUND_PENDING
+        assert refund.status == "requested"
+
+
+def test_refund_webhook_without_currency_is_not_authoritative():
+    """A signed event still needs a complete refund transaction identity."""
+    with session() as db:
+        order, refund = _context(db)
+        payload = _payload(refund)
+        del payload["payload"]["refund"]["entity"]["currency"]
+        assert _process_refund_event(db, payload) is False
         db.commit()
         db.refresh(order)
         db.refresh(refund)
