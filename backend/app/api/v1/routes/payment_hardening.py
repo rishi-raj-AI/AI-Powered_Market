@@ -342,15 +342,24 @@ def _process_event(db: Session, payload: dict) -> bool:
                 raise HTTPException(status_code=503, detail="Payment verification is unavailable") from exc
             except PaymentProviderError as exc:
                 raise HTTPException(status_code=502, detail="Unable to verify payment with provider") from exc
-            captures = [p for p in payments if p.get("status") == "captured"]
-            if (
-                len(captures) != 1
-                or any(p.get("status") not in {"captured", "failed"} for p in payments)
-                or captures[0].get("order_id") != attempt.provider_order_id
-                or captures[0].get("currency") != attempt.currency
-                or captures[0].get("amount") != amount_to_subunits(attempt.amount)
-                or not isinstance(captures[0].get("id"), str)
+            # Every provider-history row must belong to this exact intent.
+            # A malformed "failed" retry is not proof of nonpayment; ignoring
+            # it could release fulfilment while another money movement is
+            # misattributed. Keep the signed event pending for reconciliation.
+            if any(
+                not isinstance(payment, dict)
+                or payment.get("status") not in {"captured", "failed"}
+                or not isinstance(payment.get("id"), str)
+                or not payment["id"]
+                or payment.get("order_id") != attempt.provider_order_id
+                or type(payment.get("amount")) is not int
+                or payment["amount"] != amount_to_subunits(attempt.amount)
+                or payment.get("currency") != attempt.currency
+                for payment in payments
             ):
+                return False
+            captures = [payment for payment in payments if payment["status"] == "captured"]
+            if len(captures) != 1:
                 return False
             provider_payment_id = captures[0]["id"]
         if not provider_payment_id:
