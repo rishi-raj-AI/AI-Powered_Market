@@ -52,7 +52,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
       }
       await load();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(paymentStartError(e))),
+        );
+      }
+      // A failed intent lookup is not evidence of nonpayment; refresh the
+      // order after a provider reconciliation hold.
+      await load();
     } finally {
       if (mounted) setState(() => payingOrderId = null);
     }
