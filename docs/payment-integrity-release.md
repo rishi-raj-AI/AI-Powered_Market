@@ -139,6 +139,11 @@ issue refunds, or build APKs until the release owner approves.
 - [ ] Replay worker: repeated authorized capture, provider outage,
       retry scheduling, worker restart, and a newer capture behind an older
       deferred event (no head-of-line starvation).
+- [ ] Real PostgreSQL two-session replay acceptance: hold a captured-payment
+      provider read while the first worker owns the webhook row lock; verify
+      that a second replay worker and a duplicate signed webhook cannot process
+      the same event, emit a second merchant notification or settle twice.
+      The automated cases mock Razorpay; sandbox lifecycle remains separate.
 - [ ] Razorpay **sandbox**: captured, authorized, failed, dismissed, timeout,
       webhook-first, callback-first, replay, duplicate payment ID, mismatched
       amount/currency/order, refund after late capture.
