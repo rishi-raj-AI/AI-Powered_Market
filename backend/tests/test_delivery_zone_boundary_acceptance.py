@@ -43,8 +43,8 @@ def test_serviceability_respects_radius_boundary_and_activation() -> None:
         db.rollback()
 
 
-def test_temporary_checkout_bypass_preserves_spatial_boundary_detection() -> None:
-    """The temporary checkout bypass must not change the PostGIS boundary predicate."""
+def test_checkout_quote_rejects_outside_hub_radius() -> None:
+    """A store pin near the customer must not expand the assigned hub radius."""
     with factories.session() as db:
         hub = factories.make_village(db)
         hub.latitude, hub.longitude = 0.0, 0.0
@@ -68,9 +68,7 @@ def test_temporary_checkout_bypass_preserves_spatial_boundary_detection() -> Non
 
         try:
             assert point_is_in_service_area(db, area.id, 0.0, 0.0091) is False
-            # Temporary emergency bypass intentionally permits delivery-enabled
-            # stores; this assertion must revert when serviceability is restored.
-            assert cart_quote(address.id, db=db, user=customer).serviceable is True
+            assert cart_quote(address.id, db=db, user=customer).serviceable is False
             db.rollback()
 
             address.longitude = 0.0089
