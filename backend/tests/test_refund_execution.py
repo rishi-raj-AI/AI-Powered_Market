@@ -87,6 +87,14 @@ class _ProviderSpy:
         self.calls.append(kwargs)
         if self._error is not None:
             raise self._error
+        if isinstance(self._result, dict):
+            # Real Razorpay refund responses identify the payment, amount and
+            # currency. Supply those fields in normal provider fixtures.
+            payload = dict(self._result)
+            payload.setdefault("payment_id", kwargs["provider_payment_id"])
+            payload.setdefault("amount", payment_service.amount_to_subunits(kwargs["amount"]))
+            payload.setdefault("currency", "INR")
+            return payload
         return self._result
 
 
@@ -226,6 +234,51 @@ def test_failed_refund_is_retried_and_can_succeed(monkeypatch) -> None:
         assert outcome["succeeded"] == 1
         db.refresh(order)
         assert order.payment_status == PaymentStatus.REFUNDED
+
+
+@pytest.mark.parametrize("incorrect", [
+    {"payment_id": "pay_other_transaction"},
+    {"amount": 1},
+    {"currency": "USD"},
+    {"id": ""},
+])
+def test_refund_dispatch_quarantines_mismatched_provider_response(monkeypatch, incorrect) -> None:
+    """A provider HTTP 200 must not become a false customer refund."""
+    _enable_provider(monkeypatch)
+    payload = {"id": _rid("rfnd_mismatch"), "status": "processed", **incorrect}
+    monkeypatch.setattr(refund_service, "create_razorpay_refund", _ProviderSpy(result=payload))
+
+    with session() as db:
+        order = make_order(db, payment_status=PaymentStatus.PAID)
+        db.commit()
+        refund = ensure_refund_request(db, order, reason=REFUND_REASON_CANCELLED)
+        db.commit()
+
+        assert dispatch_refund(db, refund.id) == REFUND_PROCESSING
+        db.refresh(refund)
+        db.refresh(order)
+        assert order.payment_status == PaymentStatus.REFUND_PENDING
+        assert refund.status == REFUND_PROCESSING
+        assert refund.provider_refund_id is None
+        assert "reconciliation" in refund.failure_reason
+        assert refund.id not in refund_service.due_refund_ids(db, order_id=order.id)
+
+
+def test_refund_dispatch_quarantines_incomplete_provider_response(monkeypatch) -> None:
+    _enable_provider(monkeypatch)
+    # A truncated response cannot prove that the payment and amount match.
+    monkeypatch.setattr(
+        refund_service, "create_razorpay_refund",
+        lambda **_kwargs: {"id": _rid("rfnd_incomplete"), "status": "processed"},
+    )
+    with session() as db:
+        order = make_order(db, payment_status=PaymentStatus.PAID)
+        db.commit()
+        refund = ensure_refund_request(db, order, reason=REFUND_REASON_CANCELLED)
+        db.commit()
+        assert dispatch_refund(db, refund.id) == REFUND_PROCESSING
+        db.refresh(order)
+        assert order.payment_status == PaymentStatus.REFUND_PENDING
 
 
 def test_pending_provider_refund_waits_for_confirmation(monkeypatch) -> None:
