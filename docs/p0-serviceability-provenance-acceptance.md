@@ -13,6 +13,12 @@ After this change:
 - Missing/invalid coordinates, disabled stores, unassigned/inactive coverage, and genuinely out-of-area addresses remain blocked.
 - The **store-assigned, approved hub-centred** PostGIS radius remains authoritative for both quote and order placement. Do not expand coverage, use a store-centred radius, or bypass checks to solve a reported rejection.
 
+## New-address provenance guard (stacked follow-up)
+
+Source inspection also found that `POST /addresses/me` could create a **new** address with a coordinate pair and `location_source=NULL`. The central evaluator intentionally accepts NULL provenance for *historical* addresses, so this route allowed clients omitting the source to mint a new address that inherited historical trust. This is a source-level compatibility loophole, not an observed production incident.
+
+The create route now rejects a new coordinate pair without an explicit `gps`, `map_pin` or `searched_place` source (HTTP 422 with pin-confirmation guidance). A manual/landmark address without coordinates can still be saved; checkout continues to require coordinates. An explicitly sourced searched-place centroid is saved but remains ineligible for checkout until the user confirms a pin. Existing NULL-provenance rows remain readable and retain the documented legacy evaluator compatibility. No schema or data migration is introduced. Older clients that submit coordinates without a source will need the confirmed-pin flow; verify the upgrade/fallback UX before release. This guard is not a claim that a client-supplied GPS/map-pin source proves physical presence.
+
 ## Review and staging gates (no production changes)
 
 1. Review the two changed code/test files and exact-head CI for Backend, Web, Mobile and Production CI. Backend must execute the restored PostGIS decision suite plus payment/idempotency regressions.
