@@ -213,7 +213,7 @@ def audit_unpaid_upi(*, limit: int = 100, days: int = 30) -> dict:
                     or attempt.currency != "INR"
                     or attempt.amount != order.total
                     or not isinstance(attempt.provider_order_id, str)
-                    or not attempt.provider_order_id
+                    or not attempt.provider_order_id.strip()
                 ):
                     inconsistent = True
                     continue
