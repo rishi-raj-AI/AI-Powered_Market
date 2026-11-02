@@ -143,11 +143,11 @@ def upgrade() -> None:
     # protection against accidental UPDATE/DELETE from future admin APIs.
     op.execute("""
         CREATE FUNCTION reject_delivery_territory_history_mutation()
-        RETURNS trigger LANGUAGE plpgsql AS $
+        RETURNS trigger LANGUAGE plpgsql AS $territory_guard$
         BEGIN
             RAISE EXCEPTION 'delivery territory history is append-only';
         END;
-        $
+        $territory_guard$
     """)
     for table in ("delivery_territory_versions", "territory_change_audit"):
         op.execute(f"""
