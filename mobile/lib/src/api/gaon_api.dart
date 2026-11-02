@@ -9,6 +9,20 @@ class ApiException implements Exception{
   @override String toString()=>message;
 }
 
+/// Payment intent retries must not encourage a second charge when provider
+/// history is unsettled or temporarily unavailable.
+String paymentStartError(Object error) {
+  if (error is ApiException) {
+    if (error.statusCode == 409) {
+      return 'A previous payment may still be processing. Do not pay again yet. Check your order status or contact support.';
+    }
+    if (error.statusCode == 502 || error.statusCode == 503) {
+      return 'We could not safely check your previous payment. Your order is saved. Check its status before trying again.';
+    }
+  }
+  return error.toString();
+}
+
 /// The stored token was rejected. The token has already been cleared.
 class SessionExpired extends ApiException{
   SessionExpired(String message):super(message,401);
