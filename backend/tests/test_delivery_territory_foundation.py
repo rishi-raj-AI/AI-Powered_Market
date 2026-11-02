@@ -7,11 +7,14 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from app.db.session import SessionLocal
-from app.models.delivery_territories import DeliveryTerritory, OperatingRegion
+from app.models.delivery_territories import (
+    DeliveryTerritory, DeliveryTerritoryVersion, OperatingRegion, TerritoryChangeAudit,
+)
 from app.services.spatial import serviceability_for_point
+from tests import factories
 
 
 def _draft(db, *, geometry_type="circle", radius_km=1):
@@ -127,6 +130,47 @@ def test_invalid_multipolygon_rejected_by_database():
                         WHERE id=:id
                     """),
                     {"id": territory.id},
+                )
+        finally:
+            db.rollback()
+
+
+def test_published_version_history_cannot_be_rewritten():
+    with SessionLocal() as db:
+        try:
+            territory = _draft(db)
+            actor = factories.make_user(db)
+            version = DeliveryTerritoryVersion(
+                territory_id=territory.id, version=1,
+                snapshot={"geometry_type": "circle", "radius_km": 1},
+                changed_by=actor.id, change_reason="Synthetic version",
+            )
+            db.add(version)
+            db.flush()
+            with pytest.raises(DBAPIError, match="append-only"):
+                db.execute(
+                    text("UPDATE delivery_territory_versions SET change_reason='tampered' WHERE id=:id"),
+                    {"id": version.id},
+                )
+        finally:
+            db.rollback()
+
+
+def test_territory_audit_cannot_be_deleted():
+    with SessionLocal() as db:
+        try:
+            territory = _draft(db)
+            actor = factories.make_user(db)
+            event = TerritoryChangeAudit(
+                territory_id=territory.id, actor_id=actor.id,
+                action="draft_created", change_reason="Synthetic audit",
+            )
+            db.add(event)
+            db.flush()
+            with pytest.raises(DBAPIError, match="append-only"):
+                db.execute(
+                    text("DELETE FROM territory_change_audit WHERE id=:id"),
+                    {"id": event.id},
                 )
         finally:
             db.rollback()
