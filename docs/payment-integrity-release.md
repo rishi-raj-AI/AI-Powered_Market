@@ -187,3 +187,15 @@ issue refunds, or build APKs until the release owner approves.
 Production rollout, database backup, operator sign-off, post-deploy monitoring,
 and signed Android APK generation are explicitly deferred. The CI pipeline
 alone is not proof of real-payment correctness.
+
+## PostgreSQL refund concurrency acceptance (development-only)
+
+The test module `backend/tests/test_refund_concurrency.py` uses disposable
+PostgreSQL-backed orders and mocked Razorpay calls to verify two critical
+interleavings: (1) duplicate refund webhooks serialize on the commercial order
+row and reverse settlement only once; (2) a processed refund webhook arriving
+while the outbound refund request is in flight survives a later provider
+timeout without a second refund request or downgrade of the confirmed outcome.
+Run this with the backend integration suite against an isolated test database;
+never point it at production. CI success proves these simulated interleavings,
+not actual Razorpay sandbox lifecycle acceptance or production readiness.
