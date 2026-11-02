@@ -295,7 +295,11 @@ issue refunds, or build APKs until the release owner approves.
       local capture evidence, missing provider orders, unknown local states,
       provider outages, and nonterminal payment histories. Do not interpret
       `no_capture_found` as authorization to retry/expire a live checkout.
-      Verify tests leave order and payment records unchanged.
+      A provider failed-payment history with missing, non-string, empty, or
+      duplicated payment IDs must be classified `payment_history_mismatch`,
+      not `no_capture_found`. Verify tests leave order and payment records
+      unchanged; read-only audit tests must re-query persisted state using a
+      fresh session after the audit closes its own session.
 - [ ] Run the historical audit against a **staging copy**; reconcile discrepancies
       manually with Razorpay records and the refund ledger.
 - [ ] Confirm no production payment record is changed by staging tests.
