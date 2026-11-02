@@ -96,7 +96,7 @@ def test_intent_refuses_nonpayable_order_payment_states(monkeypatch, state):
 def test_intent_refuses_nonplaced_order_even_if_payment_pending(monkeypatch):
     with session() as db:
         customer, order, _attempt = _context(db)
-        order.status = OrderStatus.CONFIRMED
+        order.status = OrderStatus.ACCEPTED
         db.commit()
         monkeypatch.setattr(
             payment_routes, "create_razorpay_order",
