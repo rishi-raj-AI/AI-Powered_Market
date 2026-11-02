@@ -78,14 +78,19 @@ export default function Orders() {
   const paymentInFlight = useRef<string | null>(null);
   const confirmationPendingInFlight = useRef<string | null>(null);
   const confirmationRetryInFlight = useRef(false);
+  // A slow initial/manual refresh must not overwrite a newer provider-
+  // reconciled payment status with an older PENDING snapshot.
+  const latestOrderLoad = useRef(0);
   async function load(silent = false): Promise<Order[] | null> {
+    const loadId = ++latestOrderLoad.current;
     try {
       const nextOrders = await gaonApi.orders();
+      if (loadId !== latestOrderLoad.current) return null;
       setOrders(nextOrders);
       setError("");
       return nextOrders;
     } catch (e: any) {
-      if (!silent)
+      if (loadId === latestOrderLoad.current && !silent)
         setError(e.status === 401 ? "Please login to view orders" : e.message);
       return null;
     }
