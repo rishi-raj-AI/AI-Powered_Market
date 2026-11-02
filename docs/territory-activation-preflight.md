@@ -6,7 +6,7 @@ This endpoint is a **technical inventory**, not permission to activate coverage.
 
 Access: authenticated `geography.manage` administrators only. Requires `TERRITORY_ADMIN_PREVIEW_ENABLED=true`; default is false. The URL contains only a territory UUID. The response contains no customer coordinates, addresses, or store identities.
 
-The response reports a draft's published version, assignment counts, stable issue codes, `technical_checks_passed`, `activation_authorized=false` and `checkout_authoritative=false`. Technical checks include a current immutable geometry/exclusion snapshot, consistent latest publication history, active region, valid shape, territory effective window, and at least one currently active enabled store assignment. Unpublished geometry changes, disabled assignments, stale versions and missing records fail closed.
+The response reports a draft's published version, assignment counts, stable issue codes, `technical_checks_passed`, `activation_authorized=false` and `checkout_authoritative=false`. Technical checks include a current immutable geometry/exclusion snapshot, consistent latest publication history, active region, valid shape, territory effective window, and at least one currently active enabled assignment to an active delivery-enabled store with an approved merchant. Unpublished geometry changes, disabled assignments, stale versions and missing records fail closed.
 
 ## Required human review before any activation work
 
