@@ -57,7 +57,10 @@ issue refunds, or build APKs until the release owner approves.
 - Historical read-only audit (requires provider read credentials):
   `python -m app.scripts.audit_upi_payments --limit 100 --days 30`.
   It makes **no** financial or database mutations. Review every result other
-  than `verified_capture`; do not automatically downgrade paid orders.
+  than `verified_capture`, especially `multiple_captures`, `capture_mismatch`,
+  and `provider_unavailable`; a matching capture must not conceal another
+  capture or an unreadable payment attempt. Do not automatically downgrade
+  paid orders.
 
 ## Pre-release validation
 
