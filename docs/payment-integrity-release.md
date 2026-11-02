@@ -151,6 +151,12 @@ issue refunds, or build APKs until the release owner approves.
 - [ ] Backend CI lint, migration checks and full pytest suite green,
       including Alembic upgrade/downgrade of revision 0027.
 - [ ] Web CI and Flutter analysis/tests green.
+- [ ] Web and Flutter Orders/Checkout show reconciliation-specific
+      guidance on HTTP 409 and provider-read failures (502/503): the order is
+      saved, payment is not confirmed, and the customer should check status
+      before attempting another charge. Confirm no UI marks a pending UPI
+      order paid or invites a blind retry. Flutter message regression tests
+      must pass without building an APK.
 - [ ] Webhook ingestion: provider outage after signed event persistence,
       duplicate retry without worker, concurrent duplicate delivery, and
       replay of the original durable payload. Reject conflicting signed
