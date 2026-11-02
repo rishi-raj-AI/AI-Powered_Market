@@ -207,3 +207,95 @@ def test_intent_retry_defers_on_provider_read_failure(
         assert exc.value.status_code == expected_status
         db.refresh(attempt)
         assert attempt.status == "attempted"
+
+
+@pytest.mark.parametrize("provider_status", [
+    "captured", "authorized", "created", "refunded", "unknown",
+])
+def test_failed_local_attempt_cannot_be_replaced_with_unsettled_provider_money(
+    monkeypatch, provider_status,
+):
+    with session() as db:
+        customer, order, attempt = _context(db)
+        attempt.status = "failed"
+        db.commit()
+        monkeypatch.setattr(payment_routes.settings, "RAZORPAY_KEY_ID", "rzp_test_mock")
+        monkeypatch.setattr(
+            payment_routes, "list_razorpay_order_payments",
+            lambda **_kwargs: [_provider_payment(attempt, status=provider_status)],
+        )
+        monkeypatch.setattr(
+            payment_routes, "create_razorpay_order",
+            lambda **_kwargs: pytest.fail("Historical provider money must block new intents"),
+        )
+        with pytest.raises(HTTPException) as exc:
+            payment_routes.create_payment_intent(order.id, db=db, user=customer)
+        assert exc.value.status_code == 409
+        db.refresh(attempt)
+        assert attempt.status == "failed"
+
+
+def test_new_intent_allowed_after_provider_confirms_only_failed_previous_payment(
+    monkeypatch,
+):
+    with session() as db:
+        customer, order, attempt = _context(db)
+        attempt.status = "failed"
+        db.commit()
+        monkeypatch.setattr(payment_routes.settings, "RAZORPAY_KEY_ID", "rzp_test_mock")
+        monkeypatch.setattr(
+            payment_routes, "list_razorpay_order_payments",
+            lambda **_kwargs: [_provider_payment(attempt)],
+        )
+        created = []
+        def mock_create(**kwargs):
+            created.append(kwargs)
+            return {"id": f"order_new_{uuid4().hex}"}
+        monkeypatch.setattr(payment_routes, "create_razorpay_order", mock_create)
+        response = payment_routes.create_payment_intent(order.id, db=db, user=customer)
+        assert response.provider_order_id.startswith("order_new_")
+        assert response.payment_attempt_id != attempt.id
+        assert len(created) == 1
+
+
+def test_older_unsettled_attempt_blocks_reusing_newer_active_intent(monkeypatch):
+    with session() as db:
+        customer, order, older = _context(db)
+        older.status = "failed"
+        newer = PaymentAttempt(
+            order_id=order.id, provider="razorpay",
+            provider_order_id=f"order_{uuid4().hex}",
+            status="attempted", amount=order.total, currency="INR",
+        )
+        db.add(newer)
+        db.commit()
+        monkeypatch.setattr(payment_routes.settings, "RAZORPAY_KEY_ID", "rzp_test_mock")
+
+        def lookup(*, provider_order_id):
+            if provider_order_id == older.provider_order_id:
+                return [_provider_payment(older, status="captured")]
+            return []
+
+        monkeypatch.setattr(payment_routes, "list_razorpay_order_payments", lookup)
+        monkeypatch.setattr(
+            payment_routes, "create_razorpay_order",
+            lambda **_kwargs: pytest.fail("Cannot bypass an older captured payment"),
+        )
+        with pytest.raises(HTTPException) as exc:
+            payment_routes.create_payment_intent(order.id, db=db, user=customer)
+        assert exc.value.status_code == 409
+
+
+def test_unknown_historical_payment_provider_blocks_new_intent(monkeypatch):
+    with session() as db:
+        customer, order, attempt = _context(db)
+        attempt.provider = "unrecognized"
+        attempt.status = "failed"
+        db.commit()
+        monkeypatch.setattr(
+            payment_routes, "create_razorpay_order",
+            lambda **_kwargs: pytest.fail("Unknown provider must not be ignored"),
+        )
+        with pytest.raises(HTTPException) as exc:
+            payment_routes.create_payment_intent(order.id, db=db, user=customer)
+        assert exc.value.status_code == 409
