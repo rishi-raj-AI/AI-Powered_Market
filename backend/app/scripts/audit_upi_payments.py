@@ -94,10 +94,24 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
                 except (PaymentProviderUnavailable, PaymentProviderError):
                     unavailable = True
                     continue
+                # Defensive audit validation: a duplicated provider payment
+                # identity is not independent capture evidence. The provider
+                # helper also validates this, but audit fixtures and historical
+                # adapters must not be able to bypass the invariant.
+                seen_history_ids: set[str] = set()
                 for payment in payments:
                     if not isinstance(payment, dict):
                         mismatch = True
                         continue
+                    history_id = payment.get("id")
+                    if (
+                        not isinstance(history_id, str)
+                        or not history_id
+                        or history_id in seen_history_ids
+                    ):
+                        mismatch = True
+                    else:
+                        seen_history_ids.add(history_id)
                     provider_status = payment.get("status")
                     if provider_status == "failed":
                         # Only a well-formed failed payment for this exact
@@ -188,6 +202,7 @@ def audit_unpaid_upi(*, limit: int = 100, days: int = 30) -> dict:
             inconsistent = False
             unsettled = False
             local_capture = False
+            seen_local_order_ids: set[str] = set()
             for attempt in attempts:
                 if attempt.status == "paid" or attempt.provider_payment_id:
                     local_capture = True
@@ -197,10 +212,18 @@ def audit_unpaid_upi(*, limit: int = 100, days: int = 30) -> dict:
                     attempt.provider != "razorpay"
                     or attempt.currency != "INR"
                     or attempt.amount != order.total
+                    or not isinstance(attempt.provider_order_id, str)
                     or not attempt.provider_order_id
                 ):
                     inconsistent = True
                     continue
+                # Two local attempts must never claim the same provider order.
+                # Even if that order has only failed payments, the duplicated
+                # identity makes a reassuring no-capture result unsafe.
+                if attempt.provider_order_id in seen_local_order_ids:
+                    inconsistent = True
+                    continue
+                seen_local_order_ids.add(attempt.provider_order_id)
                 try:
                     history = list_razorpay_order_payments(
                         provider_order_id=attempt.provider_order_id
