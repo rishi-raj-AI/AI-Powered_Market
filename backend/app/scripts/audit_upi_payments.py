@@ -158,12 +158,107 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
     }
 
 
+def audit_unpaid_upi(*, limit: int = 100, days: int = 30) -> dict:
+    """Read-only triage for UPI orders still marked pending or failed.
+
+    Never infer that an order is safely unpaid from its local flag alone.
+    This report does not change payment, stock, settlement, or refund records.
+    """
+    if not 1 <= limit <= 1000 or not 1 <= days <= 365:
+        raise ValueError("limit must be 1–1000 and days must be 1–365")
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    findings = []
+    with SessionLocal() as db:
+        orders = db.scalars(
+            select(Order)
+            .where(
+                Order.payment_method == PaymentMethod.UPI,
+                Order.payment_status.in_((PaymentStatus.PENDING, PaymentStatus.FAILED)),
+                Order.created_at >= cutoff,
+            )
+            .order_by(Order.created_at.desc())
+            .limit(limit)
+        ).all()
+        for order in orders:
+            attempts = db.scalars(
+                select(PaymentAttempt).where(PaymentAttempt.order_id == order.id)
+            ).all()
+            captures: set[str] = set()
+            unavailable = False
+            inconsistent = False
+            unsettled = False
+            local_capture = False
+            for attempt in attempts:
+                if attempt.status == "paid" or attempt.provider_payment_id:
+                    local_capture = True
+                if (
+                    attempt.provider != "razorpay"
+                    or attempt.currency != "INR"
+                    or attempt.amount != order.total
+                    or not attempt.provider_order_id
+                ):
+                    inconsistent = True
+                    continue
+                try:
+                    history = list_razorpay_order_payments(
+                        provider_order_id=attempt.provider_order_id
+                    )
+                except (PaymentProviderUnavailable, PaymentProviderError):
+                    unavailable = True
+                    continue
+                for payment in history:
+                    if (
+                        type(payment.get("amount")) is not int
+                        or payment["amount"] != amount_to_subunits(order.total)
+                        or payment.get("currency") != "INR"
+                        or payment.get("order_id") != attempt.provider_order_id
+                    ):
+                        inconsistent = True
+                    if payment.get("status") == "captured":
+                        captures.add(payment["id"])
+                    elif payment.get("status") != "failed":
+                        unsettled = True
+
+            if len(captures) > 1:
+                result = "multiple_captures"
+            elif captures:
+                # Even a mismatched capture is a possible money movement:
+                # do not certify the order unpaid or automatically expire it.
+                result = "unexpected_capture"
+            elif local_capture:
+                result = "local_capture_evidence"
+            elif unavailable:
+                result = "provider_unavailable"
+            elif inconsistent:
+                result = "payment_history_mismatch"
+            elif unsettled:
+                result = "provider_ambiguous"
+            elif not attempts:
+                result = "missing_payment_attempt"
+            else:
+                result = "no_capture_found"
+            findings.append({
+                "order_number": order.order_number,
+                "result": result,
+                "provider_capture_count": len(captures),
+            })
+        db.rollback()  # read-only: no stock or payment changes
+    return {
+        "scanned": len(findings),
+        "no_capture_found": sum(f["result"] == "no_capture_found" for f in findings),
+        "requires_review": sum(f["result"] != "no_capture_found" for f in findings),
+        "findings": findings,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--days", type=int, default=30)
+    parser.add_argument("--unpaid", action="store_true", help="Audit pending/failed UPI orders instead of paid orders")
     args = parser.parse_args()
-    print(json.dumps(audit_paid_upi(limit=args.limit, days=args.days), indent=2))
+    audit = audit_unpaid_upi if args.unpaid else audit_paid_upi
+    print(json.dumps(audit(limit=args.limit, days=args.days), indent=2))
 
 
 if __name__ == "__main__":
