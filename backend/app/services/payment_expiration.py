@@ -84,6 +84,10 @@ def expire_unpaid_orders(
                 if attempt.provider != "razorpay":
                     uncertain = True
                     continue
+                if attempt.currency != "INR" or attempt.amount != order.total:
+                    # A mismatched intent is not safe evidence that the
+                    # commercial order was never charged.
+                    uncertain = True
                 if attempt.status == "paid" or attempt.provider_payment_id:
                     # Local evidence of capture contradicts an unpaid order.
                     # Do not trust an empty provider history to release stock.
@@ -107,8 +111,15 @@ def expire_unpaid_orders(
                         uncertain = True
                         continue
                     if provider_status == "failed":
-                        # Only a well-formed, terminal failed payment is safe
-                        # to disregard when deciding whether stock can return.
+                        # A terminal failure with mismatched/missing money
+                        # fields is malformed provider history, not reliable
+                        # evidence that the order was never charged.
+                        if (
+                            type(payment.get("amount")) is not int
+                            or payment["amount"] != amount_to_subunits(attempt.amount)
+                            or payment.get("currency") != attempt.currency
+                        ):
+                            uncertain = True
                         continue
                     if provider_status != "captured":
                         # Created, authorized, refunded, unrecognised or

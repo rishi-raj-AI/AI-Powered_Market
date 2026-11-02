@@ -373,3 +373,67 @@ def test_order_paid_webhook_defers_ambiguous_provider_history(monkeypatch, secon
         db.rollback()
         db.refresh(order)
         assert order.payment_status == PaymentStatus.PENDING
+
+
+@pytest.mark.parametrize("invalid_failed_fields", [
+    {"id": ""},
+    {"id": None},
+    {"order_id": "order_wrong"},
+    {"amount": 11999},
+    {"amount": None},
+    {"currency": "USD"},
+    {"currency": None},
+])
+def test_order_paid_defers_malformed_failed_secondary_payment(
+    monkeypatch, invalid_failed_fields,
+):
+    """An unrelated or malformed failed row cannot certify a single capture."""
+    with session() as db:
+        _customer, order, attempt = _context(db)
+        failed = _payment(
+            attempt, f"pay_failed_{uuid4().hex}", status="failed",
+            **invalid_failed_fields,
+        )
+        monkeypatch.setattr(
+            payment_hardening, "list_razorpay_order_payments",
+            lambda **_: [_payment(attempt, f"pay_capture_{uuid4().hex}"), failed],
+        )
+        monkeypatch.setattr(
+            payment_hardening, "fetch_razorpay_payment",
+            lambda **_: pytest.fail("Malformed provider history must defer capture"),
+        )
+        payload = {
+            "event": "order.paid",
+            "payload": {"order": {"entity": {"id": attempt.provider_order_id}}},
+        }
+        assert payment_hardening._process_event(db, payload) is False
+        db.rollback()
+        db.refresh(order)
+        assert order.payment_status == PaymentStatus.PENDING
+
+
+def test_order_paid_accepts_capture_with_wellformed_failed_retry(monkeypatch):
+    with session() as db:
+        _customer, order, attempt = _context(db)
+        captured_id = f"pay_capture_{uuid4().hex}"
+        monkeypatch.setattr(
+            payment_hardening, "list_razorpay_order_payments",
+            lambda **_: [
+                _payment(attempt, captured_id),
+                _payment(attempt, f"pay_failed_{uuid4().hex}", status="failed"),
+            ],
+        )
+        monkeypatch.setattr(
+            payment_hardening, "fetch_razorpay_payment",
+            lambda *, provider_payment_id: _payment(attempt, provider_payment_id),
+        )
+        monkeypatch.setattr(payment_hardening, "ensure_settlement_entry", lambda *_: None)
+        monkeypatch.setattr(payment_hardening, "_notify_payment_captured", lambda *_: None)
+        payload = {
+            "event": "order.paid",
+            "payload": {"order": {"entity": {"id": attempt.provider_order_id}}},
+        }
+        assert payment_hardening._process_event(db, payload) is True
+        db.commit()
+        db.refresh(order)
+        assert order.payment_status == PaymentStatus.PAID
