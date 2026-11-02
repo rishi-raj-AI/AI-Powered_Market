@@ -299,3 +299,24 @@ def test_unknown_historical_payment_provider_blocks_new_intent(monkeypatch):
         with pytest.raises(HTTPException) as exc:
             payment_routes.create_payment_intent(order.id, db=db, user=customer)
         assert exc.value.status_code == 409
+
+
+@pytest.mark.parametrize("local_status", ["authorized", "processing", "refunded", "unknown"])
+def test_unrecognized_local_attempt_state_cannot_open_another_intent(
+    monkeypatch, local_status,
+):
+    with session() as db:
+        customer, order, attempt = _context(db)
+        attempt.status = local_status
+        db.commit()
+        monkeypatch.setattr(
+            payment_routes, "list_razorpay_order_payments",
+            lambda **_kwargs: pytest.fail("Unsafe local state must fail before provider read"),
+        )
+        monkeypatch.setattr(
+            payment_routes, "create_razorpay_order",
+            lambda **_kwargs: pytest.fail("Unsafe local state must not create another intent"),
+        )
+        with pytest.raises(HTTPException) as exc:
+            payment_routes.create_payment_intent(order.id, db=db, user=customer)
+        assert exc.value.status_code == 409
