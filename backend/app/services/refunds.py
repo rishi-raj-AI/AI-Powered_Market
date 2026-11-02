@@ -66,16 +66,37 @@ def get_refund_for_order(db: Session, order_id: uuid.UUID) -> PaymentRefund | No
     )
 
 
-def _latest_captured_attempt(db: Session, order_id: uuid.UUID) -> PaymentAttempt | None:
-    return db.scalar(
+def _unique_captured_attempt(db: Session, order: Order) -> PaymentAttempt | None:
+    """Bind an automatic refund only to one unambiguous commercial capture.
+
+    Legacy data can contain a provider payment ID on an attempt still marked
+    failed, or a paid attempt without an ID. Both are evidence that another
+    money movement may exist. Do not choose the newest paid row and risk
+    refunding the wrong transaction; retain the refund debt for review.
+    """
+    evidence = db.scalars(
         select(PaymentAttempt)
         .where(
-            PaymentAttempt.order_id == order_id,
-            PaymentAttempt.status == "paid",
-            PaymentAttempt.provider_payment_id.is_not(None),
+            PaymentAttempt.order_id == order.id,
+            (
+                (PaymentAttempt.status == "paid")
+                | PaymentAttempt.provider_payment_id.is_not(None)
+            ),
         )
-        .order_by(PaymentAttempt.updated_at.desc())
-    )
+        .limit(2)
+    ).all()
+    if len(evidence) != 1:
+        return None
+    attempt = evidence[0]
+    if (
+        attempt.status != "paid"
+        or not attempt.provider_payment_id
+        or attempt.provider != "razorpay"
+        or attempt.currency != "INR"
+        or attempt.amount != order.total
+    ):
+        return None
+    return attempt
 
 
 def ensure_refund_request(db: Session, order: Order, *, reason: str) -> PaymentRefund | None:
@@ -98,7 +119,7 @@ def ensure_refund_request(db: Session, order: Order, *, reason: str) -> PaymentR
     if existing is not None:
         return existing
 
-    attempt = _latest_captured_attempt(db, order.id)
+    attempt = _unique_captured_attempt(db, order)
     refund = PaymentRefund(
         order_id=order.id,
         payment_attempt_id=attempt.id if attempt else None,
