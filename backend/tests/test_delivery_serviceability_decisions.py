@@ -154,7 +154,7 @@ def test_provenance_is_confirmed_only_with_source_and_server_timestamp():
         # Until then, getattr keeps the P0 engine compatible with the old schema.
         address.location_source = "gps"
         unconfirmed = evaluate_delivery(db, store, address)
-        assert unconfirmed.location_confidence == "legacy_coordinates"
+        assert unconfirmed.location_confidence == "unconfirmed_gps"
         assert unconfirmed.reason_code == "ADDRESS_LOCATION_UNCONFIRMED"
         assert unconfirmed.serviceable is False
         address.location_confirmed_at = datetime.now(timezone.utc)
