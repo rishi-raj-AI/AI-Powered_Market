@@ -56,6 +56,22 @@ def _existing_idempotent_order(db: Session, user_id: uuid.UUID, key: str | None)
     )
 
 
+def _validate_idempotent_checkout_replay(order: Order, payload: CheckoutRequest) -> Order:
+    """A retry may retrieve only the order created for the same checkout intent.
+
+    The cart may already have been cleared, and the original address may now
+    be archived; compare persisted order fields rather than current cart or
+    address state. Never silently return a COD order for a UPI request (or
+    another delivery address) using the same idempotency key.
+    """
+    if order.address_id != payload.address_id or order.payment_method != payload.payment_method:
+        raise HTTPException(
+            status_code=409,
+            detail="Idempotency-Key was already used for a different checkout request",
+        )
+    return order
+
+
 def _new_order_number() -> str:
     """Time-ordered and collision-resistant.
 
@@ -170,7 +186,7 @@ def safe_checkout(
             raise HTTPException(status_code=400, detail="Idempotency-Key must contain 1 to 128 characters")
         existing = _existing_idempotent_order(db, user.id, idempotency_key)
         if existing:
-            return existing
+            return _validate_idempotent_checkout_replay(existing, payload)
 
     address = db.get(Address, payload.address_id)
     if address is None or address.user_id != user.id or address.archived_at is not None:
@@ -180,7 +196,7 @@ def safe_checkout(
 
     existing = _existing_idempotent_order(db, user.id, idempotency_key)
     if existing:
-        return existing
+        return _validate_idempotent_checkout_replay(existing, payload)
 
     if cart is None or cart.store_id is None:
         raise HTTPException(status_code=400, detail="Cart is empty")
