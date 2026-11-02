@@ -315,6 +315,51 @@ def test_capture_on_second_attempt_requires_manual_reconciliation(monkeypatch):
 
 
 
+@pytest.mark.parametrize("legacy_evidence", ["paid_without_id", "id_without_paid"])
+def test_other_attempt_partial_capture_evidence_blocks_second_settlement(
+    monkeypatch, legacy_evidence,
+):
+    """Inconsistent historical records must not certify a second sale."""
+    with session() as db:
+        customer, order, earlier = _context(db)
+        if legacy_evidence == "paid_without_id":
+            earlier.status = "paid"
+        else:
+            earlier.provider_payment_id = f"pay_prior_{uuid4().hex}"
+        newer = PaymentAttempt(
+            order_id=order.id, provider="razorpay",
+            provider_order_id=f"order_{uuid4().hex}",
+            status="attempted", amount=order.total, currency="INR",
+        )
+        db.add(newer)
+        db.commit()
+        monkeypatch.setattr(payment_hardening, "verify_razorpay_signature", lambda **_: True)
+        monkeypatch.setattr(
+            payment_hardening, "fetch_razorpay_payment",
+            lambda *, provider_payment_id: _payment(newer, provider_payment_id),
+        )
+        monkeypatch.setattr(
+            payment_hardening, "ensure_settlement_entry",
+            lambda *_: pytest.fail("Ambiguous second capture must not settle"),
+        )
+        with pytest.raises(HTTPException) as exc:
+            _verify(db, customer, newer, payment_id=f"pay_new_{uuid4().hex}")
+        assert exc.value.status_code == 409
+        db.rollback()
+        db.refresh(order)
+        db.refresh(earlier)
+        db.refresh(newer)
+        assert order.payment_status == PaymentStatus.PENDING
+        assert newer.status == "attempted"
+        assert newer.provider_payment_id is None
+        if legacy_evidence == "paid_without_id":
+            assert earlier.status == "paid"
+            assert earlier.provider_payment_id is None
+        else:
+            assert earlier.status == "attempted"
+            assert earlier.provider_payment_id is not None
+
+
 def test_order_paid_webhook_without_payment_entity_reconciles_one_capture(monkeypatch):
     with session() as db:
         _customer, order, attempt = _context(db)
@@ -437,3 +482,25 @@ def test_order_paid_accepts_capture_with_wellformed_failed_retry(monkeypatch):
         db.commit()
         db.refresh(order)
         assert order.payment_status == PaymentStatus.PAID
+
+
+@pytest.mark.parametrize("malformed_amount", [12000.0, "12000", None, True])
+def test_provider_capture_requires_integer_subunits(monkeypatch, malformed_amount):
+    """Numerically equal floats are not valid Razorpay paise evidence."""
+    with session() as db:
+        customer, order, attempt = _context(db)
+        monkeypatch.setattr(payment_hardening, "verify_razorpay_signature", lambda **_: True)
+        monkeypatch.setattr(
+            payment_hardening, "fetch_razorpay_payment",
+            lambda *, provider_payment_id: _payment(
+                attempt, provider_payment_id, amount=malformed_amount,
+            ),
+        )
+        with pytest.raises(HTTPException) as exc:
+            _verify(db, customer, attempt)
+        assert exc.value.status_code == 409
+        db.refresh(order)
+        db.refresh(attempt)
+        assert order.payment_status == PaymentStatus.PENDING
+        assert attempt.status == "attempted"
+        assert attempt.provider_payment_id is None

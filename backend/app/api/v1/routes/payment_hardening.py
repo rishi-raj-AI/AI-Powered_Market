@@ -91,7 +91,11 @@ def _confirmed_capture(attempt: PaymentAttempt, provider_payment_id: str) -> boo
         entity.get("id") != provider_payment_id
         or entity.get("order_id") != attempt.provider_order_id
         or entity.get("currency") != attempt.currency
-        or entity.get("amount") != amount_to_subunits(attempt.amount)
+        # Razorpay represents subunits as an integer. Python would otherwise
+        # accept a float such as 12000.0 as equal to 12000, or True as 1.
+        # Malformed provider money fields must never release fulfilment.
+        or type(entity.get("amount")) is not int
+        or entity["amount"] != amount_to_subunits(attempt.amount)
     ):
         raise HTTPException(status_code=409, detail="Provider payment does not match this order")
     return entity.get("status") == "captured"
@@ -130,12 +134,18 @@ def _apply_paid(db: Session, attempt: PaymentAttempt, order: Order, provider_pay
         # Keep the webhook unprocessed for explicit financial reconciliation.
         if attempt.provider_payment_id and attempt.provider_payment_id != provider_payment_id:
             raise HTTPException(status_code=409, detail="Multiple captures require reconciliation")
+        # Either local PAID status or a recorded provider payment ID is
+        # evidence of another money movement. Legacy rows may have only one
+        # of those fields populated; requiring both could settle a second
+        # capture as if it were the original sale.
         another_capture = db.scalar(
             select(PaymentAttempt.id).where(
                 PaymentAttempt.order_id == order.id,
                 PaymentAttempt.id != attempt.id,
-                PaymentAttempt.status == "paid",
-                PaymentAttempt.provider_payment_id.is_not(None),
+                (
+                    (PaymentAttempt.status == "paid")
+                    | PaymentAttempt.provider_payment_id.is_not(None)
+                ),
             ).limit(1)
         )
         if another_capture is not None:
@@ -191,7 +201,9 @@ def _apply_paid(db: Session, attempt: PaymentAttempt, order: Order, provider_pay
         ensure_settlement_entry(db, order)
 
 
-def _apply_failed(attempt: PaymentAttempt, order: Order) -> None:
+def _apply_failed(
+    attempt: PaymentAttempt, order: Order, *, other_capture: bool = False,
+) -> None:
     # A late failure must not erase either order-level or attempt-level capture
     # evidence, even if an older inconsistent order still says PENDING.
     if attempt.status == "paid" or attempt.provider_payment_id:
@@ -203,7 +215,11 @@ def _apply_failed(attempt: PaymentAttempt, order: Order) -> None:
     }:
         return
     attempt.status = "failed"
-    order.payment_status = PaymentStatus.FAILED
+    # A separate attempt may already contain money-movement evidence even
+    # when a legacy order still says PENDING. A valid failure for this attempt
+    # must not label the entire commercial order as unpaid/failed.
+    if not other_capture:
+        order.payment_status = PaymentStatus.FAILED
 
 
 @router.post("/verify", response_model=PaymentVerifyResponse)
@@ -370,8 +386,11 @@ def _process_event(db: Session, payload: dict) -> bool:
             captured = _confirmed_capture(attempt, provider_payment_id)
         except HTTPException as exc:
             if exc.status_code == 409:
-                # Mismatched signed events must never change the order.
-                return True
+                # A mismatched provider read is not proof that the signed
+                # capture was harmless. Keep its durable ledger entry pending
+                # for provider reconciliation/replay instead of permanently
+                # marking an unresolved money movement processed.
+                return False
             raise
         if not captured:
             # Authorized/processing is not terminal; keep the event for replay.
@@ -395,7 +414,17 @@ def _process_event(db: Session, payload: dict) -> bool:
             or payment_entity.get("currency") != attempt.currency
         ):
             return False
-        _apply_failed(attempt, order)
+        other_capture = db.scalar(
+            select(PaymentAttempt.id).where(
+                PaymentAttempt.order_id == order.id,
+                PaymentAttempt.id != attempt.id,
+                (
+                    (PaymentAttempt.status == "paid")
+                    | PaymentAttempt.provider_payment_id.is_not(None)
+                ),
+            ).limit(1)
+        )
+        _apply_failed(attempt, order, other_capture=other_capture is not None)
     return True
 
 

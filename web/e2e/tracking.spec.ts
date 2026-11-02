@@ -65,6 +65,49 @@ test('customer sees verified payment after intent fails but a webhook has alread
   expect(orderReads).toBeGreaterThanOrEqual(2);
 });
 
+test('a slow older orders refresh cannot undo a verified payment',async({page})=>{
+  const upiOrder={...order,status:'placed',payment_method:'upi',payment_status:'pending'};
+  let intentCalls=0;let holdRefresh=false;let refreshHeld=false;let providerCaptured=false;
+  let staleRequested!:()=>void;let releaseStale!:()=>void;
+  const staleStarted=new Promise<void>(resolve=>{staleRequested=resolve});
+  const staleGate=new Promise<void>(resolve=>{releaseStale=resolve});
+  await installApiMocks(page,customer);
+  await page.route('http://localhost:8000/api/v1/orders/me',async route=>{
+    if(holdRefresh && !refreshHeld){
+      refreshHeld=true;
+      staleRequested();
+      await staleGate;
+      return route.fulfill({json:[upiOrder],headers:{'x-e2e-stale':'1'}});
+    }
+    return route.fulfill({json:[providerCaptured?{...upiOrder,payment_status:'paid'}:upiOrder]});
+  });
+  await page.route(`http://localhost:8000/api/v1/payments/orders/${order.id}/intent`,route=>{
+    intentCalls+=1;
+    providerCaptured=true;
+    return route.fulfill({status:409,json:{detail:'Payment requires reconciliation'}});
+  });
+  await page.goto('/orders');
+  const pay=page.getByRole('button',{name:'Pay now'});
+  await expect(pay).toBeVisible();
+  holdRefresh=true;
+  await page.getByRole('button',{name:'Refresh',exact:true}).click();
+  await staleStarted;
+  await pay.click();
+  await expect(page.getByText(`Payment verified for ${order.order_number}.`)).toBeVisible();
+  await expect(page.getByText('Payment: Paid')).toBeVisible();
+  const staleResponse=page.waitForResponse(response=>
+    response.url().endsWith('/orders/me') && response.headers()['x-e2e-stale']==='1'
+  );
+  releaseStale();
+  await staleResponse;
+  // Allow the response handler to render: a late PENDING response must not
+  // replace the paid card or expose a second checkout window.
+  await page.waitForTimeout(150);
+  await expect(page.getByText('Payment: Paid')).toBeVisible();
+  await expect(pay).toHaveCount(0);
+  expect(intentCalls).toBe(1);
+});
+
 test('non-placed UPI orders cannot start a new checkout from the website',async({page})=>{
   const stale={...order,status:'accepted',payment_method:'upi',payment_status:'pending'};
   let intentCalls=0;
