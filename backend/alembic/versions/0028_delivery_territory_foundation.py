@@ -1,6 +1,6 @@
 """Add draft-only territory storage without changing existing delivery decisions.
 
-Revision ID: 0028_delivery_territory_foundation
+Revision ID: 0028_delivery_territories
 Revises: 0027_address_location_provenance
 
 No legacy rows are modified. No territories are activated or assigned.
@@ -8,7 +8,7 @@ The existing PostGIS extension (installed by revision 0009) is required.
 """
 from alembic import op
 
-revision = "0028_delivery_territory_foundation"
+revision = "0028_delivery_territories"
 down_revision = "0027_address_location_provenance"
 branch_labels = None
 depends_on = None
