@@ -57,8 +57,12 @@ function refundLine(refund: PaymentRefund) {
   return "Refund requested. It will reach your original payment method shortly.";
 }
 function paymentIntentError(error: unknown) {
-  if (error instanceof ApiError && error.status === 503)
-    return "Online payment is unavailable right now. Your order is still saved and payment is pending. Please try again later.";
+  if (error instanceof ApiError) {
+    if (error.status === 409)
+      return "A previous payment may still be processing or needs verification. Do not pay again yet. Refresh your order status or contact support if it stays pending.";
+    if (error.status === 502 || error.status === 503)
+      return "We could not safely check your previous payment right now. Your order is saved; please check its status before trying again to avoid paying twice.";
+  }
   return error instanceof Error ? error.message : "Unable to start online payment.";
 }
 export default function Orders() {
