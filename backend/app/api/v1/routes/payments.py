@@ -109,6 +109,24 @@ def create_payment_intent(
     if captured_attempt_id is not None:
         raise HTTPException(status_code=409, detail="Existing payment requires reconciliation")
 
+    # A previous attempt may have been locally marked failed just before a
+    # late provider capture. Inspect all earlier attempts before opening a
+    # new provider order, including unknown providers and mismatched terms.
+    prior_attempts = db.scalars(
+        select(PaymentAttempt).where(PaymentAttempt.order_id == order.id)
+        .order_by(PaymentAttempt.id)
+    ).all()
+    for prior in prior_attempts:
+        if (
+            prior.provider != "razorpay"
+            or prior.currency != "INR"
+            or prior.amount != order.total
+            or prior.status == "paid"
+            or prior.provider_payment_id
+        ):
+            raise HTTPException(status_code=409, detail="Existing payment requires reconciliation")
+        _require_terminal_failed_provider_history(prior)
+
     existing = db.scalar(
         select(PaymentAttempt)
         .where(
@@ -136,24 +154,6 @@ def create_payment_intent(
             currency=existing.currency,
             key_id=settings.RAZORPAY_KEY_ID,
         )
-
-    # A previous attempt may have been locally marked failed just before a
-    # late provider capture. Inspect all earlier attempts before opening a
-    # new provider order, including unknown providers and mismatched terms.
-    prior_attempts = db.scalars(
-        select(PaymentAttempt).where(PaymentAttempt.order_id == order.id)
-        .order_by(PaymentAttempt.id)
-    ).all()
-    for prior in prior_attempts:
-        if (
-            prior.provider != "razorpay"
-            or prior.currency != "INR"
-            or prior.amount != order.total
-            or prior.status == "paid"
-            or prior.provider_payment_id
-        ):
-            raise HTTPException(status_code=409, detail="Existing payment requires reconciliation")
-        _require_terminal_failed_provider_history(prior)
 
     try:
         provider_order = create_razorpay_order(
