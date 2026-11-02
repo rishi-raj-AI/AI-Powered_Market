@@ -121,14 +121,16 @@ def create_payment_intent(
     # More than one active local intent means there may be multiple provider
     # checkout windows in circulation. Even an empty provider history does
     # not prove an older window cannot capture money after we issue another.
-    # Likewise, an active row without a provider order ID is not a safe
-    # candidate for reuse or replacement. Quarantine both histories.
+    # A missing provider order ID on *any* historical attempt, including a
+    # locally failed one, is unreconcilable. Validate the entire local set
+    # before making any external provider-history calls: UUID iteration order
+    # must never determine whether we call the provider before quarantining.
     active_attempts = [
         prior for prior in prior_attempts
         if prior.status in {"created", "attempted"}
     ]
     if len(active_attempts) > 1 or any(
-        not prior.provider_order_id for prior in active_attempts
+        not prior.provider_order_id for prior in prior_attempts
     ):
         raise HTTPException(status_code=409, detail="Existing payment requires reconciliation")
     for prior in prior_attempts:
@@ -140,6 +142,8 @@ def create_payment_intent(
             or prior.provider_payment_id
         ):
             raise HTTPException(status_code=409, detail="Existing payment requires reconciliation")
+    # Only after all local attempts pass validation may we read the provider.
+    for prior in prior_attempts:
         _require_terminal_failed_provider_history(prior)
 
     existing = db.scalar(
