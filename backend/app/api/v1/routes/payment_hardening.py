@@ -197,7 +197,9 @@ def _apply_paid(db: Session, attempt: PaymentAttempt, order: Order, provider_pay
         ensure_settlement_entry(db, order)
 
 
-def _apply_failed(attempt: PaymentAttempt, order: Order) -> None:
+def _apply_failed(
+    attempt: PaymentAttempt, order: Order, *, other_capture: bool = False,
+) -> None:
     # A late failure must not erase either order-level or attempt-level capture
     # evidence, even if an older inconsistent order still says PENDING.
     if attempt.status == "paid" or attempt.provider_payment_id:
@@ -209,7 +211,11 @@ def _apply_failed(attempt: PaymentAttempt, order: Order) -> None:
     }:
         return
     attempt.status = "failed"
-    order.payment_status = PaymentStatus.FAILED
+    # A separate attempt may already contain money-movement evidence even
+    # when a legacy order still says PENDING. A valid failure for this attempt
+    # must not label the entire commercial order as unpaid/failed.
+    if not other_capture:
+        order.payment_status = PaymentStatus.FAILED
 
 
 @router.post("/verify", response_model=PaymentVerifyResponse)
@@ -401,7 +407,17 @@ def _process_event(db: Session, payload: dict) -> bool:
             or payment_entity.get("currency") != attempt.currency
         ):
             return False
-        _apply_failed(attempt, order)
+        other_capture = db.scalar(
+            select(PaymentAttempt.id).where(
+                PaymentAttempt.order_id == order.id,
+                PaymentAttempt.id != attempt.id,
+                (
+                    (PaymentAttempt.status == "paid")
+                    | PaymentAttempt.provider_payment_id.is_not(None)
+                ),
+            ).limit(1)
+        )
+        _apply_failed(attempt, order, other_capture=other_capture is not None)
     return True
 
 
