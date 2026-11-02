@@ -71,6 +71,16 @@ issue refunds, or build APKs until the release owner approves.
     that identifies the provider refund ID also blocks automatic re-dispatch
     after a conflicting API error.
 
+17. Refund webhooks must explicitly include the expected currency, not merely
+    omit a conflicting value. A signed refund event missing currency is not
+    sufficient evidence to mark a refund successful; retain the obligation
+    for replay/reconciliation.
+18. A read-only audit of paid UPI orders must inspect **all** local payment
+    attempts, including unexpected providers, and must not report a verified
+    capture when Razorpay also reports created, authorized, refunded, or
+    unrecognised payments. Terminal failed payments do not by themselves
+    invalidate a separately verified capture.
+
 ## Feature flags and operator safety
 
 - `PAYMENT_WEBHOOK_REPLAY_ENABLED=false` is the safe default. The durable
@@ -93,9 +103,11 @@ issue refunds, or build APKs until the release owner approves.
   `python -m app.scripts.audit_upi_payments --limit 100 --days 30`.
   It makes **no** financial or database mutations. Review every result other
   than `verified_capture`, especially `multiple_captures`, `capture_mismatch`,
-  and `provider_unavailable`; a matching capture must not conceal another
-  capture or an unreadable payment attempt. Do not automatically downgrade
-  paid orders.
+  `provider_unavailable` and `provider_ambiguous`; a matching capture must
+  not conceal another capture, an unsettled provider payment, an unknown
+  provider attempt, or an unreadable payment attempt. The current audit
+  scans **PAID** UPI orders only, not REFUND_PENDING/REFUNDED obligations.
+  Do not automatically downgrade paid orders.
 
 ## Pre-release validation
 
@@ -128,6 +140,11 @@ issue refunds, or build APKs until the release owner approves.
 - [ ] Refund provider ambiguity: timeout, 5xx, malformed HTTP 200, and
       webhook success racing a provider error; none can cause an automatic
       duplicate refund or downgrade a confirmed refund.
+- [ ] Refund webhook tests: reject missing currency as well as mismatched
+      currency; verify that no refund state or settlement changes occur.
+- [ ] Historical audit tests: unknown local payment provider and unsettled
+      secondary Razorpay payments cannot be classified verified; a terminal
+      failed retry can coexist with a verified capture.
 - [ ] Refund webhook tests: order-before-refund lock acquisition under
       PostgreSQL concurrency with cancellation, mismatched payment/refund ID, amount/currency,
       ambiguous multiple obligations for one provider payment,
