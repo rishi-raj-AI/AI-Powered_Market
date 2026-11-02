@@ -176,3 +176,60 @@ def test_audit_does_not_hide_unsettled_provider_payment_behind_capture(
         report = audit_upi_payments.audit_paid_upi()
         finding = next(f for f in report["findings"] if f["order_number"] == order_number)
         assert finding["result"] == expected
+
+
+def test_audit_flags_second_paid_attempt_missing_provider_payment_id(monkeypatch):
+    with session() as db:
+        order = make_order(db)
+        first = db.scalar(
+            select(PaymentAttempt).where(PaymentAttempt.order_id == order.id)
+        )
+        second = PaymentAttempt(
+            order_id=order.id, provider="razorpay",
+            provider_order_id=f"order_{uuid4().hex}",
+            status="paid", amount=order.total, currency="INR",
+            provider_payment_id=None,
+        )
+        db.add(second)
+        db.commit()
+        order_number = order.order_number
+        monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
+        monkeypatch.setattr(
+            audit_upi_payments, "list_razorpay_order_payments",
+            lambda *, provider_order_id: (
+                [_capture(first, first.provider_payment_id)]
+                if provider_order_id == first.provider_order_id else []
+            ),
+        )
+        report = audit_upi_payments.audit_paid_upi()
+        finding = next(f for f in report["findings"] if f["order_number"] == order_number)
+        assert finding["result"] == "capture_mismatch"
+
+
+@pytest.mark.parametrize("bad_failed_payment", [
+    {"status": "failed", "order_id": "wrong_order", "id": "pay_failed", "amount": 12000, "currency": "INR"},
+    {"status": "failed", "id": None, "amount": 12000, "currency": "INR"},
+    {"status": "failed", "id": "pay_failed", "amount": 12000, "currency": "USD"},
+    {"status": "failed", "id": "pay_failed", "amount": "12000", "currency": "INR"},
+])
+def test_audit_rejects_malformed_failed_history_even_with_valid_capture(
+    monkeypatch, bad_failed_payment,
+):
+    with session() as db:
+        order = make_order(db)
+        attempt = db.scalar(
+            select(PaymentAttempt).where(PaymentAttempt.order_id == order.id)
+        )
+        db.commit()
+        order_number = order.order_number
+        monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
+        monkeypatch.setattr(
+            audit_upi_payments, "list_razorpay_order_payments",
+            lambda **_: [
+                _capture(attempt, attempt.provider_payment_id),
+                bad_failed_payment,
+            ],
+        )
+        report = audit_upi_payments.audit_paid_upi()
+        finding = next(f for f in report["findings"] if f["order_number"] == order_number)
+        assert finding["result"] == "capture_mismatch"
