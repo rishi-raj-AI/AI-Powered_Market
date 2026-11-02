@@ -21,4 +21,4 @@ The endpoint is read-only at application level; it executes SELECTs. For product
 
 ## Review and rollback
 
-Run `pytest -q backend/tests/test_territory_parity.py` from the repository root with a disposable PostGIS test database and the established backend test environment, or run the repository's Backend CI. No migration is required. Rollback is to leave the feature flag disabled or revert this isolated endpoint/service; existing legacy checkout remains unchanged. **No production deployment, data mutation or APK publication is authorized by this PR.**
+From the repository root run `cd backend && pytest -q tests/test_territory_parity.py` with a disposable PostGIS test database and the established backend test environment, or run the repository's Backend CI. No migration is required. Rollback is to leave the feature flag disabled or revert this isolated endpoint/service; existing legacy checkout remains unchanged. **No production deployment, data mutation or APK publication is authorized by this PR.**
