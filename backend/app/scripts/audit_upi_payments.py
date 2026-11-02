@@ -66,7 +66,10 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
                     attempt.amount != order.total
                     or attempt.currency != "INR"
                     or (attempt.provider_payment_id and attempt.status != "paid")
+                    or (attempt.status == "paid" and not attempt.provider_payment_id)
                 ):
+                    # A second locally paid attempt with no provider payment
+                    # identifier cannot be cleared by another valid capture.
                     mismatch = True
                 if not attempt.provider_order_id:
                     mismatch = True
@@ -79,8 +82,23 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
                     unavailable = True
                     continue
                 for payment in payments:
+                    if not isinstance(payment, dict):
+                        mismatch = True
+                        continue
                     provider_status = payment.get("status")
                     if provider_status == "failed":
+                        # Only a well-formed failed payment for this exact
+                        # provider order can be safely ignored. A malformed
+                        # history row must not certify a separate capture.
+                        if (
+                            not isinstance(payment.get("id"), str)
+                            or not payment["id"]
+                            or payment.get("order_id") != attempt.provider_order_id
+                            or payment.get("currency") != attempt.currency
+                            or type(payment.get("amount")) is not int
+                            or payment["amount"] != amount_to_subunits(attempt.amount)
+                        ):
+                            mismatch = True
                         continue
                     if provider_status != "captured":
                         # An authorized/created or unrecognised provider
