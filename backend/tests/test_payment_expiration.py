@@ -3,6 +3,8 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4
 
+import pytest
+
 from app.models.commerce import StoreProduct
 from app.models.integrations import PaymentAttempt
 from app.models.orders import Order, OrderItem, OrderStatus, PaymentStatus
@@ -149,4 +151,83 @@ def test_expiry_never_releases_underpaid_capture_as_paid(monkeypatch):
         assert order.status == OrderStatus.PLACED
         assert order.payment_status == PaymentStatus.PENDING
         assert order.stock_restored_at is None
+        assert db.get(StoreProduct, listing_id).stock_quantity == 9
+
+
+@pytest.mark.parametrize("provider_status", ["created", "authorized", "refunded", "processing", None])
+def test_expiry_defers_nonterminal_or_unknown_provider_payment(monkeypatch, provider_status):
+    """Only a well-formed terminal failure is evidence of nonpayment."""
+    with session() as db:
+        order_id, provider_order_id, listing_id = _old_unpaid_order(db)
+        monkeypatch.setattr(
+            payment_expiration, "list_razorpay_order_payments",
+            lambda **_: [{
+                "id": f"pay_{uuid4().hex}", "order_id": provider_order_id,
+                "amount": 12000, "currency": "INR", "status": provider_status,
+            }],
+        )
+        result = payment_expiration.expire_unpaid_orders(db, limit=10)
+        assert result["deferred"] >= 1
+        order = db.get(Order, order_id)
+        assert order.status == OrderStatus.PLACED
+        assert order.stock_restored_at is None
+        assert db.get(StoreProduct, listing_id).stock_quantity == 9
+
+
+@pytest.mark.parametrize("provider_status", ["failed", None])
+def test_expiry_requires_well_formed_failed_provider_payment(monkeypatch, provider_status):
+    with session() as db:
+        order_id, provider_order_id, listing_id = _old_unpaid_order(db)
+        monkeypatch.setattr(
+            payment_expiration, "list_razorpay_order_payments",
+            lambda **_: [{
+                "id": f"pay_{uuid4().hex}",
+                "order_id": provider_order_id if provider_status == "failed" else "wrong_order",
+                "amount": 12000, "currency": "INR", "status": "failed",
+            }],
+        )
+        result = payment_expiration.expire_unpaid_orders(db, limit=10)
+        order = db.get(Order, order_id)
+        if provider_status == "failed":
+            assert result["expired"] >= 1
+            assert order.status == OrderStatus.CANCELLED
+            assert db.get(StoreProduct, listing_id).stock_quantity == 10
+        else:
+            assert result["deferred"] >= 1
+            assert order.status == OrderStatus.PLACED
+            assert db.get(StoreProduct, listing_id).stock_quantity == 9
+
+
+@pytest.mark.parametrize("local_status,local_payment_id", [
+    ("paid", None),
+    ("attempted", "pay_locally_recorded"),
+])
+def test_expiry_defers_local_capture_evidence_even_with_empty_provider_history(
+    monkeypatch, local_status, local_payment_id,
+):
+    with session() as db:
+        order_id, _provider_order_id, listing_id = _old_unpaid_order(db)
+        attempt = db.query(PaymentAttempt).filter(PaymentAttempt.order_id == order_id).one()
+        attempt.status = local_status
+        attempt.provider_payment_id = local_payment_id
+        db.commit()
+        monkeypatch.setattr(payment_expiration, "list_razorpay_order_payments", lambda **_: [])
+        result = payment_expiration.expire_unpaid_orders(db, limit=10)
+        assert result["deferred"] >= 1
+        assert db.get(Order, order_id).status == OrderStatus.PLACED
+        assert db.get(StoreProduct, listing_id).stock_quantity == 9
+
+
+def test_expiry_defers_unknown_payment_provider_attempt(monkeypatch):
+    with session() as db:
+        order_id, _provider_order_id, listing_id = _old_unpaid_order(db)
+        db.add(PaymentAttempt(
+            order_id=order_id, provider="unknown_provider",
+            status="attempted", amount=Decimal("120.00"), currency="INR",
+        ))
+        db.commit()
+        monkeypatch.setattr(payment_expiration, "list_razorpay_order_payments", lambda **_: [])
+        result = payment_expiration.expire_unpaid_orders(db, limit=10)
+        assert result["deferred"] >= 1
+        assert db.get(Order, order_id).status == OrderStatus.PLACED
         assert db.get(StoreProduct, listing_id).stock_quantity == 9
