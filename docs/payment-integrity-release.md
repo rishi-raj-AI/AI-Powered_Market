@@ -223,6 +223,10 @@ issue refunds, or build APKs until the release owner approves.
       missing paise values even when Python numeric equality would match.
       Neither callback verification nor expiration reconciliation may mark
       the order paid or release merchant fulfilment on malformed evidence.
+- [ ] Signed capture webhooks with mismatched authoritative provider
+      evidence remain unprocessed in the durable ledger and retry on the
+      bounded backoff schedule; a later corrected provider read can settle
+      exactly once. Never permanently acknowledge a mismatched capture.
 - [ ] Expiration must defer any locally authorized, processing, refunded or
       unknown payment-attempt status even if provider history is empty; do
       not restore stock until all local and provider evidence is unambiguous.
