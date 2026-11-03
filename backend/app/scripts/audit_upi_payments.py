@@ -58,6 +58,7 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
             # conceal another charge even when one provider capture matches.
             seen_order_ids: set[str] = set()
             seen_payment_ids: set[str] = set()
+            seen_provider_history_ids: set[str] = set()
             for attempt in attempts:
                 # Audit all attempts, not just Razorpay rows. A different
                 # provider could have collected money for the same order.
@@ -116,6 +117,13 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
                         mismatch = True
                     else:
                         seen_history_ids.add(history_id)
+                        # A provider payment ID must not appear under two
+                        # distinct Razorpay orders, even as a failed row.
+                        # Otherwise a valid capture in one history can hide
+                        # contradictory evidence in another history.
+                        if history_id in seen_provider_history_ids:
+                            mismatch = True
+                        seen_provider_history_ids.add(history_id)
                     provider_status = payment.get("status")
                     if provider_status == "failed":
                         # Only a well-formed failed payment for this exact
