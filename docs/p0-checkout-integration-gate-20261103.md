@@ -24,3 +24,23 @@
 Require a reviewed combined SHA, green exact-head CI, migration-head compatibility review, staging payment and location sign-off, and an explicit separate deployment authorization. Prepare the existing deployment rollback to the last approved application SHA; do not roll back live financial data, silently widen coverage or downgrade additive geography migrations without compatibility analysis. Keep any new territory model draft/non-authoritative until separately approved.
 
 **Unverified:** production checkout rejection root cause, staging financial lifecycle, physical Android location behavior, older-client fallback, and production release acceptance.
+
+## Bidirectional source inventory (2026-11-03 follow-up)
+
+Compared payment `e823d6e` against geography `8002f5c` in **both directions**. GitHub compare describes ancestry relative to a merge base; per-file additions/deletions are not proof of behavior missing from either head. The following paths require **function-level** reconciliation, not wholesale cherry-picking:
+
+| Path | Integration action | Verification |
+| --- | --- | --- |
+| `backend/app/api/v1/routes/payment_hardening.py` | Compare signed event parsing, capture/refund state transitions, malformed payload handling | Invalid signature, contradictory refund, duplicate/replayed webhook, captured-only fulfilment |
+| `backend/app/api/v1/routes/payments.py` | Compare payment-intent preflight, history reconciliation, provider order binding | Missing/duplicate/cross-order history, both UUID orderings, ambiguous retries |
+| `backend/app/services/payment_expiration.py` | Compare expiry and stock release sequencing | Pending/failed/expired versus captured, idempotent release |
+| `backend/app/services/payments.py` | Compare provider capture/amount/currency binding | Wrong order, amount, currency, partial evidence, provider timeout |
+| `backend/app/api/v1/routes/checkout.py` | Preserve geography-head evaluator; **exclude temporary delivery-zone bypass** | Quote/order parity, no out-of-zone order or stock mutation |
+| `backend/app/services/delivery_serviceability.py` | Retain authoritative geography-head service | Inside/outside/boundary, inactive/missing territory, provenance |
+| `backend/alembic/versions/0027_address_location_provenance.py`, `0028_delivery_territory_foundation.py`, `0028_payment_geography_merge.py`, `0029_payment_geo_territory_merge.py` | Validate heads/dependencies against final combined ancestry; never replay migrations blindly | Alembic heads/history, clean upgrade on disposable PostGIS database |
+
+**Evidence from comparison:** Payment-to-geography shows payment route/service and regression changes; geography-to-payment additionally shows the scoped read-only diagnostic, centralized delivery evaluator, address provenance and territory migrations. Some payment tests occur in **both** comparisons because their common ancestor predates the implementations; do not classify these as missing merely because a file appears in a diff.
+
+**Safe execution order:** (1) freeze current head SHAs again before editing; (2) inspect functions and tests side-by-side; (3) identify a genuinely missing payment behavior; (4) port only that behavior to a fresh branch based on the green geography head; (5) run focused PostgreSQL/PostGIS and payment regressions, then all four exact-head CI workflows; (6) complete staging and device acceptance. If both heads have moved, repeat the comparison rather than relying on this snapshot.
+
+No code integration, CI execution, staging test or production diagnostic is claimed by this inventory.
