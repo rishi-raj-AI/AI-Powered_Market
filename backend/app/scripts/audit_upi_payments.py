@@ -64,7 +64,7 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
                 if attempt.provider != "razorpay":
                     mismatch = True
                     continue
-                if attempt.provider_order_id:
+                if isinstance(attempt.provider_order_id, str) and attempt.provider_order_id.strip():
                     if attempt.provider_order_id in seen_order_ids:
                         mismatch = True
                     seen_order_ids.add(attempt.provider_order_id)
@@ -84,7 +84,7 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
                     # A second locally paid attempt with no provider payment
                     # identifier cannot be cleared by another valid capture.
                     mismatch = True
-                if not attempt.provider_order_id:
+                if not isinstance(attempt.provider_order_id, str) or not attempt.provider_order_id.strip():
                     mismatch = True
                     continue
                 try:

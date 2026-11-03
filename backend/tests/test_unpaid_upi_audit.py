@@ -324,3 +324,29 @@ def test_unpaid_audit_rejects_whitespace_provider_order_identity(monkeypatch):
         )
         assert finding["result"] == "payment_history_mismatch"
         assert report["no_capture_found"] == 0
+
+
+@pytest.mark.parametrize("bad_provider_order_id", [None, "", "   "])
+def test_paid_audit_rejects_missing_or_blank_provider_order_identity(
+    monkeypatch, bad_provider_order_id,
+):
+    with session() as db:
+        order = make_order(db)
+        attempt = db.scalar(
+            select(PaymentAttempt).where(PaymentAttempt.order_id == order.id)
+        )
+        attempt.provider_order_id = bad_provider_order_id
+        db.commit()
+        number = order.order_number
+        monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
+
+        def unexpected_provider_read(**_):
+            pytest.fail("Invalid provider order identity must not be queried")
+
+        monkeypatch.setattr(
+            audit_upi_payments, "list_razorpay_order_payments", unexpected_provider_read
+        )
+        report = audit_upi_payments.audit_paid_upi()
+        finding = next(f for f in report["findings"] if f["order_number"] == number)
+        assert finding["result"] == "capture_mismatch"
+        assert report["verified"] == 0
