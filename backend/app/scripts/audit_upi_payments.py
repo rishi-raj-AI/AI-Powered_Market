@@ -24,6 +24,15 @@ from app.services.payments import (
 )
 
 
+
+def _result_counts(findings: list[dict]) -> dict[str, int]:
+    """Stable, non-identifying counts for staging reconciliation triage."""
+    counts: dict[str, int] = {}
+    for finding in findings:
+        result = finding["result"]
+        counts[result] = counts.get(result, 0) + 1
+    return dict(sorted(counts.items()))
+
 def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
     if not 1 <= limit <= 1000 or not 1 <= days <= 365:
         raise ValueError("limit must be 1–1000 and days must be 1–365")
@@ -185,6 +194,7 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
         "truncated": truncated,
         "verified": sum(f["result"] == "verified_capture" for f in findings),
         "requires_review": sum(f["result"] != "verified_capture" for f in findings),
+        "result_counts": _result_counts(findings),
         "findings": findings,
     }
 
@@ -333,6 +343,7 @@ def audit_unpaid_upi(*, limit: int = 100, days: int = 30) -> dict:
         "truncated": truncated,
         "no_capture_found": sum(f["result"] == "no_capture_found" for f in findings),
         "requires_review": sum(f["result"] != "no_capture_found" for f in findings),
+        "result_counts": _result_counts(findings),
         "findings": findings,
     }
 
