@@ -349,3 +349,13 @@ ID, not reopen fulfilment or emit a merchant new-order notification; a capture
 before cancellation must also leave the obligation. These tests mock provider
 reads and settlement side effects; they do not prove real Razorpay sandbox
 behaviour. Run them only against the isolated PostgreSQL test database.
+
+
+### Nonempty staging reconciliation acceptance
+
+For a staging dataset seeded with known eligible paid and unpaid UPI orders, run both read-only audits with `--fail-on-review --require-scanned`. `--fail-on-review` exits 2 on findings requiring review; `--require-scanned` exits 3 if the selected cohort is empty. An empty report must not be interpreted as successful payment verification. These options do not mutate payment or inventory records. If the staging cohort is intentionally empty, omit `--require-scanned` and record that coverage was not exercised; do not approve release on that basis.
+
+```bash
+python -m app.scripts.audit_upi_payments --limit 100 --days 30 --fail-on-review --require-scanned
+python -m app.scripts.audit_upi_payments --unpaid --limit 100 --days 30 --fail-on-review --require-scanned
+```
