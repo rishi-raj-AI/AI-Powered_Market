@@ -207,6 +207,8 @@ def audit_unpaid_upi(*, limit: int = 100, days: int = 30) -> dict:
             unsettled = False
             local_capture = False
             seen_local_order_ids: set[str] = set()
+            seen_local_payment_ids: set[str] = set()
+            seen_provider_payment_ids: set[str] = set()
             for attempt in attempts:
                 if attempt.status == "paid" or attempt.provider_payment_id is not None:
                     local_capture = True
@@ -217,6 +219,13 @@ def audit_unpaid_upi(*, limit: int = 100, days: int = 30) -> dict:
                         inconsistent = True
                 elif attempt.status not in {"created", "attempted", "failed"}:
                     unsettled = True
+                # A payment identity cannot belong to two local attempts,
+                # even when both histories otherwise appear to have failed.
+                local_payment_id = attempt.provider_payment_id
+                if isinstance(local_payment_id, str) and local_payment_id.strip():
+                    if local_payment_id in seen_local_payment_ids:
+                        inconsistent = True
+                    seen_local_payment_ids.add(local_payment_id)
                 if (
                     attempt.provider != "razorpay"
                     or attempt.currency != "INR"
@@ -258,6 +267,11 @@ def audit_unpaid_upi(*, limit: int = 100, days: int = 30) -> dict:
                         inconsistent = True
                     else:
                         seen_payment_ids.add(payment_id)
+                        # Check across provider orders as well as within each
+                        # page. A reused payment ID invalidates the audit.
+                        if payment_id in seen_provider_payment_ids:
+                            inconsistent = True
+                        seen_provider_payment_ids.add(payment_id)
                     if (
                         type(payment.get("amount")) is not int
                         or payment["amount"] != amount_to_subunits(order.total)
