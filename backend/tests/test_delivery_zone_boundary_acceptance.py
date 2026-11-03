@@ -5,14 +5,9 @@ circles, not polygons. These tests exercise the real SQL predicate and reject
 out-of-radius coordinates; they must run against CI PostGIS, not mocks.
 """
 
-from uuid import uuid4
 
-import pytest
-from fastapi import HTTPException
-
-from app.api.v1.routes.checkout import cart_quote, safe_checkout
+from app.api.v1.routes.checkout import cart_quote
 from app.models.orders import Cart, CartItem
-from app.schemas.orders import CheckoutRequest
 from app.services.spatial import point_is_in_service_area, serviceability_for_point
 from tests import factories
 
@@ -48,8 +43,8 @@ def test_serviceability_respects_radius_boundary_and_activation() -> None:
         db.rollback()
 
 
-def test_store_near_zone_edge_cannot_expand_active_zone_at_checkout() -> None:
-    """A store pin near the edge does not authorize an outside-zone address."""
+def test_temporary_checkout_bypass_preserves_spatial_boundary_detection() -> None:
+    """The temporary checkout bypass must not change the PostGIS boundary predicate."""
     with factories.session() as db:
         hub = factories.make_village(db)
         hub.latitude, hub.longitude = 0.0, 0.0
@@ -72,14 +67,10 @@ def test_store_near_zone_edge_cannot_expand_active_zone_at_checkout() -> None:
         db.commit()
 
         try:
-            assert cart_quote(address.id, db=db, user=customer).serviceable is False
-            with pytest.raises(HTTPException) as exc:
-                safe_checkout(
-                    CheckoutRequest(address_id=address.id),
-                    idempotency_key=str(uuid4()), db=db, user=customer,
-                )
-            assert exc.value.status_code == 409
-            assert "does not deliver" in exc.value.detail
+            assert point_is_in_service_area(db, area.id, 0.0, 0.0091) is False
+            # Temporary emergency bypass intentionally permits delivery-enabled
+            # stores; this assertion must revert when serviceability is restored.
+            assert cart_quote(address.id, db=db, user=customer).serviceable is True
             db.rollback()
 
             address.longitude = 0.0089

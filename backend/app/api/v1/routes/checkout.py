@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_db
 from app.models.commerce import Merchant, MerchantStatus, Store, StoreProduct
 from app.models.geography import Address, Village
-from app.models.orders import Cart, CartItem, Delivery, Order, OrderItem
+from app.models.orders import Cart, CartItem, Delivery, Order, OrderItem, PaymentMethod
 from app.models.user import User
 from app.schemas.orders import CheckoutQuoteRead, CheckoutRequest, OrderRead
 from app.services.notifications import enqueue_notification
@@ -290,8 +290,20 @@ def safe_checkout(
     db.execute(delete(CartItem).where(CartItem.cart_id == cart.id))
     cart.store_id = None
 
-    _notify_customer(db, order)
-    _notify_merchant(db, order, store)
+    if order.payment_method == PaymentMethod.COD:
+        _notify_customer(db, order)
+        _notify_merchant(db, order, store)
+    else:
+        # An online order is only a payment reservation at this point.
+        # Do not alert the merchant to prepare goods before verified capture.
+        enqueue_notification(
+            db,
+            user_id=order.user_id,
+            event_type="order.payment_pending",
+            title="Payment pending",
+            body=f"Complete payment for order {order.order_number} to confirm it.",
+            data={"order_id": str(order.id), "order_number": order.order_number},
+        )
 
     db.commit()
     db.refresh(order)

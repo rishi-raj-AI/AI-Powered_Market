@@ -138,10 +138,10 @@ def update_order_status_safely(
             status_code=409,
             detail=f"Invalid transition from {order.status.value} to {payload.status.value}",
         )
-    if payload.status == OrderStatus.READY and not payment_allows_fulfillment(order):
+    if payload.status in {OrderStatus.ACCEPTED, OrderStatus.PREPARING, OrderStatus.READY} and not payment_allows_fulfillment(order):
         raise HTTPException(
             status_code=409,
-            detail="Online payment must be confirmed before an order can be ready for delivery",
+            detail="Online payment must be confirmed before merchant fulfilment begins",
         )
 
     store_refund = None

@@ -10,18 +10,29 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import ensure_capability, get_current_user, get_db, require_roles
 from app.core.capabilities import Capability
-from app.models.commerce import Merchant
+from app.models.commerce import Merchant, Store
 from app.models.integrations import PaymentAttempt, PaymentRefund, PaymentWebhookEvent, SettlementEntry
 from app.models.orders import Order, OrderStatus, PaymentStatus
 from app.models.user import User, UserRole
 from app.schemas.integrations import PaymentVerifyRequest, PaymentVerifyResponse
-from app.services.payments import PaymentProviderUnavailable, verify_razorpay_signature, verify_razorpay_webhook_signature
+from app.services.payments import (
+    PaymentProviderError,
+    PaymentProviderUnavailable,
+    amount_to_subunits,
+    fetch_razorpay_payment,
+    list_razorpay_order_payments,
+    verify_razorpay_signature,
+    verify_razorpay_webhook_signature,
+)
 from app.services.refunds import (
     REFUND_REASON_ORPHANED_CAPTURE,
+    REFUND_REASON_RETURNED,
     apply_provider_refund_result,
     ensure_refund_request,
+    get_refund_for_order,
 )
 from app.services.settlements import ensure_settlement_entry
+from app.services.notifications import enqueue_notification
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
 
@@ -67,8 +78,78 @@ def _lock_payment_context(
     return attempt, order, True
 
 
+
+def _confirmed_capture(attempt: PaymentAttempt, provider_payment_id: str) -> bool:
+    """Signature proves callback authenticity; only provider capture proves payment."""
+    try:
+        entity = fetch_razorpay_payment(provider_payment_id=provider_payment_id)
+    except PaymentProviderUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Payment verification is unavailable") from exc
+    except PaymentProviderError as exc:
+        raise HTTPException(status_code=502, detail="Unable to verify payment with provider") from exc
+    if (
+        entity.get("id") != provider_payment_id
+        or entity.get("order_id") != attempt.provider_order_id
+        or entity.get("currency") != attempt.currency
+        # Razorpay represents subunits as an integer. Python would otherwise
+        # accept a float such as 12000.0 as equal to 12000, or True as 1.
+        # Malformed provider money fields must never release fulfilment.
+        or type(entity.get("amount")) is not int
+        or entity["amount"] != amount_to_subunits(attempt.amount)
+    ):
+        raise HTTPException(status_code=409, detail="Provider payment does not match this order")
+    return entity.get("status") == "captured"
+
+
+
+def _notify_payment_captured(db: Session, order: Order) -> None:
+    """Only first verified capture releases a pending UPI order to its merchant."""
+    data = {"order_id": str(order.id), "order_number": order.order_number}
+    enqueue_notification(
+        db, user_id=order.user_id, event_type="order.payment_confirmed",
+        title="Payment confirmed",
+        body=f"Payment for order {order.order_number} was confirmed.",
+        data=data,
+    )
+    store = db.get(Store, order.store_id)
+    merchant = db.get(Merchant, store.merchant_id) if store else None
+    if merchant is not None:
+        enqueue_notification(
+            db, user_id=merchant.owner_user_id,
+            event_type="merchant.order_received", title="New paid order",
+            body=f"Paid order {order.order_number} is waiting for confirmation.",
+            data=data,
+        )
+
+
 def _apply_paid(db: Session, attempt: PaymentAttempt, order: Order, provider_payment_id: str | None) -> None:
+    # A capture for an incorrectly priced attempt must never release an order
+    # or create a settlement. Every entry point (callback, webhook, expiry)
+    # converges here, so enforce the commercial amount invariant centrally.
+    if attempt.provider != "razorpay" or attempt.currency != "INR" or attempt.amount != order.total:
+        raise HTTPException(status_code=409, detail="Payment attempt does not match order total")
     if provider_payment_id:
+        # A second capture is a separate financial obligation. Never silently
+        # replace an already captured payment ID or settle it as the same sale.
+        # Keep the webhook unprocessed for explicit financial reconciliation.
+        if attempt.provider_payment_id and attempt.provider_payment_id != provider_payment_id:
+            raise HTTPException(status_code=409, detail="Multiple captures require reconciliation")
+        # Either local PAID status or a recorded provider payment ID is
+        # evidence of another money movement. Legacy rows may have only one
+        # of those fields populated; requiring both could settle a second
+        # capture as if it were the original sale.
+        another_capture = db.scalar(
+            select(PaymentAttempt.id).where(
+                PaymentAttempt.order_id == order.id,
+                PaymentAttempt.id != attempt.id,
+                (
+                    (PaymentAttempt.status == "paid")
+                    | PaymentAttempt.provider_payment_id.is_not(None)
+                ),
+            ).limit(1)
+        )
+        if another_capture is not None:
+            raise HTTPException(status_code=409, detail="Multiple captures require reconciliation")
         duplicate = db.scalar(
             select(PaymentAttempt).where(
                 PaymentAttempt.provider_payment_id == provider_payment_id,
@@ -79,39 +160,66 @@ def _apply_paid(db: Session, attempt: PaymentAttempt, order: Order, provider_pay
             raise HTTPException(status_code=409, detail="Payment ID has already been used")
         attempt.provider_payment_id = provider_payment_id
 
+    # A previously recorded refund obligation may lack the payment ID if a
+    # cancellation raced provider capture. Attach the verified ID so the
+    # refund dispatcher can actually return the customer's money.
+    if order.payment_status == PaymentStatus.REFUND_PENDING:
+        refund = get_refund_for_order(db, order.id)
+        if refund is not None and refund.provider_payment_id is None and provider_payment_id:
+            refund.provider_payment_id = provider_payment_id
+            refund.payment_attempt_id = attempt.id
+
     # Provider capture is a financial fact, but it must not reopen a cancelled
     # commercial order or recreate merchant settlement after cancellation/refund.
     attempt.status = "paid"
-    if order.status == OrderStatus.CANCELLED or order.payment_status in {
+    # SessionLocal uses autoflush=False. Persist the captured attempt within the
+    # current transaction before refund lookup, otherwise the refund obligation
+    # is created without its provider payment ID and cannot be dispatched.
+    db.flush()
+    if order.status in {OrderStatus.CANCELLED, OrderStatus.RETURNED} or order.payment_status in {
         PaymentStatus.REFUNDED,
         PaymentStatus.REFUND_PENDING,
     }:
         # Real money was captured for an order that will never be fulfilled.
         # Record the debt instead of absorbing it into an attempt/order status
         # mismatch that nothing would ever act on.
-        if order.status == OrderStatus.CANCELLED and order.payment_status not in {
+        if order.status in {OrderStatus.CANCELLED, OrderStatus.RETURNED} and order.payment_status not in {
             PaymentStatus.REFUNDED,
             PaymentStatus.REFUND_PENDING,
         }:
             order.payment_status = PaymentStatus.PAID
-            ensure_refund_request(db, order, reason=REFUND_REASON_ORPHANED_CAPTURE)
+            ensure_refund_request(
+                db, order,
+                reason=(REFUND_REASON_RETURNED if order.status == OrderStatus.RETURNED
+                        else REFUND_REASON_ORPHANED_CAPTURE),
+            )
         return
 
+    first_capture = order.payment_status != PaymentStatus.PAID
     order.payment_status = PaymentStatus.PAID
-    ensure_settlement_entry(db, order)
+    if first_capture:
+        ensure_settlement_entry(db, order)
 
 
-def _apply_failed(attempt: PaymentAttempt, order: Order) -> None:
-    # A late/invalid provider event must never overwrite terminal cancellation or
-    # refund state. Active unpaid orders may still transition to payment failed.
-    if order.status == OrderStatus.CANCELLED or order.payment_status in {
+def _apply_failed(
+    attempt: PaymentAttempt, order: Order, *, other_capture: bool = False,
+) -> None:
+    # A late failure must not erase either order-level or attempt-level capture
+    # evidence, even if an older inconsistent order still says PENDING.
+    if attempt.status == "paid" or attempt.provider_payment_id:
+        return
+    if order.status in {OrderStatus.CANCELLED, OrderStatus.RETURNED} or order.payment_status in {
         PaymentStatus.PAID,
         PaymentStatus.REFUNDED,
         PaymentStatus.REFUND_PENDING,
     }:
         return
     attempt.status = "failed"
-    order.payment_status = PaymentStatus.FAILED
+    # A separate attempt may already contain money-movement evidence even
+    # when a legacy order still says PENDING. A valid failure for this attempt
+    # must not label the entire commercial order as unpaid/failed.
+    if not other_capture:
+        order.payment_status = PaymentStatus.FAILED
 
 
 @router.post("/verify", response_model=PaymentVerifyResponse)
@@ -131,15 +239,6 @@ def hardened_verify_payment(
         raise HTTPException(status_code=404, detail="Order not found")
     if not attempt.provider_order_id:
         raise HTTPException(status_code=409, detail="Payment attempt has no provider order")
-    if attempt.status == "paid" and attempt.provider_payment_id == payload.razorpay_payment_id:
-        if order.status != OrderStatus.CANCELLED and order.payment_status not in {
-            PaymentStatus.REFUNDED,
-            PaymentStatus.REFUND_PENDING,
-        }:
-            ensure_settlement_entry(db, order)
-        db.commit()
-        return PaymentVerifyResponse(order_id=order.id, payment_status=order.payment_status.value, provider_payment_id=payload.razorpay_payment_id)
-
     try:
         valid = verify_razorpay_signature(
             provider_order_id=attempt.provider_order_id,
@@ -149,11 +248,18 @@ def hardened_verify_payment(
     except PaymentProviderUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     if not valid:
-        _apply_failed(attempt, order)
-        db.commit()
+        # Never let an unauthenticated callback alter financial state.
         raise HTTPException(status_code=400, detail="Invalid payment signature")
 
+    if not _confirmed_capture(attempt, payload.razorpay_payment_id):
+        # Authorized or still processing is not a captured payment. Do not
+        # mark it failed: a later webhook may confirm a legitimate capture.
+        raise HTTPException(status_code=409, detail="Payment is not captured yet")
+
+    previously_paid = order.payment_status == PaymentStatus.PAID
     _apply_paid(db, attempt, order, payload.razorpay_payment_id)
+    if not previously_paid and order.payment_status == PaymentStatus.PAID and order.status == OrderStatus.PLACED:
+        _notify_payment_captured(db, order)
     db.commit()
     return PaymentVerifyResponse(order_id=order.id, payment_status=order.payment_status.value, provider_payment_id=payload.razorpay_payment_id)
 
@@ -161,47 +267,177 @@ def hardened_verify_payment(
 def _process_refund_event(db: Session, payload: dict) -> bool:
     """Reconcile an asynchronous refund outcome reported by the provider."""
     refund_entity = (((payload.get("payload") or {}).get("refund") or {}).get("entity") or {})
+    provider_status = refund_entity.get("status")
+    # A signed event can still contain stale or contradictory provider fields.
+    # Do not permanently acknowledge a "processed" event whose entity says
+    # failed/pending, or a "failed" event claiming a completed refund. An
+    # unknown status also cannot certify a money movement: preserve the
+    # durable event for replay or manual reconciliation.
+    if (
+        provider_status not in {"created", "pending", "processed", "failed"}
+        or (payload.get("event") == "refund.processed" and provider_status != "processed")
+        or (payload.get("event") == "refund.failed" and provider_status != "failed")
+    ):
+        return False
     provider_refund_id = str(refund_entity.get("id") or "") or None
     refund_payment_id = str(refund_entity.get("payment_id") or "") or None
     if not provider_refund_id and not refund_payment_id:
         return False
 
-    refund = None
+    # Resolve the candidate without locking its row. Cancellation holds the
+    # order lock before it creates/locks a refund obligation. Locking the refund
+    # first here and then locking the order in _mark_succeeded can deadlock with
+    # cancellation (or payment verification). Preserve order -> refund ordering.
+    refund_id = None
+    matched_by_payment_only = False
     if provider_refund_id:
-        refund = db.scalar(
-            select(PaymentRefund).where(PaymentRefund.provider_refund_id == provider_refund_id).with_for_update()
+        refund_id = db.scalar(
+            select(PaymentRefund.id).where(PaymentRefund.provider_refund_id == provider_refund_id)
         )
-    if refund is None and refund_payment_id:
-        refund = db.scalar(
-            select(PaymentRefund)
+    if refund_id is None and refund_payment_id:
+        # Never guess between multiple obligations for the same payment.
+        candidates = db.execute(
+            select(PaymentRefund.id, PaymentRefund.provider_refund_id)
             .where(PaymentRefund.provider_payment_id == refund_payment_id)
-            .order_by(PaymentRefund.requested_at.desc())
-            .with_for_update()
-        )
+        ).all()
+        if len(candidates) == 1 and candidates[0].provider_refund_id is None:
+            refund_id = candidates[0].id
+            matched_by_payment_only = True
+    if refund_id is None:
+        return False
+    order_id = db.scalar(select(PaymentRefund.order_id).where(PaymentRefund.id == refund_id))
+    if order_id is None:
+        return False
+    order = db.scalar(select(Order).where(Order.id == order_id).with_for_update())
+    if order is None:
+        return False
+    if matched_by_payment_only:
+        # Recheck after taking the commercial lock: another refund obligation
+        # may have appeared while this webhook was waiting for the order.
+        current_candidates = db.scalars(
+            select(PaymentRefund.id).where(PaymentRefund.provider_payment_id == refund_payment_id)
+        ).all()
+        if len(current_candidates) != 1 or current_candidates[0] != refund_id:
+            return False
+    refund = db.scalar(
+        select(PaymentRefund).where(PaymentRefund.id == refund_id).with_for_update()
+    )
     if refund is None:
         return False
+    # A signed provider event is not proof that it belongs to this refund.
+    # Never apply a refund outcome for another payment, refund ID, or amount.
+    # Amount is in paise in Razorpay's refund entity.
+    if (
+        not provider_refund_id
+        or not refund_payment_id
+        or not refund.provider_payment_id
+        or refund_payment_id != refund.provider_payment_id
+        or (refund.provider_refund_id is not None and provider_refund_id != refund.provider_refund_id)
+        or refund_entity.get("currency") != refund.currency
+        or type(refund_entity.get("amount")) is not int
+        or refund_entity["amount"] != amount_to_subunits(refund.amount)
+    ):
+        return False
+    # Do not allow a late failed/pending event to reverse a completed refund.
+    if refund.status == "succeeded" and refund_entity.get("status") != "processed":
+        return True
     apply_provider_refund_result(db, refund, refund_entity)
     return True
 
 
-def _process_event(db: Session, payload: dict) -> None:
+def _process_event(db: Session, payload: dict) -> bool:
     event = str(payload.get("event") or "")
     if event.startswith("refund."):
-        _process_refund_event(db, payload)
-        return
+        return _process_refund_event(db, payload)
     payment_entity = (((payload.get("payload") or {}).get("payment") or {}).get("entity") or {})
     order_entity = (((payload.get("payload") or {}).get("order") or {}).get("entity") or {})
     provider_payment_id = str(payment_entity.get("id") or "") or None
     provider_order_id = str(payment_entity.get("order_id") or order_entity.get("id") or "") or None
     if not provider_order_id:
-        return
+        return event not in {"order.paid", "payment.captured", "payment.failed"}
     attempt, order, _ = _lock_payment_context(db, provider_order_id=provider_order_id)
     if attempt is None or order is None:
-        return
+        return False
     if event in {"order.paid", "payment.captured"}:
+        if event == "order.paid" and not provider_payment_id:
+            # Razorpay order.paid webhooks may carry only an order entity.
+            # Reconcile from the provider rather than leaving every such
+            # signed event unprocessed indefinitely. Ambiguous payments
+            # require review: never guess which capture belongs to the sale.
+            try:
+                payments = list_razorpay_order_payments(
+                    provider_order_id=attempt.provider_order_id,
+                )
+            except PaymentProviderUnavailable as exc:
+                raise HTTPException(status_code=503, detail="Payment verification is unavailable") from exc
+            except PaymentProviderError as exc:
+                raise HTTPException(status_code=502, detail="Unable to verify payment with provider") from exc
+            # Every provider-history row must belong to this exact intent.
+            # A malformed "failed" retry is not proof of nonpayment; ignoring
+            # it could release fulfilment while another money movement is
+            # misattributed. Keep the signed event pending for reconciliation.
+            if any(
+                not isinstance(payment, dict)
+                or payment.get("status") not in {"captured", "failed"}
+                or not isinstance(payment.get("id"), str)
+                or not payment["id"]
+                or payment.get("order_id") != attempt.provider_order_id
+                or type(payment.get("amount")) is not int
+                or payment["amount"] != amount_to_subunits(attempt.amount)
+                or payment.get("currency") != attempt.currency
+                for payment in payments
+            ):
+                return False
+            captures = [payment for payment in payments if payment["status"] == "captured"]
+            if len(captures) != 1:
+                return False
+            provider_payment_id = captures[0]["id"]
+        if not provider_payment_id:
+            return False
+        try:
+            captured = _confirmed_capture(attempt, provider_payment_id)
+        except HTTPException as exc:
+            if exc.status_code == 409:
+                # A mismatched provider read is not proof that the signed
+                # capture was harmless. Keep its durable ledger entry pending
+                # for provider reconciliation/replay instead of permanently
+                # marking an unresolved money movement processed.
+                return False
+            raise
+        if not captured:
+            # Authorized/processing is not terminal; keep the event for replay.
+            return False
+        previously_paid = order.payment_status == PaymentStatus.PAID
         _apply_paid(db, attempt, order, provider_payment_id)
+        if not previously_paid and order.payment_status == PaymentStatus.PAID and order.status == OrderStatus.PLACED:
+            _notify_payment_captured(db, order)
     elif event == "payment.failed":
-        _apply_failed(attempt, order)
+        # Signed events are authentic but may refer to a different payment or
+        # contain incomplete fields. Do not let an order-only or mismatched
+        # failure overwrite the current payment attempt's state. Keep the
+        # durable event pending for reconciliation instead.
+        if (
+            not isinstance(payment_entity, dict)
+            or not provider_payment_id
+            or payment_entity.get("order_id") != attempt.provider_order_id
+            or payment_entity.get("status") != "failed"
+            or type(payment_entity.get("amount")) is not int
+            or payment_entity["amount"] != amount_to_subunits(attempt.amount)
+            or payment_entity.get("currency") != attempt.currency
+        ):
+            return False
+        other_capture = db.scalar(
+            select(PaymentAttempt.id).where(
+                PaymentAttempt.order_id == order.id,
+                PaymentAttempt.id != attempt.id,
+                (
+                    (PaymentAttempt.status == "paid")
+                    | PaymentAttempt.provider_payment_id.is_not(None)
+                ),
+            ).limit(1)
+        )
+        _apply_failed(attempt, order, other_capture=other_capture is not None)
+    return True
 
 
 @router.post("/webhook", status_code=status.HTTP_200_OK)
@@ -224,31 +460,79 @@ async def hardened_razorpay_webhook(request: Request, db: Session = Depends(get_
         raise HTTPException(status_code=400, detail="Invalid Razorpay webhook payload")
 
     event_key = request.headers.get("x-razorpay-event-id") or hashlib.sha256(raw_body).hexdigest()
+    if len(event_key) > 160:
+        raise HTTPException(status_code=400, detail="Invalid Razorpay event ID")
     existing = db.scalar(
         select(PaymentWebhookEvent).where(
             PaymentWebhookEvent.provider == "razorpay",
             PaymentWebhookEvent.event_key == event_key,
         )
     )
-    if existing is not None:
-        return {"ok": True}
+    if existing is not None and existing.payload != payload:
+        # A provider event ID is an idempotency key, not proof that two
+        # differently signed payloads are interchangeable. Never acknowledge
+        # and silently discard a conflicting financial event.
+        raise HTTPException(status_code=409, detail="Conflicting Razorpay event ID")
+    if existing is None:
+        event = PaymentWebhookEvent(
+            provider="razorpay",
+            event_key=event_key,
+            event_type=str(payload.get("event") or "unknown"),
+            payload=payload,
+        )
+        db.add(event)
+        try:
+            db.flush()
+        except IntegrityError:
+            # A concurrent webhook request inserted this same event first.
+            # Do not discard it: the committed row may still need processing.
+            db.rollback()
+        else:
+            # Persist the signed event BEFORE any provider read or financial
+            # transition. A provider outage must never erase the replay record.
+            db.commit()
 
-    event = PaymentWebhookEvent(
-        provider="razorpay",
-        event_key=event_key,
-        event_type=str(payload.get("event") or "unknown"),
-        payload=payload,
+    # Both new and duplicate deliveries may retry an unprocessed event. Lock
+    # the event before taking order/attempt locks, matching the replay worker.
+    event = db.scalar(
+        select(PaymentWebhookEvent)
+        .where(
+            PaymentWebhookEvent.provider == "razorpay",
+            PaymentWebhookEvent.event_key == event_key,
+        )
+        .with_for_update(skip_locked=True)
     )
-    db.add(event)
-    try:
-        db.flush()
-    except IntegrityError:
+    if event is None:
+        # The row may be locked by a concurrent webhook/replay worker. A
+        # non-locking read still detects a conflicting signed payload rather
+        # than silently treating it as a duplicate.
+        stored_payload = db.scalar(
+            select(PaymentWebhookEvent.payload).where(
+                PaymentWebhookEvent.provider == "razorpay",
+                PaymentWebhookEvent.event_key == event_key,
+            )
+        )
+        db.rollback()
+        if stored_payload is not None and stored_payload != payload:
+            raise HTTPException(status_code=409, detail="Conflicting Razorpay event ID")
+        return {"ok": True}
+    if event.payload != payload:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Conflicting Razorpay event ID")
+    if event.processed_at is not None:
         db.rollback()
         return {"ok": True}
-
-    _process_event(db, payload)
-    event.processed_at = datetime.now(timezone.utc)
-    db.commit()
+    try:
+        if _process_event(db, event.payload):
+            event.processed_at = datetime.now(timezone.utc)
+            event.next_attempt_at = None
+        db.commit()
+    except Exception:
+        # The signed event was already committed in its own transaction.
+        # Roll back only the incomplete processing; Razorpay can retry and
+        # the opt-in replay worker can recover the same durable event.
+        db.rollback()
+        raise
     return {"ok": True}
 
 

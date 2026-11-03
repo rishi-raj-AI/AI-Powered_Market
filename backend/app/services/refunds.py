@@ -29,7 +29,9 @@ from app.models.integrations import PaymentAttempt, PaymentRefund
 from app.models.orders import Order, PaymentMethod, PaymentStatus
 from app.services.payments import (
     PaymentProviderError,
+    PaymentProviderIndeterminate,
     PaymentProviderUnavailable,
+    amount_to_subunits,
     create_razorpay_refund,
     razorpay_enabled,
 )
@@ -64,16 +66,37 @@ def get_refund_for_order(db: Session, order_id: uuid.UUID) -> PaymentRefund | No
     )
 
 
-def _latest_captured_attempt(db: Session, order_id: uuid.UUID) -> PaymentAttempt | None:
-    return db.scalar(
+def _unique_captured_attempt(db: Session, order: Order) -> PaymentAttempt | None:
+    """Bind an automatic refund only to one unambiguous commercial capture.
+
+    Legacy data can contain a provider payment ID on an attempt still marked
+    failed, or a paid attempt without an ID. Both are evidence that another
+    money movement may exist. Do not choose the newest paid row and risk
+    refunding the wrong transaction; retain the refund debt for review.
+    """
+    evidence = db.scalars(
         select(PaymentAttempt)
         .where(
-            PaymentAttempt.order_id == order_id,
-            PaymentAttempt.status == "paid",
-            PaymentAttempt.provider_payment_id.is_not(None),
+            PaymentAttempt.order_id == order.id,
+            (
+                (PaymentAttempt.status == "paid")
+                | PaymentAttempt.provider_payment_id.is_not(None)
+            ),
         )
-        .order_by(PaymentAttempt.updated_at.desc())
-    )
+        .limit(2)
+    ).all()
+    if len(evidence) != 1:
+        return None
+    attempt = evidence[0]
+    if (
+        attempt.status != "paid"
+        or not attempt.provider_payment_id
+        or attempt.provider != "razorpay"
+        or attempt.currency != "INR"
+        or attempt.amount != order.total
+    ):
+        return None
+    return attempt
 
 
 def ensure_refund_request(db: Session, order: Order, *, reason: str) -> PaymentRefund | None:
@@ -96,7 +119,7 @@ def ensure_refund_request(db: Session, order: Order, *, reason: str) -> PaymentR
     if existing is not None:
         return existing
 
-    attempt = _latest_captured_attempt(db, order.id)
+    attempt = _unique_captured_attempt(db, order)
     refund = PaymentRefund(
         order_id=order.id,
         payment_attempt_id=attempt.id if attempt else None,
@@ -156,6 +179,12 @@ def apply_provider_refund_result(db: Session, refund: PaymentRefund, payload: di
     """Fold a provider refund object (API response or webhook) into our state."""
     provider_refund_id = str(payload.get("id") or "") or None
     provider_status = str(payload.get("status") or "") or None
+    # A provider retry may deliver older pending/failed results after a
+    # processed refund. Financial success is terminal and cannot be undone.
+    if refund.status == REFUND_SUCCEEDED and provider_status != "processed":
+        return
+    if refund.provider_refund_id and provider_refund_id and provider_refund_id != refund.provider_refund_id:
+        raise PaymentProviderError("Provider refund ID does not match the recorded refund")
     if provider_refund_id and not refund.provider_refund_id:
         refund.provider_refund_id = provider_refund_id
     refund.provider_status = provider_status
@@ -168,6 +197,28 @@ def apply_provider_refund_result(db: Session, refund: PaymentRefund, payload: di
         # 'pending' and anything unrecognised: the provider accepted the refund
         # but has not settled it. Wait for the webhook rather than guessing.
         refund.status = REFUND_PROCESSING
+
+
+def _matches_dispatched_refund(refund: PaymentRefund, payload: object) -> bool:
+    """Require a provider response to identify the exact money movement.
+
+    A successful HTTP response alone is not proof that the requested refund
+    belongs to this payment, amount or currency. Unverifiable responses must
+    be reconciled manually rather than marking the customer refunded.
+    """
+    if not isinstance(payload, dict):
+        return False
+    refund_id = payload.get("id")
+    return (
+        isinstance(refund_id, str)
+        and bool(refund_id)
+        and (refund.provider_refund_id is None or refund.provider_refund_id == refund_id)
+        and payload.get("payment_id") == refund.provider_payment_id
+        and type(payload.get("amount")) is int
+        and payload["amount"] == amount_to_subunits(refund.amount)
+        and payload.get("currency") == refund.currency
+        and payload.get("status") in {"created", "pending", "processed", "failed"}
+    )
 
 
 def dispatch_refund(db: Session, refund_id: uuid.UUID) -> str:
@@ -213,22 +264,81 @@ def dispatch_refund(db: Session, refund_id: uuid.UUID) -> str:
             notes={"gaonone_order_id": order_id},
         )
     except (PaymentProviderError, PaymentProviderUnavailable) as exc:
+        # A signed refund webhook can complete while the outbound API request
+        # is still in flight. Preserve that success, and keep the same
+        # order -> refund lock ordering as cancellation and webhook handling.
+        refund_order_id = db.scalar(
+            select(PaymentRefund.order_id).where(PaymentRefund.id == refund_id)
+        )
+        if refund_order_id is None:
+            db.rollback()
+            return "missing"
+        order = db.scalar(select(Order).where(Order.id == refund_order_id).with_for_update())
+        if order is None:
+            db.rollback()
+            return "missing"
         locked = db.scalar(select(PaymentRefund).where(PaymentRefund.id == refund_id).with_for_update())
-        if locked is not None:
-            _mark_failed(db, locked, message=str(exc))
-            logger.warning(
-                "Refund dispatch failed refund_id=%s order_id=%s attempt=%s: %s",
-                refund_id,
-                order_id,
-                locked.attempt_count,
-                exc,
-            )
+        if locked is None:
+            db.rollback()
+            return "missing"
+        if locked.status == REFUND_SUCCEEDED:
+            db.commit()
+            return REFUND_SUCCEEDED
+        if locked.provider_refund_id:
+            # A signed pending webhook already identified a real provider
+            # refund. A later API rejection must not requeue that movement.
+            locked.status = REFUND_PROCESSING
+            db.commit()
+            return REFUND_PROCESSING
+        if isinstance(exc, PaymentProviderIndeterminate):
+            # A timeout, server error, or unreadable response may follow a
+            # successful money movement. Never automatically submit again.
+            locked.status = REFUND_PROCESSING
+            locked.failure_reason = "Refund outcome unknown; manual reconciliation required"
+            logger.warning("Refund dispatch outcome uncertain refund_id=%s", refund_id)
+            db.commit()
+            return REFUND_PROCESSING
+        _mark_failed(db, locked, message=str(exc))
+        logger.warning(
+            "Refund dispatch rejected refund_id=%s order_id=%s attempt=%s: %s",
+            refund_id,
+            order_id,
+            locked.attempt_count,
+            exc,
+        )
         db.commit()
         return REFUND_FAILED
 
+    # Provider calls happen outside a transaction. On return, take the
+    # commercial order lock BEFORE the refund lock: cancellation and webhook
+    # reconciliation use the same ordering, avoiding a refund -> order
+    # deadlock when the provider reports immediate success.
+    refund_order_id = db.scalar(
+        select(PaymentRefund.order_id).where(PaymentRefund.id == refund_id)
+    )
+    if refund_order_id is None:
+        return "missing"
+    order = db.scalar(select(Order).where(Order.id == refund_order_id).with_for_update())
+    if order is None:
+        db.rollback()
+        return "missing"
     locked = db.scalar(select(PaymentRefund).where(PaymentRefund.id == refund_id).with_for_update())
     if locked is None:
+        db.rollback()
         return "missing"
+    if locked.status == REFUND_SUCCEEDED:
+        # A verified webhook may have completed the refund while the HTTP
+        # request was in flight. Never downgrade that terminal outcome.
+        db.commit()
+        return REFUND_SUCCEEDED
+    if not _matches_dispatched_refund(locked, payload):
+        # The provider may already have moved money. Do NOT retry blindly or
+        # claim success: quarantine this obligation for reconciliation.
+        locked.status = REFUND_PROCESSING
+        locked.failure_reason = "Unverifiable provider refund response; manual reconciliation required"
+        logger.warning("Refund provider response requires reconciliation refund_id=%s", refund_id)
+        db.commit()
+        return REFUND_PROCESSING
     apply_provider_refund_result(db, locked, payload)
     status = locked.status
     logger.info(

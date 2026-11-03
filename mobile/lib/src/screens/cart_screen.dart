@@ -272,10 +272,27 @@ class _CartScreenState extends State<CartScreen> {
   Future<void> _completeCheckout(OrderModel order,String resolvedPayment) async {
       if (!mounted) return;
       if (resolvedPayment == 'upi') {
-        final paid = await GaonApi.openRazorpayCheckout(order);
+        bool paid;
+        try {
+          paid = await GaonApi.openRazorpayCheckout(order);
+        } on ApiException catch (e) {
+          // The commercial order already exists. Do not encourage a second
+          // payment if the provider cannot certify earlier attempts.
+          _snack(paymentStartError(e));
+          return;
+        }
         if (!mounted) return;
         if (!paid) {
-          _snack('Order placed, but online payment is still pending. You can retry from Orders.');
+          var confirmed = false;
+          try {
+            final latest = await GaonApi.orderDetail(order.id);
+            confirmed = latest['payment_status'] == 'paid';
+          } catch (_) {
+            // Treat an unavailable order-status lookup as unconfirmed.
+          }
+          _snack(confirmed
+              ? 'Payment confirmed.'
+              : 'Online payment is not confirmed. You can retry from Orders.');
         }
       } else {
         await showDialog(

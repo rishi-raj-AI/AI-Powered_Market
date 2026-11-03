@@ -14,6 +14,7 @@ from uuid import uuid4
 from app.models.integrations import SettlementAdjustment, SettlementEntry
 from app.models.orders import OrderStatus, PaymentMethod, PaymentStatus
 from app.services import refunds as refund_service
+from app.services.payments import amount_to_subunits
 from app.services.refunds import (
     REFUND_REASON_CANCELLED,
     dispatch_refund,
@@ -37,7 +38,13 @@ class _Provider:
 
     def __call__(self, **kwargs):
         self.calls += 1
-        return {"id": f"rfnd_{uuid4().hex[:12]}", "status": self._status}
+        return {
+            "id": f"rfnd_{uuid4().hex[:12]}",
+            "payment_id": kwargs["provider_payment_id"],
+            "amount": amount_to_subunits(kwargs["amount"]),
+            "currency": "INR",
+            "status": self._status,
+        }
 
 
 def _entry_for(db, order) -> SettlementEntry | None:
