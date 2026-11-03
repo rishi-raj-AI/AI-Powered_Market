@@ -3,7 +3,7 @@
 Disposable PostgreSQL records and mocked provider calls only.
 """
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import HTTPException
@@ -392,3 +392,47 @@ def test_failed_attempt_without_provider_order_id_blocks_checkout(
         db.refresh(attempt)
         assert attempt.status == "failed"
         assert attempt.provider_order_id is None
+
+
+@pytest.mark.parametrize("invalid_field", [
+    "provider", "currency", "amount", "provider_order_id",
+])
+def test_invalid_later_attempt_blocks_before_any_provider_read(
+    monkeypatch, invalid_field,
+):
+    """A valid earlier intent must not be queried before later bad local evidence."""
+    with session() as db:
+        customer, order, attempt = _context(db)
+        invalid = PaymentAttempt(
+            id=UUID(int=attempt.id.int + 1),
+            order_id=order.id,
+            provider="razorpay",
+            provider_order_id=f"order_{uuid4().hex}",
+            status="failed",
+            amount=order.total,
+            currency="INR",
+        )
+        if invalid_field == "provider":
+            invalid.provider = "unknown"
+        elif invalid_field == "currency":
+            invalid.currency = "USD"
+        elif invalid_field == "amount":
+            invalid.amount = order.total - Decimal("1.00")
+        else:
+            invalid.provider_order_id = "   "
+        db.add(invalid)
+        db.commit()
+        monkeypatch.setattr(
+            payment_routes, "list_razorpay_order_payments",
+            lambda **_kwargs: pytest.fail("Validate all local attempts before provider I/O"),
+        )
+        monkeypatch.setattr(
+            payment_routes, "create_razorpay_order",
+            lambda **_kwargs: pytest.fail("Malformed history cannot open checkout"),
+        )
+        with pytest.raises(HTTPException) as exc:
+            payment_routes.create_payment_intent(order.id, db=db, user=customer)
+        assert exc.value.status_code == 409
+        assert "reconciliation" in exc.value.detail
+        db.refresh(invalid)
+        assert invalid.status == "failed"
