@@ -131,15 +131,27 @@ def create_payment_intent(
         not prior.provider_order_id for prior in active_attempts
     ):
         raise HTTPException(status_code=409, detail="Existing payment requires reconciliation")
+    # Validate *all* local identities and terms before making any provider
+    # read. A later row with a missing/duplicate provider order ID must not
+    # trigger an earlier Razorpay lookup or allow a second checkout window.
+    # This also makes malformed historical data deterministic under outages.
+    seen_provider_orders: set[str] = set()
     for prior in prior_attempts:
+        provider_order_id = prior.provider_order_id
         if (
             prior.provider != "razorpay"
             or prior.currency != "INR"
             or prior.amount != order.total
             or prior.status not in {"created", "attempted", "failed"}
             or prior.provider_payment_id
+            or not isinstance(provider_order_id, str)
+            or not provider_order_id.strip()
+            or provider_order_id in seen_provider_orders
         ):
             raise HTTPException(status_code=409, detail="Existing payment requires reconciliation")
+        seen_provider_orders.add(provider_order_id)
+
+    for prior in prior_attempts:
         _require_terminal_failed_provider_history(prior)
 
     existing = db.scalar(
