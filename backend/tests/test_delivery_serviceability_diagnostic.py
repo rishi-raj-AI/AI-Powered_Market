@@ -68,15 +68,15 @@ def test_unknown_scoped_pair_returns_no_customer_details():
         readonly.rollback()
 
 
-def test_scoped_diagnostic_fails_closed_for_unknown_coordinate_provenance():
-    """A coordinate inside the hub radius is not proof of a confirmed pin."""
+def test_scoped_diagnostic_fails_closed_for_approximate_searched_place():
+    """A searched place inside the hub radius is not a confirmed doorstep pin."""
     with factories.session() as db:
         customer = factories.make_user(db)
         store = factories.make_store(db, is_active=True)
         address = factories.make_address(
             db, customer, db.get(factories.Village, store.village_id),
         )
-        address.location_source = "unrecognized_import_source"
+        address.location_source = "searched_place"
         db.commit()
         with SessionLocal() as readonly:
             readonly.execute(text("SET TRANSACTION READ ONLY"))
@@ -84,7 +84,7 @@ def test_scoped_diagnostic_fails_closed_for_unknown_coordinate_provenance():
             assert result["address_inside_assigned_area"] is True
             assert result["serviceable"] is False
             assert result["reason_code"] == "ADDRESS_LOCATION_UNCONFIRMED"
-            assert result["location_confidence"] == "unrecognized_location_source"
+            assert result["location_confidence"] == "approximate_searched_place"
             assert "latitude" not in result and "longitude" not in result
             readonly.rollback()
 
