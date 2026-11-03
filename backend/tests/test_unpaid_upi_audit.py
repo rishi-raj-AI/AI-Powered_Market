@@ -437,11 +437,14 @@ def test_paid_audit_quarantines_other_attempt_with_unknown_local_status(
         assert report["requires_review"] >= 1
 
 
-@pytest.mark.parametrize("duplicate_source", ["local", "provider"])
 def test_unpaid_audit_quarantines_cross_attempt_payment_identity(
-    monkeypatch, duplicate_source,
+    monkeypatch,
 ):
-    """Different provider orders must not share one payment identity."""
+    """Provider histories cannot reuse IDs across orders.
+
+    Local duplicate payment IDs are already prohibited by a database unique
+    constraint; attempting to persist them would fail before the audit runs.
+    """
     with session() as db:
         order = make_order(
             db, payment_status=PaymentStatus.FAILED, with_paid_attempt=False
@@ -449,9 +452,6 @@ def test_unpaid_audit_quarantines_cross_attempt_payment_identity(
         first = _attempt(db, order, status="failed")
         second = _attempt(db, order, status="failed")
         shared_id = f"pay_{uuid4().hex}"
-        if duplicate_source == "local":
-            first.provider_payment_id = shared_id
-            second.provider_payment_id = shared_id
         db.commit()
         number = order.order_number
         order_ids = {first.provider_order_id, second.provider_order_id}
@@ -460,7 +460,7 @@ def test_unpaid_audit_quarantines_cross_attempt_payment_identity(
         def history(*, provider_order_id):
             assert provider_order_id in order_ids
             return [{
-                "id": shared_id if duplicate_source == "provider" else f"pay_{provider_order_id}",
+                "id": shared_id,
                 "order_id": provider_order_id,
                 "status": "failed",
                 "amount": 12000,
@@ -472,6 +472,5 @@ def test_unpaid_audit_quarantines_cross_attempt_payment_identity(
         )
         report = audit_upi_payments.audit_unpaid_upi()
         finding = next(f for f in report["findings"] if f["order_number"] == number)
-        expected = "local_capture_evidence" if duplicate_source == "local" else "payment_history_mismatch"
-        assert finding["result"] == expected
+        assert finding["result"] == "payment_history_mismatch"
         assert report["no_capture_found"] == 0
