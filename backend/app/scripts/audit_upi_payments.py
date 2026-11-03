@@ -370,7 +370,13 @@ def main() -> None:
             "scanned": paid["scanned"] + unpaid["scanned"],
             "requires_review": paid["requires_review"] + unpaid["requires_review"],
             "truncated": paid.get("truncated", False) or unpaid.get("truncated", False),
-            "findings": [],
+            # Preserve per-order evidence in normal mode; the privacy switch
+            # removes it from both this combined list and nested cohorts.
+            "findings": [
+                {"cohort": name, **finding}
+                for name, cohort_report in (("paid", paid), ("unpaid", unpaid))
+                for finding in cohort_report["findings"]
+            ],
             "cohorts": {"paid": paid, "unpaid": unpaid},
         }
     else:
