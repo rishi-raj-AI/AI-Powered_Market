@@ -182,6 +182,7 @@ def test_both_cohorts_strict_and_private(
             "scanned": paid_scanned,
             "requires_review": review,
             "truncated": False,
+            "result_counts": {"verified_capture": paid_scanned},
             "findings": [{"order_number": "paid-private", "result": "verified_capture"}],
         }
 
@@ -191,6 +192,7 @@ def test_both_cohorts_strict_and_private(
             "scanned": unpaid_scanned,
             "requires_review": 0,
             "truncated": truncated,
+            "result_counts": {"no_capture_found": unpaid_scanned},
             "findings": [{"order_number": "unpaid-private", "result": "no_capture_found"}],
         }
 
@@ -211,6 +213,10 @@ def test_both_cohorts_strict_and_private(
     assert "unpaid-private" not in output
     data = json.loads(output)
     assert data["scanned"] == paid_scanned + unpaid_scanned
+    assert data["result_counts"] == {
+        "paid": {"verified_capture": paid_scanned},
+        "unpaid": {"no_capture_found": unpaid_scanned},
+    }
     assert data["cohorts"]["paid"]["scanned"] == paid_scanned
     assert data["cohorts"]["unpaid"]["scanned"] == unpaid_scanned
     assert "findings" not in data["cohorts"]["paid"]
