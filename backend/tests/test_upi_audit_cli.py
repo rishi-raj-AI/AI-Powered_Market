@@ -161,3 +161,64 @@ def test_strict_combines_all_staging_release_gates(
     assert json.loads(output) == {
         "scanned": scanned, "requires_review": review, "truncated": truncated
     }
+
+
+@pytest.mark.parametrize(
+    ("paid_scanned", "unpaid_scanned", "review", "truncated", "expected_exit"),
+    [
+        (2, 3, 0, False, None),
+        (0, 3, 0, False, 3),
+        (2, 0, 0, False, 3),
+        (2, 3, 1, False, 2),
+        (2, 3, 0, True, 4),
+    ],
+)
+def test_both_cohorts_strict_and_private(
+    monkeypatch, capsys, paid_scanned, unpaid_scanned, review, truncated, expected_exit
+):
+    def paid(*, limit, days):
+        assert (limit, days) == (9, 12)
+        return {
+            "scanned": paid_scanned,
+            "requires_review": review,
+            "truncated": False,
+            "findings": [{"order_number": "paid-private", "result": "verified_capture"}],
+        }
+
+    def unpaid(*, limit, days):
+        assert (limit, days) == (9, 12)
+        return {
+            "scanned": unpaid_scanned,
+            "requires_review": 0,
+            "truncated": truncated,
+            "findings": [{"order_number": "unpaid-private", "result": "no_capture_found"}],
+        }
+
+    monkeypatch.setattr(audit_upi_payments, "audit_paid_upi", paid)
+    monkeypatch.setattr(audit_upi_payments, "audit_unpaid_upi", unpaid)
+    monkeypatch.setattr(sys, "argv", [
+        "audit_upi_payments", "--both", "--strict", "--summary-only",
+        "--limit", "9", "--days", "12",
+    ])
+    if expected_exit is None:
+        audit_upi_payments.main()
+    else:
+        with pytest.raises(SystemExit) as exc:
+            audit_upi_payments.main()
+        assert exc.value.code == expected_exit
+    output = capsys.readouterr().out
+    assert "paid-private" not in output
+    assert "unpaid-private" not in output
+    data = json.loads(output)
+    assert data["scanned"] == paid_scanned + unpaid_scanned
+    assert data["cohorts"]["paid"]["scanned"] == paid_scanned
+    assert data["cohorts"]["unpaid"]["scanned"] == unpaid_scanned
+    assert "findings" not in data["cohorts"]["paid"]
+    assert "findings" not in data["cohorts"]["unpaid"]
+
+
+def test_both_and_unpaid_are_mutually_exclusive(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["audit_upi_payments", "--both", "--unpaid"])
+    with pytest.raises(SystemExit) as exc:
+        audit_upi_payments.main()
+    assert exc.value.code == 2
