@@ -50,3 +50,50 @@ def test_without_strict_flag_review_is_report_only(monkeypatch, capsys):
     )
     audit_upi_payments.main()
     assert json.loads(capsys.readouterr().out)["requires_review"] == 1
+
+
+@pytest.mark.parametrize("unpaid", [False, True])
+@pytest.mark.parametrize(
+    ("scanned", "requires_review", "expected_exit"),
+    [
+        (0, 0, 3),
+        (2, 0, None),
+        (2, 1, 2),
+    ],
+)
+def test_strict_audit_requires_nonempty_scope(
+    monkeypatch, capsys, unpaid, scanned, requires_review, expected_exit
+):
+    """A zero-row staging audit is not evidence of payment integrity."""
+    report = {
+        "scanned": scanned,
+        "requires_review": requires_review,
+        "findings": [],
+    }
+    monkeypatch.setattr(
+        audit_upi_payments,
+        "audit_unpaid_upi" if unpaid else "audit_paid_upi",
+        lambda *, limit, days: report,
+    )
+    argv = ["audit_upi_payments", "--require-scanned", "--fail-on-review"]
+    if unpaid:
+        argv.append("--unpaid")
+    monkeypatch.setattr(sys, "argv", argv)
+    if expected_exit is None:
+        audit_upi_payments.main()
+    else:
+        with pytest.raises(SystemExit) as exc:
+            audit_upi_payments.main()
+        assert exc.value.code == expected_exit
+    assert json.loads(capsys.readouterr().out) == report
+
+
+def test_empty_scope_remains_report_only_without_require_scanned(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["audit_upi_payments", "--fail-on-review"])
+    monkeypatch.setattr(
+        audit_upi_payments,
+        "audit_paid_upi",
+        lambda *, limit, days: {"scanned": 0, "requires_review": 0, "findings": []},
+    )
+    audit_upi_payments.main()
+    assert json.loads(capsys.readouterr().out)["scanned"] == 0
