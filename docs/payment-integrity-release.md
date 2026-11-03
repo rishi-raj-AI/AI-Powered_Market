@@ -379,3 +379,20 @@ If either cohort exceeds 1000 orders, partition the staging review into
 documented nonoverlapping time windows or extend the audited tooling with
 pagination before approving the release; do not treat a truncated scan as
 complete. No payment, refund or stock writes are performed by these commands.
+
+
+### Combined paid and unpaid staging gate
+
+The read-only `--both` option checks both cohorts with one invocation. It
+requires **each** cohort to be nonempty under `--strict`, and fails when
+either cohort has review findings or exceeds its own `--limit`. The JSON
+report retains separate paid/unpaid counts; `--summary-only` removes
+order-level findings from both nested cohorts. `--both` and `--unpaid`
+cannot be combined. The date window and limit apply independently to each
+cohort, and a single invocation is not a transactionally consistent snapshot
+of concurrent payment changes. Use a quiescent isolated staging dataset and
+retain the independent provider reconciliation sign-off.
+
+```bash
+python -m app.scripts.audit_upi_payments --both --limit 1000 --days 30 --strict --summary-only
+```
