@@ -474,3 +474,38 @@ def test_unpaid_audit_quarantines_cross_attempt_payment_identity(
         finding = next(f for f in report["findings"] if f["order_number"] == number)
         assert finding["result"] == "payment_history_mismatch"
         assert report["no_capture_found"] == 0
+
+
+@pytest.mark.parametrize("malformed_history", [None, {}, "invalid", 42])
+def test_unpaid_audit_quarantines_non_list_provider_history(monkeypatch, malformed_history):
+    with session() as db:
+        order = make_order(
+            db, payment_status=PaymentStatus.PENDING, with_paid_attempt=False
+        )
+        _attempt(db, order)
+        db.commit()
+        number = order.order_number
+        monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
+        monkeypatch.setattr(
+            audit_upi_payments, "list_razorpay_order_payments",
+            lambda **_: malformed_history,
+        )
+        report = audit_upi_payments.audit_unpaid_upi()
+        finding = next(f for f in report["findings"] if f["order_number"] == number)
+        assert finding["result"] == "payment_history_mismatch"
+
+
+@pytest.mark.parametrize("malformed_history", [None, {}, "invalid", 42])
+def test_paid_audit_quarantines_non_list_provider_history(monkeypatch, malformed_history):
+    with session() as db:
+        order = make_order(db)
+        db.commit()
+        number = order.order_number
+        monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
+        monkeypatch.setattr(
+            audit_upi_payments, "list_razorpay_order_payments",
+            lambda **_: malformed_history,
+        )
+        report = audit_upi_payments.audit_paid_upi()
+        finding = next(f for f in report["findings"] if f["order_number"] == number)
+        assert finding["result"] == "capture_mismatch"
