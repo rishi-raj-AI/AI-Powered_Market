@@ -233,3 +233,51 @@ def test_audit_rejects_malformed_failed_history_even_with_valid_capture(
         report = audit_upi_payments.audit_paid_upi()
         finding = next(f for f in report["findings"] if f["order_number"] == order_number)
         assert finding["result"] == "capture_mismatch"
+
+
+@pytest.mark.parametrize("duplicate_status", ["failed", "captured"])
+def test_paid_audit_quarantines_cross_order_provider_payment_id_reuse(
+    monkeypatch, duplicate_status,
+):
+    # A second provider order reporting the same payment identity must not
+    # certify the first order's capture, even if the second row says failed.
+    with session() as db:
+        order = make_order(db)
+        first = db.scalar(
+            select(PaymentAttempt).where(PaymentAttempt.order_id == order.id)
+        )
+        second = PaymentAttempt(
+            order_id=order.id, provider="razorpay",
+            provider_order_id=f"order_{uuid4().hex}",
+            status="failed", amount=order.total, currency="INR",
+        )
+        db.add(second)
+        db.commit()
+        order_number = order.order_number
+        first_order_id = first.provider_order_id
+        second_order_id = second.provider_order_id
+        payment_id = first.provider_payment_id
+        monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
+
+        def history(*, provider_order_id):
+            return [{
+                "id": payment_id,
+                "order_id": provider_order_id,
+                "status": (
+                    "captured" if provider_order_id == first_order_id
+                    else duplicate_status
+                ),
+                "amount": 12000,
+                "currency": "INR",
+            }]
+
+        monkeypatch.setattr(
+            audit_upi_payments, "list_razorpay_order_payments", history,
+        )
+        report = audit_upi_payments.audit_paid_upi()
+        finding = next(
+            f for f in report["findings"]
+            if f["order_number"] == order_number
+        )
+        assert first_order_id != second_order_id
+        assert finding["result"] == "capture_mismatch"
