@@ -68,7 +68,10 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
                     if attempt.provider_order_id in seen_order_ids:
                         mismatch = True
                     seen_order_ids.add(attempt.provider_order_id)
-                if attempt.provider_payment_id:
+                if attempt.provider_payment_id is not None:
+                    if not isinstance(attempt.provider_payment_id, str) or not attempt.provider_payment_id.strip():
+                        mismatch = True
+                        continue
                     if attempt.provider_payment_id in seen_payment_ids:
                         mismatch = True
                     seen_payment_ids.add(attempt.provider_payment_id)
@@ -106,7 +109,7 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
                     history_id = payment.get("id")
                     if (
                         not isinstance(history_id, str)
-                        or not history_id
+                        or not history_id.strip()
                         or history_id in seen_history_ids
                     ):
                         mismatch = True
@@ -119,7 +122,7 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
                         # history row must not certify a separate capture.
                         if (
                             not isinstance(payment.get("id"), str)
-                            or not payment["id"]
+                            or not payment["id"].strip()
                             or payment.get("order_id") != attempt.provider_order_id
                             or payment.get("currency") != attempt.currency
                             or type(payment.get("amount")) is not int
@@ -137,7 +140,7 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
                         captured_ids.add(payment_id)
                     if (
                         isinstance(payment_id, str)
-                        and bool(payment_id)
+                        and bool(payment_id.strip())
                         and payment.get("order_id") == attempt.provider_order_id
                         and payment.get("currency") == "INR"
                         and type(payment.get("amount")) is int
@@ -204,8 +207,13 @@ def audit_unpaid_upi(*, limit: int = 100, days: int = 30) -> dict:
             local_capture = False
             seen_local_order_ids: set[str] = set()
             for attempt in attempts:
-                if attempt.status == "paid" or attempt.provider_payment_id:
+                if attempt.status == "paid" or attempt.provider_payment_id is not None:
                     local_capture = True
+                    if attempt.provider_payment_id is not None and (
+                        not isinstance(attempt.provider_payment_id, str)
+                        or not attempt.provider_payment_id.strip()
+                    ):
+                        inconsistent = True
                 elif attempt.status not in {"created", "attempted", "failed"}:
                     unsettled = True
                 if (
@@ -243,7 +251,7 @@ def audit_unpaid_upi(*, limit: int = 100, days: int = 30) -> dict:
                     payment_id = payment.get("id")
                     if (
                         not isinstance(payment_id, str)
-                        or not payment_id
+                        or not payment_id.strip()
                         or payment_id in seen_payment_ids
                     ):
                         inconsistent = True
@@ -257,7 +265,7 @@ def audit_unpaid_upi(*, limit: int = 100, days: int = 30) -> dict:
                     ):
                         inconsistent = True
                     if payment.get("status") == "captured":
-                        if isinstance(payment_id, str) and payment_id:
+                        if isinstance(payment_id, str) and payment_id.strip():
                             captures.add((attempt.provider_order_id, payment_id))
                         else:
                             inconsistent = True
