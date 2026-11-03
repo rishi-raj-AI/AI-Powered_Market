@@ -350,3 +350,49 @@ def test_paid_audit_rejects_missing_or_blank_provider_order_identity(
         finding = next(f for f in report["findings"] if f["order_number"] == number)
         assert finding["result"] == "capture_mismatch"
         assert report["verified"] == 0
+
+
+
+@pytest.mark.parametrize("bad_payment_id", ["", "   ", "\t"])
+def test_paid_audit_quarantines_blank_local_payment_identity(monkeypatch, bad_payment_id):
+    with session() as db:
+        order = make_order(db)
+        attempt = db.scalar(
+            select(PaymentAttempt).where(PaymentAttempt.order_id == order.id)
+        )
+        attempt.provider_payment_id = bad_payment_id
+        db.commit()
+        number = order.order_number
+        monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
+
+        def unexpected_provider_read(**_):
+            pytest.fail("Blank local payment identity must not be verified")
+
+        monkeypatch.setattr(
+            audit_upi_payments, "list_razorpay_order_payments", unexpected_provider_read
+        )
+        report = audit_upi_payments.audit_paid_upi()
+        finding = next(f for f in report["findings"] if f["order_number"] == number)
+        assert finding["result"] == "capture_mismatch"
+        assert report["verified"] == 0
+
+
+@pytest.mark.parametrize("bad_payment_id", ["", "   ", "\t"])
+def test_unpaid_audit_quarantines_blank_failed_history_identity(monkeypatch, bad_payment_id):
+    with session() as db:
+        order = make_order(
+            db, payment_status=PaymentStatus.FAILED, with_paid_attempt=False
+        )
+        attempt = _attempt(db, order, status="failed")
+        db.commit()
+        number = order.order_number
+        payment = _payment(attempt, status="failed")
+        payment["id"] = bad_payment_id
+        monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
+        monkeypatch.setattr(
+            audit_upi_payments, "list_razorpay_order_payments", lambda **_: [payment]
+        )
+        report = audit_upi_payments.audit_unpaid_upi()
+        finding = next(f for f in report["findings"] if f["order_number"] == number)
+        assert finding["result"] == "payment_history_mismatch"
+        assert report["no_capture_found"] == 0
