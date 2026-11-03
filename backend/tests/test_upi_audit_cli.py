@@ -119,3 +119,45 @@ def test_strict_audit_rejects_truncated_scope(monkeypatch, capsys, unpaid, trunc
             audit_upi_payments.main()
         assert exc.value.code == expected_exit
     assert json.loads(capsys.readouterr().out) == report
+
+
+@pytest.mark.parametrize("unpaid", [False, True])
+@pytest.mark.parametrize(
+    ("scanned", "review", "truncated", "expected_exit"),
+    [
+        (2, 0, False, None),
+        (0, 0, False, 3),
+        (2, 1, False, 2),
+        (2, 0, True, 4),
+        (2, 1, True, 2),
+    ],
+)
+def test_strict_combines_all_staging_release_gates(
+    monkeypatch, capsys, unpaid, scanned, review, truncated, expected_exit
+):
+    report = {
+        "scanned": scanned,
+        "requires_review": review,
+        "truncated": truncated,
+        "findings": [{"order_number": "private-order", "result": "capture_mismatch"}] if review else [],
+    }
+    monkeypatch.setattr(
+        audit_upi_payments,
+        "audit_unpaid_upi" if unpaid else "audit_paid_upi",
+        lambda *, limit, days: report,
+    )
+    argv = ["audit_upi_payments", "--strict", "--summary-only"]
+    if unpaid:
+        argv.append("--unpaid")
+    monkeypatch.setattr(sys, "argv", argv)
+    if expected_exit is None:
+        audit_upi_payments.main()
+    else:
+        with pytest.raises(SystemExit) as exc:
+            audit_upi_payments.main()
+        assert exc.value.code == expected_exit
+    output = capsys.readouterr().out
+    assert "private-order" not in output
+    assert json.loads(output) == {
+        "scanned": scanned, "requires_review": review, "truncated": truncated
+    }
