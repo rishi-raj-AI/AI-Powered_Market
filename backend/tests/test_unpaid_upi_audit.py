@@ -396,3 +396,42 @@ def test_unpaid_audit_quarantines_blank_failed_history_identity(monkeypatch, bad
         finding = next(f for f in report["findings"] if f["order_number"] == number)
         assert finding["result"] == "payment_history_mismatch"
         assert report["no_capture_found"] == 0
+
+
+@pytest.mark.parametrize("unknown_status", ["authorized", "processing", "refunded", "unknown", ""])
+def test_paid_audit_quarantines_other_attempt_with_unknown_local_status(
+    monkeypatch, unknown_status,
+):
+    """A matching capture cannot certify a paid order with an unresolved retry."""
+    with session() as db:
+        order = make_order(db)
+        paid = db.scalar(
+            select(PaymentAttempt).where(PaymentAttempt.order_id == order.id)
+        )
+        unresolved = _attempt(db, order, status=unknown_status)
+        db.commit()
+        number = order.order_number
+        paid_order_id = paid.provider_order_id
+        paid_payment_id = paid.provider_payment_id
+        unresolved_order_id = unresolved.provider_order_id
+        monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
+
+        def provider_history(*, provider_order_id):
+            if provider_order_id == paid_order_id:
+                return [{
+                    "id": paid_payment_id,
+                    "order_id": paid_order_id,
+                    "status": "captured",
+                    "amount": 12000,
+                    "currency": "INR",
+                }]
+            assert provider_order_id == unresolved_order_id
+            return []
+
+        monkeypatch.setattr(
+            audit_upi_payments, "list_razorpay_order_payments", provider_history
+        )
+        report = audit_upi_payments.audit_paid_upi()
+        finding = next(f for f in report["findings"] if f["order_number"] == number)
+        assert finding["result"] == "capture_mismatch"
+        assert report["requires_review"] >= 1
