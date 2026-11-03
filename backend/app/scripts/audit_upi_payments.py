@@ -38,9 +38,10 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
                 Order.created_at >= cutoff,
             )
             .order_by(Order.created_at.desc())
-            .limit(limit)
+            .limit(limit + 1)
         ).all()
-        for order in orders:
+        truncated = len(orders) > limit
+        for order in orders[:limit]:
             attempts = db.scalars(
                 select(PaymentAttempt)
                 .where(PaymentAttempt.order_id == order.id)
@@ -181,6 +182,7 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
         db.rollback()  # explicitly read-only
     return {
         "scanned": len(findings),
+        "truncated": truncated,
         "verified": sum(f["result"] == "verified_capture" for f in findings),
         "requires_review": sum(f["result"] != "verified_capture" for f in findings),
         "findings": findings,
@@ -206,9 +208,10 @@ def audit_unpaid_upi(*, limit: int = 100, days: int = 30) -> dict:
                 Order.created_at >= cutoff,
             )
             .order_by(Order.created_at.desc())
-            .limit(limit)
+            .limit(limit + 1)
         ).all()
-        for order in orders:
+        truncated = len(orders) > limit
+        for order in orders[:limit]:
             attempts = db.scalars(
                 select(PaymentAttempt).where(PaymentAttempt.order_id == order.id)
             ).all()
@@ -327,6 +330,7 @@ def audit_unpaid_upi(*, limit: int = 100, days: int = 30) -> dict:
         db.rollback()  # read-only: no stock or payment changes
     return {
         "scanned": len(findings),
+        "truncated": truncated,
         "no_capture_found": sum(f["result"] == "no_capture_found" for f in findings),
         "requires_review": sum(f["result"] != "no_capture_found" for f in findings),
         "findings": findings,
@@ -339,6 +343,7 @@ def main() -> None:
     parser.add_argument("--days", type=int, default=30)
     parser.add_argument("--unpaid", action="store_true", help="Audit pending/failed UPI orders instead of paid orders")
     parser.add_argument("--fail-on-review", action="store_true", help="Exit 2 when any order requires manual review")
+    parser.add_argument("--fail-on-truncated", action="store_true", help="Exit 4 when more eligible orders exist than the requested limit")
     parser.add_argument("--require-scanned", action="store_true", help="Exit 3 when the audit finds zero eligible orders; useful for staging acceptance")
     args = parser.parse_args()
     audit = audit_unpaid_upi if args.unpaid else audit_paid_upi
@@ -348,6 +353,8 @@ def main() -> None:
         raise SystemExit(2)
     if args.require_scanned and report["scanned"] == 0:
         raise SystemExit(3)
+    if args.fail_on_truncated and report.get("truncated", False):
+        raise SystemExit(4)
 
 
 if __name__ == "__main__":

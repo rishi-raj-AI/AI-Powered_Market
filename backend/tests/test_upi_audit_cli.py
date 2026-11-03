@@ -97,3 +97,25 @@ def test_empty_scope_remains_report_only_without_require_scanned(monkeypatch, ca
     )
     audit_upi_payments.main()
     assert json.loads(capsys.readouterr().out)["scanned"] == 0
+
+
+@pytest.mark.parametrize("unpaid", [False, True])
+@pytest.mark.parametrize(("truncated", "expected_exit"), [(True, 4), (False, None)])
+def test_strict_audit_rejects_truncated_scope(monkeypatch, capsys, unpaid, truncated, expected_exit):
+    report = {"scanned": 7, "requires_review": 0, "truncated": truncated, "findings": []}
+    monkeypatch.setattr(
+        audit_upi_payments,
+        "audit_unpaid_upi" if unpaid else "audit_paid_upi",
+        lambda *, limit, days: report,
+    )
+    argv = ["audit_upi_payments", "--limit", "7", "--fail-on-truncated"]
+    if unpaid:
+        argv.append("--unpaid")
+    monkeypatch.setattr(sys, "argv", argv)
+    if expected_exit is None:
+        audit_upi_payments.main()
+    else:
+        with pytest.raises(SystemExit) as exc:
+            audit_upi_payments.main()
+        assert exc.value.code == expected_exit
+    assert json.loads(capsys.readouterr().out) == report
