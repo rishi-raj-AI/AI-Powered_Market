@@ -81,6 +81,7 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
                 if (
                     attempt.amount != order.total
                     or attempt.currency != "INR"
+                    or attempt.status not in {"created", "attempted", "failed", "paid"}
                     or (attempt.provider_payment_id and attempt.status != "paid")
                     or (attempt.status == "paid" and not attempt.provider_payment_id)
                 ):
