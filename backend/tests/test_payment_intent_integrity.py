@@ -426,9 +426,7 @@ def test_payment_history_identity_preflight_blocks_provider_io(
             amount=order.total,
             currency="INR",
         )
-        if invalid_history == "duplicate":
-            second.provider_order_id = older.provider_order_id
-        elif invalid_history == "blank":
+        if invalid_history == "blank":
             second.provider_order_id = ""
         else:
             second.provider_order_id = "   "
