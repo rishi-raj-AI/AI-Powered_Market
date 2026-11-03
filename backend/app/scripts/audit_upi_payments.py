@@ -338,9 +338,13 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--days", type=int, default=30)
     parser.add_argument("--unpaid", action="store_true", help="Audit pending/failed UPI orders instead of paid orders")
+    parser.add_argument("--fail-on-review", action="store_true", help="Exit 2 when any order requires manual review")
     args = parser.parse_args()
     audit = audit_unpaid_upi if args.unpaid else audit_paid_upi
-    print(json.dumps(audit(limit=args.limit, days=args.days), indent=2))
+    report = audit(limit=args.limit, days=args.days)
+    print(json.dumps(report, indent=2))
+    if args.fail_on_review and report["requires_review"]:
+        raise SystemExit(2)
 
 
 if __name__ == "__main__":
