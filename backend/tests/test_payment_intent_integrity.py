@@ -398,3 +398,49 @@ def test_failed_attempt_without_provider_order_id_blocks_checkout(
         db.refresh(attempt)
         assert attempt.status == "failed"
         assert attempt.provider_order_id is None
+
+
+@pytest.mark.parametrize("invalid_history", ["blank", "whitespace"])
+@pytest.mark.parametrize("invalid_first", [True, False])
+def test_payment_history_identity_preflight_blocks_provider_io(
+    monkeypatch, invalid_history, invalid_first,
+):
+    """Malformed persisted identities must be rejected regardless of UUID order.
+
+    Duplicate non-null provider IDs cannot be inserted: PostgreSQL enforces
+    payment_attempts_provider_order_id_key. Keep duplicate validation in the
+    route as defense in depth, but exercise only database-representable rows here.
+    """
+    with session() as db:
+        customer, order, older = _context(db)
+        older.status = "failed"
+        other_id = uuid4()
+        while (other_id < older.id) != invalid_first:
+            other_id = uuid4()
+        second = PaymentAttempt(
+            id=other_id,
+            order_id=order.id,
+            provider="razorpay",
+            provider_order_id=f"order_{uuid4().hex}",
+            status="failed",
+            amount=order.total,
+            currency="INR",
+        )
+        if invalid_history == "blank":
+            second.provider_order_id = ""
+        else:
+            second.provider_order_id = "   "
+        db.add(second)
+        db.commit()
+        monkeypatch.setattr(
+            payment_routes, "list_razorpay_order_payments",
+            lambda **_kwargs: pytest.fail("Malformed local history must block provider I/O"),
+        )
+        monkeypatch.setattr(
+            payment_routes, "create_razorpay_order",
+            lambda **_kwargs: pytest.fail("Malformed local history must not open checkout"),
+        )
+        with pytest.raises(HTTPException) as exc:
+            payment_routes.create_payment_intent(order.id, db=db, user=customer)
+        assert exc.value.status_code == 409
+        assert "reconciliation" in exc.value.detail

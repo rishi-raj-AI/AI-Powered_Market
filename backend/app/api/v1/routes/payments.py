@@ -121,27 +121,30 @@ def create_payment_intent(
     # More than one active local intent means there may be multiple provider
     # checkout windows in circulation. Even an empty provider history does
     # not prove an older window cannot capture money after we issue another.
-    # A missing provider order ID on *any* historical attempt, including a
-    # locally failed one, is unreconcilable. Validate the entire local set
-    # before making any external provider-history calls: UUID iteration order
-    # must never determine whether we call the provider before quarantining.
+    # Validate every local attempt before any provider-history I/O. Missing,
+    # blank, non-string or duplicated provider-order identities are ambiguous,
+    # regardless of local status or UUID iteration order.
     active_attempts = [
         prior for prior in prior_attempts
         if prior.status in {"created", "attempted"}
     ]
-    if len(active_attempts) > 1 or any(
-        not prior.provider_order_id for prior in prior_attempts
-    ):
+    if len(active_attempts) > 1:
         raise HTTPException(status_code=409, detail="Existing payment requires reconciliation")
+    seen_provider_orders: set[str] = set()
     for prior in prior_attempts:
+        provider_order_id = prior.provider_order_id
         if (
             prior.provider != "razorpay"
             or prior.currency != "INR"
             or prior.amount != order.total
             or prior.status not in {"created", "attempted", "failed"}
             or prior.provider_payment_id
+            or not isinstance(provider_order_id, str)
+            or not provider_order_id.strip()
+            or provider_order_id in seen_provider_orders
         ):
             raise HTTPException(status_code=409, detail="Existing payment requires reconciliation")
+        seen_provider_orders.add(provider_order_id)
     # Only after all local attempts pass validation may we read the provider.
     for prior in prior_attempts:
         _require_terminal_failed_provider_history(prior)
