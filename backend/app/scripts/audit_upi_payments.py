@@ -37,7 +37,7 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
                 Order.payment_status == PaymentStatus.PAID,
                 Order.created_at >= cutoff,
             )
-            .order_by(Order.created_at.desc())
+            .order_by(Order.created_at.desc(), Order.id.desc())
             .limit(limit + 1)
         ).all()
         truncated = len(orders) > limit
@@ -207,7 +207,7 @@ def audit_unpaid_upi(*, limit: int = 100, days: int = 30) -> dict:
                 Order.payment_status.in_((PaymentStatus.PENDING, PaymentStatus.FAILED)),
                 Order.created_at >= cutoff,
             )
-            .order_by(Order.created_at.desc())
+            .order_by(Order.created_at.desc(), Order.id.desc())
             .limit(limit + 1)
         ).all()
         truncated = len(orders) > limit
