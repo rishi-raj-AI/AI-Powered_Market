@@ -99,6 +99,9 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
                 except (PaymentProviderUnavailable, PaymentProviderError):
                     unavailable = True
                     continue
+                if not isinstance(payments, list):
+                    mismatch = True
+                    continue
                 # Defensive audit validation: a duplicated provider payment
                 # identity is not independent capture evidence. The provider
                 # helper also validates this, but audit fixtures and historical
@@ -256,6 +259,9 @@ def audit_unpaid_upi(*, limit: int = 100, days: int = 30) -> dict:
                     )
                 except (PaymentProviderUnavailable, PaymentProviderError):
                     unavailable = True
+                    continue
+                if not isinstance(history, list):
+                    inconsistent = True
                     continue
                 # The provider helper already rejects incomplete histories.
                 # Keep the audit conservative when reading historical/mock
