@@ -353,6 +353,7 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--days", type=int, default=30)
     parser.add_argument("--unpaid", action="store_true", help="Audit pending/failed UPI orders instead of paid orders")
+    parser.add_argument("--strict", action="store_true", help="Require nonempty, complete, review-free reconciliation (combines all three failure gates)")
     parser.add_argument("--summary-only", action="store_true", help="Print aggregate counts without per-order findings (safer for CI logs)")
     parser.add_argument("--fail-on-review", action="store_true", help="Exit 2 when any order requires manual review")
     parser.add_argument("--fail-on-truncated", action="store_true", help="Exit 4 when more eligible orders exist than the requested limit")
@@ -364,11 +365,11 @@ def main() -> None:
     # order-level findings in stdout when requested by CI/staging operators.
     output = {key: value for key, value in report.items() if key != "findings"} if args.summary_only else report
     print(json.dumps(output, indent=2))
-    if args.fail_on_review and report["requires_review"]:
+    if (args.strict or args.fail_on_review) and report["requires_review"]:
         raise SystemExit(2)
-    if args.require_scanned and report["scanned"] == 0:
+    if (args.strict or args.require_scanned) and report["scanned"] == 0:
         raise SystemExit(3)
-    if args.fail_on_truncated and report.get("truncated", False):
+    if (args.strict or args.fail_on_truncated) and report.get("truncated", False):
         raise SystemExit(4)
 
 
