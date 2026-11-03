@@ -352,22 +352,45 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--days", type=int, default=30)
-    parser.add_argument("--unpaid", action="store_true", help="Audit pending/failed UPI orders instead of paid orders")
+    cohort = parser.add_mutually_exclusive_group()
+    cohort.add_argument("--unpaid", action="store_true", help="Audit pending/failed UPI orders instead of paid orders")
+    cohort.add_argument("--both", action="store_true", help="Audit paid and unpaid UPI cohorts together")
     parser.add_argument("--strict", action="store_true", help="Require nonempty, complete, review-free reconciliation (combines all three failure gates)")
     parser.add_argument("--summary-only", action="store_true", help="Print aggregate counts without per-order findings (safer for CI logs)")
     parser.add_argument("--fail-on-review", action="store_true", help="Exit 2 when any order requires manual review")
     parser.add_argument("--fail-on-truncated", action="store_true", help="Exit 4 when more eligible orders exist than the requested limit")
     parser.add_argument("--require-scanned", action="store_true", help="Exit 3 when the audit finds zero eligible orders; useful for staging acceptance")
     args = parser.parse_args()
-    audit = audit_unpaid_upi if args.unpaid else audit_paid_upi
-    report = audit(limit=args.limit, days=args.days)
+    if args.both:
+        paid = audit_paid_upi(limit=args.limit, days=args.days)
+        unpaid = audit_unpaid_upi(limit=args.limit, days=args.days)
+        # A combined gate must not pass when either cohort is empty, truncated
+        # or requires review. Keep separate classifications for operator triage.
+        report = {
+            "scanned": paid["scanned"] + unpaid["scanned"],
+            "requires_review": paid["requires_review"] + unpaid["requires_review"],
+            "truncated": paid.get("truncated", False) or unpaid.get("truncated", False),
+            "findings": [],
+            "cohorts": {"paid": paid, "unpaid": unpaid},
+        }
+    else:
+        audit = audit_unpaid_upi if args.unpaid else audit_paid_upi
+        report = audit(limit=args.limit, days=args.days)
     # Keep the full report in memory for exit gates; only suppress identifying
     # order-level findings in stdout when requested by CI/staging operators.
-    output = {key: value for key, value in report.items() if key != "findings"} if args.summary_only else report
+    if args.summary_only:
+        output = {key: value for key, value in report.items() if key != "findings"}
+        if args.both:
+            output["cohorts"] = {
+                name: {key: value for key, value in cohort.items() if key != "findings"}
+                for name, cohort in report["cohorts"].items()
+            }
+    else:
+        output = report
     print(json.dumps(output, indent=2))
     if (args.strict or args.fail_on_review) and report["requires_review"]:
         raise SystemExit(2)
-    if (args.strict or args.require_scanned) and report["scanned"] == 0:
+    if (args.strict or args.require_scanned) and (report["scanned"] == 0 or (args.both and any(cohort["scanned"] == 0 for cohort in report["cohorts"].values()))):
         raise SystemExit(3)
     if (args.strict or args.fail_on_truncated) and report.get("truncated", False):
         raise SystemExit(4)
