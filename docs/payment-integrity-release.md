@@ -300,6 +300,14 @@ issue refunds, or build APKs until the release owner approves.
       not `no_capture_found`. Verify tests leave order and payment records
       unchanged; read-only audit tests must re-query persisted state using a
       fresh session after the audit closes its own session.
+- [ ] Payment-intent retry preflight must validate **every** local attempt
+      (provider, currency, amount, status, payment evidence, and nonblank,
+      unique Razorpay order identity) before any Razorpay history read.
+      A later malformed/unknown/failed attempt must block a new checkout
+      even if an earlier attempt has a valid provider order. Test this with
+      mocked provider I/O and disposable PostgreSQL records. A previous CI
+      failure at `c79dfb0` exposed the order-dependent validation gap;
+      recheck Backend CI after the two-phase validation fix.
 - [ ] Read-only paid audit must quarantine duplicate provider-history payment IDs, including a captured/failed pair sharing the same ID; a single valid capture must not conceal duplicated rows returned by a historical adapter. Unpaid audit must reject whitespace-only provider order IDs and duplicate local provider-order identities rather than reporting `no_capture_found`. Verify using mocked provider responses and disposable database records.
 - [ ] Run the historical audit against a **staging copy**; reconcile discrepancies
       manually with Razorpay records and the refund ledger.
