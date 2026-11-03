@@ -359,3 +359,23 @@ For a staging dataset seeded with known eligible paid and unpaid UPI orders, run
 python -m app.scripts.audit_upi_payments --limit 100 --days 30 --fail-on-review --require-scanned
 python -m app.scripts.audit_upi_payments --unpaid --limit 100 --days 30 --fail-on-review --require-scanned
 ```
+
+
+### Single-command strict staging audit
+
+Use `--strict --summary-only` on both paid and unpaid cohorts to enforce all three
+release gates while keeping individual order numbers out of CI logs. Strict
+mode exits 2 for review findings, 3 for an empty cohort, and 4 for truncated
+coverage (in that precedence order). Exit 0 requires a nonempty, fully scanned
+cohort with no review findings; it does **not** replace manual Razorpay sandbox
+acceptance or the independent staging reconciliation sign-off.
+
+```bash
+python -m app.scripts.audit_upi_payments --limit 1000 --days 30 --strict --summary-only
+python -m app.scripts.audit_upi_payments --unpaid --limit 1000 --days 30 --strict --summary-only
+```
+
+If either cohort exceeds 1000 orders, partition the staging review into
+documented nonoverlapping time windows or extend the audited tooling with
+pagination before approving the release; do not treat a truncated scan as
+complete. No payment, refund or stock writes are performed by these commands.
