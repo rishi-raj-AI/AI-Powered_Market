@@ -66,3 +66,45 @@ def test_unknown_scoped_pair_returns_no_customer_details():
         assert result["found"] is False
         assert set(result) == {"store_id", "address_id", "found"}
         readonly.rollback()
+
+
+def test_scoped_diagnostic_fails_closed_for_unknown_coordinate_provenance():
+    """A coordinate inside the hub radius is not proof of a confirmed pin."""
+    with factories.session() as db:
+        customer = factories.make_user(db)
+        store = factories.make_store(db, is_active=True)
+        address = factories.make_address(
+            db, customer, db.get(factories.Village, store.village_id),
+        )
+        address.location_source = "unrecognized_import_source"
+        db.commit()
+        with SessionLocal() as readonly:
+            readonly.execute(text("SET TRANSACTION READ ONLY"))
+            result = diagnose(readonly, store.id, address.id)
+            assert result["address_inside_assigned_area"] is True
+            assert result["serviceable"] is False
+            assert result["reason_code"] == "ADDRESS_LOCATION_UNCONFIRMED"
+            assert result["location_confidence"] == "unrecognized_location_source"
+            assert "latitude" not in result and "longitude" not in result
+            readonly.rollback()
+
+
+def test_scoped_diagnostic_fails_closed_for_unconfirmed_gps_pin():
+    """A GPS label without a server confirmation timestamp cannot authorize delivery."""
+    with factories.session() as db:
+        customer = factories.make_user(db)
+        store = factories.make_store(db, is_active=True)
+        address = factories.make_address(
+            db, customer, db.get(factories.Village, store.village_id),
+        )
+        address.location_source = "gps"
+        address.location_confirmed_at = None
+        db.commit()
+        with SessionLocal() as readonly:
+            readonly.execute(text("SET TRANSACTION READ ONLY"))
+            result = diagnose(readonly, store.id, address.id)
+            assert result["address_inside_assigned_area"] is True
+            assert result["serviceable"] is False
+            assert result["reason_code"] == "ADDRESS_LOCATION_UNCONFIRMED"
+            assert result["location_confidence"] == "unconfirmed_gps"
+            readonly.rollback()
