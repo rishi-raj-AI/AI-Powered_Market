@@ -370,6 +370,12 @@ def main() -> None:
             "scanned": paid["scanned"] + unpaid["scanned"],
             "requires_review": paid["requires_review"] + unpaid["requires_review"],
             "truncated": paid.get("truncated", False) or unpaid.get("truncated", False),
+            # Preserve cohort boundaries in aggregate metrics; a shared result
+            # name must never merge paid and unpaid reconciliation findings.
+            "result_counts": {
+                name: cohort_report["result_counts"]
+                for name, cohort_report in (("paid", paid), ("unpaid", unpaid))
+            },
             # Preserve per-order evidence in normal mode; the privacy switch
             # removes it from both this combined list and nested cohorts.
             "findings": [
