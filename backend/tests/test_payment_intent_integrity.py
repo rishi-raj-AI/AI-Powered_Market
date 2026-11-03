@@ -400,12 +400,17 @@ def test_failed_attempt_without_provider_order_id_blocks_checkout(
         assert attempt.provider_order_id is None
 
 
-@pytest.mark.parametrize("invalid_history", ["duplicate", "blank", "whitespace"])
+@pytest.mark.parametrize("invalid_history", ["blank", "whitespace"])
 @pytest.mark.parametrize("invalid_first", [True, False])
 def test_payment_history_identity_preflight_blocks_provider_io(
     monkeypatch, invalid_history, invalid_first,
 ):
-    """Malformed historical identities must be rejected regardless of UUID order."""
+    """Malformed persisted identities must be rejected regardless of UUID order.
+
+    Duplicate non-null provider IDs cannot be inserted: PostgreSQL enforces
+    payment_attempts_provider_order_id_key. Keep duplicate validation in the
+    route as defense in depth, but exercise only database-representable rows here.
+    """
     with session() as db:
         customer, order, older = _context(db)
         older.status = "failed"
