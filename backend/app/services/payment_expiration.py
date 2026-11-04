@@ -94,11 +94,16 @@ def expire_unpaid_orders(
                     # states contradict a terminal unpaid reservation. Even an
                     # empty provider history cannot prove these safe to expire.
                     uncertain = True
-                if not attempt.provider_order_id:
-                    # A created/failed intent without a provider order cannot
-                    # be paid. Other states need manual reconciliation.
-                    if attempt.status not in {"created", "failed"}:
-                        uncertain = True
+                if (
+                    not isinstance(attempt.provider_order_id, str)
+                    or not attempt.provider_order_id.strip()
+                    or attempt.provider_order_id != attempt.provider_order_id.strip()
+                ):
+                    # A legacy attempt without a usable provider order ID
+                    # cannot be reconciled with Razorpay. Local failed/created
+                    # status is not authoritative evidence of nonpayment.
+                    # Never restore reserved stock on this basis.
+                    uncertain = True
                     continue
                 payments = list_razorpay_order_payments(
                     provider_order_id=attempt.provider_order_id,
