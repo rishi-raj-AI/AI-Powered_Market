@@ -30,6 +30,7 @@ from app.services.stock import restore_order_stock_once
 
 logger = logging.getLogger(__name__)
 _PAYMENT_ID_RE = re.compile(r"pay_[A-Za-z0-9_]+\Z", re.ASCII)
+_ORDER_ID_RE = re.compile(r"order_[A-Za-z0-9_]+\Z", re.ASCII)
 
 
 def expire_unpaid_orders(
@@ -144,7 +145,7 @@ def expire_unpaid_orders(
                 if (
                     not isinstance(attempt.provider_order_id, str)
                     or not attempt.provider_order_id.strip()
-                    or attempt.provider_order_id != attempt.provider_order_id.strip()
+                    or not _ORDER_ID_RE.fullmatch(attempt.provider_order_id)
                 ):
                     # A legacy attempt without a usable provider order ID
                     # cannot be reconciled with Razorpay. Local failed/created
