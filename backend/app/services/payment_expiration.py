@@ -8,6 +8,7 @@ is handled by the existing orphaned-capture refund obligation.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -28,6 +29,7 @@ from app.services.payments import (
 from app.services.stock import restore_order_stock_once
 
 logger = logging.getLogger(__name__)
+_PAYMENT_ID_RE = re.compile(r"pay_[A-Za-z0-9_]+\Z", re.ASCII)
 
 
 def expire_unpaid_orders(
@@ -156,7 +158,7 @@ def expire_unpaid_orders(
                 for payment in payments:
                     provider_status = payment.get("status")
                     payment_id = payment.get("id")
-                    if isinstance(payment_id, str) and payment_id and payment_id == payment_id.strip():
+                    if isinstance(payment_id, str) and _PAYMENT_ID_RE.fullmatch(payment_id):
                         # Duplicate identities (including across retry orders) are
                         # ambiguous even if one record says captured and another
                         # says failed. Never auto-confirm or release stock.
@@ -166,8 +168,7 @@ def expire_unpaid_orders(
                     if (
                         payment.get("order_id") != attempt.provider_order_id
                         or not isinstance(payment.get("id"), str)
-                        or not payment["id"]
-                        or payment["id"] != payment["id"].strip()
+                        or not _PAYMENT_ID_RE.fullmatch(payment["id"])
                     ):
                         uncertain = True
                         continue
