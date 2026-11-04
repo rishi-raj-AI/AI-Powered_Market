@@ -453,3 +453,38 @@ def test_expiry_defers_incomplete_capture_attempt_evidence(
         assert order.status == OrderStatus.PLACED
         assert order.stock_restored_at is None
         assert db.get(StoreProduct, listing_id).stock_quantity == 9
+
+
+@pytest.mark.parametrize("provider_order_id,local_status", [
+    (None, "created"),
+    (None, "failed"),
+    ("", "failed"),
+    ("   ", "created"),
+    (" order_legacy ", "failed"),
+])
+def test_expiry_quarantines_unverifiable_legacy_provider_order(
+    monkeypatch, provider_order_id, local_status,
+):
+    """A local failure cannot prove no money moved when provider lookup is impossible."""
+    with session() as db:
+        order_id, _original_provider_order_id, listing_id = _old_unpaid_order(db)
+        attempt = db.query(PaymentAttempt).filter(PaymentAttempt.order_id == order_id).one()
+        attempt.provider_order_id = provider_order_id
+        attempt.status = local_status
+        db.commit()
+
+        def unexpected_provider_read(**_kwargs):
+            pytest.fail("An unidentifiable provider order must not be queried")
+
+        monkeypatch.setattr(
+            payment_expiration, "list_razorpay_order_payments", unexpected_provider_read,
+        )
+        result = payment_expiration.expire_unpaid_orders(db, limit=10)
+        assert result["expired"] == 0
+        assert result["captured"] == 0
+        assert result["deferred"] >= 1
+        order = db.get(Order, order_id)
+        assert order.status == OrderStatus.PLACED
+        assert order.payment_status == PaymentStatus.PENDING
+        assert order.stock_restored_at is None
+        assert db.get(StoreProduct, listing_id).stock_quantity == 9
