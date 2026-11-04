@@ -541,3 +541,34 @@ def test_expiry_quarantines_noncanonical_provider_payment_ids(
         assert order.payment_status == PaymentStatus.PENDING
         assert order.stock_restored_at is None
         assert db.get(StoreProduct, listing_id).stock_quantity == 9
+
+
+@pytest.mark.parametrize("invalid_order_id", [
+    "order_", "other_123", "order_bad/path", "order_bad?query",
+    "order_bad#fragment", "order_é", "order_bad\\n",
+])
+def test_expiry_quarantines_noncanonical_provider_order_ids_before_network(
+    monkeypatch, invalid_order_id,
+):
+    """Malformed intent identities must not cause provider I/O or stock release."""
+    with session() as db:
+        order_id, _provider_order_id, listing_id = _old_unpaid_order(db)
+        attempt = db.query(PaymentAttempt).filter(PaymentAttempt.order_id == order_id).one()
+        attempt.provider_order_id = invalid_order_id
+        db.commit()
+
+        def unexpected_provider_read(**_kwargs):
+            pytest.fail("Malformed provider order ID must not reach Razorpay")
+
+        monkeypatch.setattr(
+            payment_expiration, "list_razorpay_order_payments", unexpected_provider_read,
+        )
+        result = payment_expiration.expire_unpaid_orders(db, limit=10)
+        assert result["expired"] == 0
+        assert result["captured"] == 0
+        assert result["deferred"] >= 1
+        order = db.get(Order, order_id)
+        assert order.status == OrderStatus.PLACED
+        assert order.payment_status == PaymentStatus.PENDING
+        assert order.stock_restored_at is None
+        assert db.get(StoreProduct, listing_id).stock_quantity == 9
