@@ -126,7 +126,7 @@ def expire_unpaid_orders(
                         # evidence that the order was never charged.
                         if (
                             type(payment.get("amount")) is not int
-                            or payment["amount"] != amount_to_subunits(attempt.amount)
+                            or payment["amount"] != amount_to_subunits(order.total)
                             or payment.get("currency") != attempt.currency
                         ):
                             uncertain = True
@@ -138,7 +138,7 @@ def expire_unpaid_orders(
                         continue
                     if (
                         type(payment.get("amount")) is not int
-                        or payment["amount"] != amount_to_subunits(attempt.amount)
+                        or payment["amount"] != amount_to_subunits(order.total)
                         or payment.get("currency") != attempt.currency
                     ):
                         uncertain = True
@@ -150,8 +150,12 @@ def expire_unpaid_orders(
             if len(captured) == 1 and not uncertain:
                 attempt, provider_payment_id = captured[0]
                 _apply_paid(db, attempt, order, provider_payment_id)
-                if order.payment_status == PaymentStatus.PAID:
-                    _notify_payment_captured(db, order)
+                if order.payment_status != PaymentStatus.PAID:
+                    # Do not count an unsettled capture as a reconciled paid order.
+                    db.rollback()
+                    result["deferred"] += 1
+                    continue
+                _notify_payment_captured(db, order)
                 db.commit()
                 result["captured"] += 1
             elif captured or uncertain:
