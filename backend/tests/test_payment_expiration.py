@@ -413,3 +413,43 @@ def test_expiry_defers_when_capture_application_does_not_mark_order_paid(monkeyp
         assert db.get(Order, order_id).payment_status == PaymentStatus.PENDING
         assert db.get(Order, order_id).status == OrderStatus.PLACED
         assert db.get(StoreProduct, listing_id).stock_quantity == 9
+
+
+@pytest.mark.parametrize("attempt_status,payment_id_mode", [
+    ("attempted", "correct"),
+    ("paid", "missing"),
+    ("paid", "wrong"),
+])
+def test_expiry_defers_incomplete_capture_attempt_evidence(
+    monkeypatch, attempt_status, payment_id_mode,
+):
+    """Order-level PAID alone cannot certify a captured provider attempt."""
+    with session() as db:
+        order_id, provider_order_id, listing_id = _old_unpaid_order(db)
+        captured_id = f"pay_{uuid4().hex}"
+        monkeypatch.setattr(
+            payment_expiration, "list_razorpay_order_payments",
+            lambda **_: [{
+                "id": captured_id, "order_id": provider_order_id,
+                "amount": 12000, "currency": "INR", "status": "captured",
+            }],
+        )
+
+        def incomplete_capture(_db, attempt, order, _payment_id):
+            order.payment_status = PaymentStatus.PAID
+            attempt.status = attempt_status
+            attempt.provider_payment_id = (
+                captured_id if payment_id_mode == "correct"
+                else None if payment_id_mode == "missing"
+                else f"pay_wrong_{uuid4().hex}"
+            )
+
+        monkeypatch.setattr(payment_expiration, "_apply_paid", incomplete_capture)
+        result = payment_expiration.expire_unpaid_orders(db, limit=10)
+        assert result["captured"] == 0
+        assert result["deferred"] >= 1
+        order = db.get(Order, order_id)
+        assert order.payment_status == PaymentStatus.PENDING
+        assert order.status == OrderStatus.PLACED
+        assert order.stock_restored_at is None
+        assert db.get(StoreProduct, listing_id).stock_quantity == 9
