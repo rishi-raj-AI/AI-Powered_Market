@@ -96,6 +96,15 @@ def create_razorpay_refund(
     5xx or malformed response is nevertheless an uncertain money movement:
     the dispatcher must reconcile it rather than automatically resubmit.
     """
+    # Validate before interpolating a payment identity into the refund URL.
+    # A locally persisted identifier is not necessarily a canonical provider ID.
+    if (
+        not isinstance(provider_payment_id, str)
+        or not provider_payment_id.startswith("pay_")
+        or not provider_payment_id[4:]
+        or not all(ch.isascii() and (ch.isalnum() or ch == "_") for ch in provider_payment_id)
+    ):
+        raise PaymentProviderError("Invalid Razorpay payment identity")
     if not razorpay_enabled():
         raise PaymentProviderUnavailable("Razorpay credentials are not configured")
 
