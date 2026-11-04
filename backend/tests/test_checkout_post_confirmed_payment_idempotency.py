@@ -75,7 +75,7 @@ def test_confirmed_inside_checkout_payment_pending_and_idempotent_replay(
 
     replay = client.post("/api/v1/orders/checkout", json=payload, headers=headers)
     assert replay.status_code == 201, replay.text
-    assert replay.json()["id"] == order_id
+    assert UUID(replay.json()["id"]) == order_id
 
     other_method = "upi" if payment_method == "cod" else "cod"
     conflict = client.post(
