@@ -335,3 +335,32 @@ def test_expiry_does_not_confirm_malformed_captured_amount(
         assert order.payment_status == PaymentStatus.PENDING
         assert order.stock_restored_at is None
         assert db.get(StoreProduct, listing_id).stock_quantity == 9
+
+
+@pytest.mark.parametrize("statuses", [
+    ("captured", "captured"),
+    ("captured", "failed"),
+    ("failed", "failed"),
+])
+def test_expiry_defers_duplicate_provider_payment_identity(monkeypatch, statuses):
+    """Duplicated provider IDs cannot prove capture or terminal nonpayment."""
+    with session() as db:
+        order_id, provider_order_id, listing_id = _old_unpaid_order(db)
+        duplicate_id = f"pay_{uuid4().hex}"
+        monkeypatch.setattr(
+            payment_expiration, "list_razorpay_order_payments",
+            lambda **_: [
+                {
+                    "id": duplicate_id, "order_id": provider_order_id,
+                    "amount": 12000, "currency": "INR", "status": status,
+                }
+                for status in statuses
+            ],
+        )
+        result = payment_expiration.expire_unpaid_orders(db, limit=10)
+        order = db.get(Order, order_id)
+        assert result["deferred"] >= 1
+        assert order.status == OrderStatus.PLACED
+        assert order.payment_status == PaymentStatus.PENDING
+        assert order.stock_restored_at is None
+        assert db.get(StoreProduct, listing_id).stock_quantity == 9
