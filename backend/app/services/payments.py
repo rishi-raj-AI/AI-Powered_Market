@@ -187,6 +187,15 @@ def list_razorpay_order_payments(*, provider_order_id: str) -> list[dict]:
     Refuse to treat a truncated provider response as proof that no capture
     exists. A provider outage must delay expiration, not silently lose money.
     """
+    # Never interpolate untrusted or legacy provider identifiers into a URL.
+    # A malformed identity cannot provide authoritative evidence for stock release.
+    if (
+        not isinstance(provider_order_id, str)
+        or not provider_order_id.startswith("order_")
+        or not provider_order_id[6:]
+        or not all(ch.isascii() and ch.isalnum() or ch == "_" for ch in provider_order_id)
+    ):
+        raise PaymentProviderError("Invalid Razorpay order identity")
     if not razorpay_enabled():
         raise PaymentProviderUnavailable("Razorpay credentials are not configured")
     try:
