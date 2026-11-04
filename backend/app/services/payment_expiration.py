@@ -78,6 +78,15 @@ def expire_unpaid_orders(
                 .order_by(PaymentAttempt.id)
                 .with_for_update()
             ).all()
+            if not attempts:
+                # Legacy or inconsistent UPI orders without a recorded provider
+                # intent cannot be proven unpaid. Defer stock recovery until an
+                # operator reconciles the missing payment history.
+                logger.warning("UPI expiry deferred for order_id=%s: no payment attempts", order.id)
+                db.rollback()
+                result["deferred"] += 1
+                continue
+
             captured: list[tuple[PaymentAttempt, str]] = []
             seen_provider_payment_ids: set[str] = set()
             uncertain = False
