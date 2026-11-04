@@ -148,7 +148,7 @@ def audit_paid_upi(*, limit: int = 100, days: int = 30) -> dict:
                             or payment.get("order_id") != attempt.provider_order_id
                             or payment.get("currency") != attempt.currency
                             or type(payment.get("amount")) is not int
-                            or payment["amount"] != amount_to_subunits(attempt.amount)
+                            or payment["amount"] != amount_to_subunits(order.total)
                         ):
                             mismatch = True
                         continue
