@@ -4,6 +4,7 @@ Synthetic PostgreSQL/PostGIS only; never calls a payment provider.
 """
 from datetime import datetime, timezone
 from decimal import Decimal
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
@@ -58,7 +59,7 @@ def test_confirmed_inside_checkout_payment_pending_and_idempotent_replay(
     payload = {"address_id": str(address_id), "payment_method": payment_method}
     first = client.post("/api/v1/orders/checkout", json=payload, headers=headers)
     assert first.status_code == 201, first.text
-    order_id = first.json()["id"]
+    order_id = UUID(first.json()["id"])
 
     with factories.session() as db:
         order = db.get(Order, order_id)
@@ -67,7 +68,9 @@ def test_confirmed_inside_checkout_payment_pending_and_idempotent_replay(
         assert db.get(StoreProduct, listing_id).stock_quantity == 7
         assert db.get(Cart, cart_id).store_id is None
         assert db.scalar(
-            select(func.count()).select_from(CartItem).where(CartItem.cart_id == cart_id)
+            select(func.count()).select_from(CartItem).where(
+                CartItem.cart_id == cart_id
+            )
         ) == 0
 
     replay = client.post("/api/v1/orders/checkout", json=payload, headers=headers)
@@ -84,7 +87,9 @@ def test_confirmed_inside_checkout_payment_pending_and_idempotent_replay(
 
     with factories.session() as db:
         assert db.scalar(
-            select(func.count()).select_from(Order).where(Order.user_id == customer_id)
+            select(func.count()).select_from(Order).where(
+                Order.user_id == customer_id
+            )
         ) == 1
         assert db.get(StoreProduct, listing_id).stock_quantity == 7
         assert db.get(Order, order_id).payment_status == PaymentStatus.PENDING
