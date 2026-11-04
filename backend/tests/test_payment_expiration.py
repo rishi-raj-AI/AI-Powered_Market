@@ -364,3 +364,52 @@ def test_expiry_defers_duplicate_provider_payment_identity(monkeypatch, statuses
         assert order.payment_status == PaymentStatus.PENDING
         assert order.stock_restored_at is None
         assert db.get(StoreProduct, listing_id).stock_quantity == 9
+
+
+def test_expiry_compares_provider_history_to_canonical_order_total(monkeypatch):
+    """A corrupted local attempt must not define provider money validation."""
+    with session() as db:
+        order_id, provider_order_id, listing_id = _old_unpaid_order(db)
+        attempt = db.query(PaymentAttempt).filter(PaymentAttempt.order_id == order_id).one()
+        attempt.amount = Decimal("119.00")
+        db.commit()
+        observed = []
+        real_convert = payment_expiration.amount_to_subunits
+
+        def record_amount(amount):
+            observed.append(amount)
+            return real_convert(amount)
+
+        monkeypatch.setattr(payment_expiration, "amount_to_subunits", record_amount)
+        monkeypatch.setattr(
+            payment_expiration, "list_razorpay_order_payments",
+            lambda **_: [{
+                "id": f"pay_{uuid4().hex}", "order_id": provider_order_id,
+                "amount": 12000, "currency": "INR", "status": "failed",
+            }],
+        )
+        result = payment_expiration.expire_unpaid_orders(db, limit=10)
+        assert observed == [Decimal("120.00")]
+        assert result["deferred"] >= 1
+        assert db.get(Order, order_id).status == OrderStatus.PLACED
+        assert db.get(StoreProduct, listing_id).stock_quantity == 9
+
+
+def test_expiry_defers_when_capture_application_does_not_mark_order_paid(monkeypatch):
+    """Do not report successful reconciliation if capture left payment pending."""
+    with session() as db:
+        order_id, provider_order_id, listing_id = _old_unpaid_order(db)
+        monkeypatch.setattr(
+            payment_expiration, "list_razorpay_order_payments",
+            lambda **_: [{
+                "id": f"pay_{uuid4().hex}", "order_id": provider_order_id,
+                "amount": 12000, "currency": "INR", "status": "captured",
+            }],
+        )
+        monkeypatch.setattr(payment_expiration, "_apply_paid", lambda *_: None)
+        result = payment_expiration.expire_unpaid_orders(db, limit=10)
+        assert result["captured"] == 0
+        assert result["deferred"] >= 1
+        assert db.get(Order, order_id).payment_status == PaymentStatus.PENDING
+        assert db.get(Order, order_id).status == OrderStatus.PLACED
+        assert db.get(StoreProduct, listing_id).stock_quantity == 9
