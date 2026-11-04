@@ -150,8 +150,12 @@ def expire_unpaid_orders(
             if len(captured) == 1 and not uncertain:
                 attempt, provider_payment_id = captured[0]
                 _apply_paid(db, attempt, order, provider_payment_id)
-                if order.payment_status != PaymentStatus.PAID:
-                    # Do not count an unsettled capture as a reconciled paid order.
+                if (
+                    order.payment_status != PaymentStatus.PAID
+                    or attempt.status != "paid"
+                    or attempt.provider_payment_id != provider_payment_id
+                ):
+                    # A successful reconciliation must persist matching order and attempt evidence.
                     db.rollback()
                     result["deferred"] += 1
                     continue
