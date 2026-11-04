@@ -87,6 +87,24 @@ def expire_unpaid_orders(
                 result["deferred"] += 1
                 continue
 
+            # A retry creates a fresh provider payment window even when the
+            # commercial order is old. Never expire its reservation using only
+            # the original order creation time: the provider may still accept
+            # payment for a recently issued Razorpay intent.
+            if any(
+                attempt.created_at is None
+                or (
+                    attempt.created_at.replace(tzinfo=timezone.utc)
+                    if attempt.created_at.tzinfo is None
+                    else attempt.created_at
+                ) >= cutoff
+                for attempt in attempts
+            ):
+                logger.info("UPI expiry deferred for order_id=%s: recent payment attempt", order.id)
+                db.rollback()
+                result["deferred"] += 1
+                continue
+
             captured: list[tuple[PaymentAttempt, str]] = []
             seen_provider_payment_ids: set[str] = set()
             uncertain = False
