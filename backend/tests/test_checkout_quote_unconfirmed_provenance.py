@@ -8,7 +8,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.security import create_access_token
-from app.db.session import SessionLocal
 from app.main import app
 from app.models.orders import Cart, CartItem
 from tests import factories
