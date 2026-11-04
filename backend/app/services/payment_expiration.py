@@ -111,6 +111,23 @@ def expire_unpaid_orders(
                 result["deferred"] += 1
                 continue
 
+            # A provider order ID must identify one local payment attempt for
+            # this commercial order. Reused IDs make retry history ambiguous:
+            # two local intents may describe the same external money movement.
+            # Quarantine before any provider call or inventory mutation.
+            provider_order_ids = [
+                attempt.provider_order_id for attempt in attempts
+                if attempt.provider == "razorpay"
+            ]
+            if len(provider_order_ids) != len(set(provider_order_ids)):
+                logger.warning(
+                    "UPI expiry deferred for order_id=%s: duplicate provider order identity",
+                    order.id,
+                )
+                db.rollback()
+                result["deferred"] += 1
+                continue
+
             captured: list[tuple[PaymentAttempt, str]] = []
             seen_provider_payment_ids: set[str] = set()
             uncertain = False
