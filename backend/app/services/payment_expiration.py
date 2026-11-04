@@ -79,6 +79,7 @@ def expire_unpaid_orders(
                 .with_for_update()
             ).all()
             captured: list[tuple[PaymentAttempt, str]] = []
+            seen_provider_payment_ids: set[str] = set()
             uncertain = False
             for attempt in attempts:
                 if attempt.provider != "razorpay":
@@ -104,6 +105,14 @@ def expire_unpaid_orders(
                 )
                 for payment in payments:
                     provider_status = payment.get("status")
+                    payment_id = payment.get("id")
+                    if isinstance(payment_id, str) and payment_id:
+                        # Duplicate identities (including across retry orders) are
+                        # ambiguous even if one record says captured and another
+                        # says failed. Never auto-confirm or release stock.
+                        if payment_id in seen_provider_payment_ids:
+                            uncertain = True
+                        seen_provider_payment_ids.add(payment_id)
                     if (
                         payment.get("order_id") != attempt.provider_order_id
                         or not isinstance(payment.get("id"), str)
