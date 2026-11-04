@@ -1,17 +1,19 @@
-"""A matching capture must not certify duplicated local Razorpay order identities.
+"""Payment attempt provider identities are unique at the database boundary.
 
-Read-only audit with disposable fixtures and mocked provider I/O.
+Disposable database fixtures only; no provider calls or live financial records.
 """
+from uuid import uuid4
+
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.models.integrations import PaymentAttempt
-from app.scripts import audit_upi_payments
 from tests.factories import make_order, session
 
 
-@pytest.mark.parametrize("second_status", ["created", "attempted", "failed", "paid"])
-def test_paid_audit_quarantines_duplicate_local_provider_order(monkeypatch, second_status):
+@pytest.mark.parametrize("collision", ["provider_order_id", "provider_payment_id"])
+def test_payment_attempt_rejects_duplicate_provider_identity(collision):
     with session() as db:
         order = make_order(db)
         original = db.scalar(
@@ -20,32 +22,19 @@ def test_paid_audit_quarantines_duplicate_local_provider_order(monkeypatch, seco
         duplicate = PaymentAttempt(
             order_id=order.id,
             provider="razorpay",
-            provider_order_id=original.provider_order_id,
+            provider_order_id=(
+                original.provider_order_id if collision == "provider_order_id"
+                else f"order_{uuid4().hex}"
+            ),
             provider_payment_id=(
-                "pay_second_local" if second_status == "paid" else None
+                original.provider_payment_id if collision == "provider_payment_id"
+                else None
             ),
             amount=original.amount,
             currency=original.currency,
-            status=second_status,
+            status="created",
         )
         db.add(duplicate)
-        db.commit()
-        order_number = order.order_number
-        history = [{
-            "id": original.provider_payment_id,
-            "order_id": original.provider_order_id,
-            "status": "captured",
-            "amount": 12000,
-            "currency": "INR",
-        }]
-        monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
-        monkeypatch.setattr(
-            audit_upi_payments, "list_razorpay_order_payments", lambda **_: history
-        )
-        report = audit_upi_payments.audit_paid_upi()
-        finding = next(
-            row for row in report["findings"] if row["order_number"] == order_number
-        )
-        assert finding["result"] == "capture_mismatch"
-        assert report["verified"] == 0
-        assert report["requires_review"] >= 1
+        with pytest.raises(IntegrityError):
+            db.flush()
+        db.rollback()
