@@ -42,6 +42,9 @@ def expire_unpaid_orders(
     if limit < 1 or age_minutes < 1:
         raise ValueError("Expiration limit and age must be positive")
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=age_minutes)
+    # Scan beyond the processing budget: permanently deferred legacy orders must
+    # not starve later eligible reservations on every scheduled run.
+    scan_limit = min(max(limit * 10, limit), 500)
     candidates = db.scalars(
         select(Order.id)
         .where(
@@ -51,11 +54,14 @@ def expire_unpaid_orders(
             Order.created_at < cutoff,
         )
         .order_by(Order.created_at, Order.id)
-        .limit(limit)
+        .limit(scan_limit)
     ).all()
-    result = {"considered": len(candidates), "expired": 0, "captured": 0, "deferred": 0}
+    result = {"considered": 0, "expired": 0, "captured": 0, "deferred": 0}
 
     for order_id in candidates:
+        if result["expired"] + result["captured"] >= limit:
+            break
+        result["considered"] += 1
         try:
             order = db.scalar(
                 select(Order).where(Order.id == order_id).with_for_update(skip_locked=True)
