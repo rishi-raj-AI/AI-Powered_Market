@@ -158,6 +158,15 @@ def verify_razorpay_webhook_signature(*, raw_body: bytes, received_signature: st
 
 def fetch_razorpay_payment(*, provider_payment_id: str) -> dict:
     """Fetch authoritative provider payment state; a valid callback signature alone is insufficient."""
+    # Reject malformed identifiers before constructing a provider URL. A signed
+    # callback does not make its payment identifier a safe URL path segment.
+    if (
+        not isinstance(provider_payment_id, str)
+        or not provider_payment_id.startswith("pay_")
+        or not provider_payment_id[4:]
+        or not all(ch.isascii() and (ch.isalnum() or ch == "_") for ch in provider_payment_id)
+    ):
+        raise PaymentProviderError("Invalid Razorpay payment identity")
     if not razorpay_enabled():
         raise PaymentProviderUnavailable("Razorpay credentials are not configured")
     try:
