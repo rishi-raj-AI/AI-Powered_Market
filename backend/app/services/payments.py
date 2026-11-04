@@ -263,7 +263,9 @@ def list_razorpay_order_payments(*, provider_order_id: str) -> list[dict]:
             not isinstance(payment_id, str)
             or not payment_id
             or item.get("order_id") != provider_order_id
-            or payment_id != payment_id.strip()
+            or not payment_id.startswith("pay_")
+            or not payment_id[4:]
+            or not all(ch.isascii() and (ch.isalnum() or ch == "_") for ch in payment_id)
             or payment_id in seen_payment_ids
         ):
             raise PaymentProviderError("Razorpay payment history is incomplete")
