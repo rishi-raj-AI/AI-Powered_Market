@@ -1,6 +1,8 @@
 """Unconfirmed location provenance cannot authorize checkout.
 
 Synthetic PostgreSQL/PostGIS fixtures only; diagnostic access is read-only.
+Unknown source values are rejected by ck_addresses_location_source at persistence,
+so only valid, unconfirmed provenance values are exercised through diagnosis.
 """
 import pytest
 from sqlalchemy import text
@@ -16,7 +18,6 @@ from tests import factories
         ("gps", "unconfirmed_gps"),
         ("map_pin", "unconfirmed_map_pin"),
         ("searched_place", "approximate_searched_place"),
-        ("unknown_provider", "unrecognized_location_source"),
     ],
 )
 def test_unconfirmed_location_source_is_not_checkout_eligible(source, expected_confidence):
