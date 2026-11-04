@@ -120,7 +120,7 @@ def expire_unpaid_orders(
                 for payment in payments:
                     provider_status = payment.get("status")
                     payment_id = payment.get("id")
-                    if isinstance(payment_id, str) and payment_id:
+                    if isinstance(payment_id, str) and payment_id and payment_id == payment_id.strip():
                         # Duplicate identities (including across retry orders) are
                         # ambiguous even if one record says captured and another
                         # says failed. Never auto-confirm or release stock.
@@ -131,6 +131,7 @@ def expire_unpaid_orders(
                         payment.get("order_id") != attempt.provider_order_id
                         or not isinstance(payment.get("id"), str)
                         or not payment["id"]
+                        or payment["id"] != payment["id"].strip()
                     ):
                         uncertain = True
                         continue
