@@ -2,7 +2,6 @@
 
 Synthetic PostgreSQL/PostGIS fixtures; no external provider calls or production data.
 """
-from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -52,3 +51,5 @@ def test_cart_quote_rejects_unconfirmed_location_inside_territory(source):
     quote = response.json()
     assert quote["checkout_ready"] is False
     assert quote["serviceable"] is False
+    assert quote["serviceability_reason_code"] == "ADDRESS_LOCATION_UNCONFIRMED"
+    assert any("Confirm your delivery location" in blocker for blocker in quote["blockers"])
