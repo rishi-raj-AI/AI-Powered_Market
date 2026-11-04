@@ -489,3 +489,38 @@ def test_expiry_quarantines_unverifiable_legacy_provider_order(
         assert order.payment_status == PaymentStatus.PENDING
         assert order.stock_restored_at is None
         assert db.get(StoreProduct, listing_id).stock_quantity == 9
+
+
+@pytest.mark.parametrize("second_status", ["created", "failed", "attempted"])
+def test_expiry_quarantines_duplicate_provider_order_ids_before_network(
+    monkeypatch, second_status,
+):
+    """A retry reusing a provider order ID is not independent payment evidence."""
+    with session() as db:
+        order_id, provider_order_id, listing_id = _old_unpaid_order(db)
+        db.add(PaymentAttempt(
+            order_id=order_id,
+            provider="razorpay",
+            provider_order_id=provider_order_id,
+            status=second_status,
+            amount=Decimal("120.00"),
+            currency="INR",
+            created_at=datetime.now(timezone.utc) - timedelta(minutes=40),
+        ))
+        db.commit()
+
+        def unexpected_provider_read(**_kwargs):
+            pytest.fail("Ambiguous payment attempts must not be reconciled automatically")
+
+        monkeypatch.setattr(
+            payment_expiration, "list_razorpay_order_payments", unexpected_provider_read,
+        )
+        result = payment_expiration.expire_unpaid_orders(db, limit=10)
+        assert result["expired"] == 0
+        assert result["captured"] == 0
+        assert result["deferred"] >= 1
+        order = db.get(Order, order_id)
+        assert order.status == OrderStatus.PLACED
+        assert order.payment_status == PaymentStatus.PENDING
+        assert order.stock_restored_at is None
+        assert db.get(StoreProduct, listing_id).stock_quantity == 9
