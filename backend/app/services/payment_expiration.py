@@ -29,6 +29,12 @@ from app.services.payments import (
 from app.services.stock import restore_order_stock_once
 
 logger = logging.getLogger(__name__)
+
+
+def _utc_datetime(value: datetime) -> datetime:
+    """Normalize legacy naive UTC timestamps before comparing cutoffs."""
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
 _PAYMENT_ID_RE = re.compile(r"pay_[A-Za-z0-9_]+\Z", re.ASCII)
 _ORDER_ID_RE = re.compile(r"order_[A-Za-z0-9_]+\Z", re.ASCII)
 
@@ -82,7 +88,7 @@ def expire_unpaid_orders(
                     order is None or order.status != OrderStatus.PLACED
                     or order.payment_method != PaymentMethod.UPI
                     or order.payment_status not in (PaymentStatus.PENDING, PaymentStatus.FAILED)
-                    or order.created_at >= cutoff
+                    or _utc_datetime(order.created_at) >= cutoff
                 ):
                     db.rollback()
                     continue
@@ -123,11 +129,7 @@ def expire_unpaid_orders(
                 # payment for a recently issued Razorpay intent.
                 if any(
                     attempt.created_at is None
-                    or (
-                        attempt.created_at.replace(tzinfo=timezone.utc)
-                        if attempt.created_at.tzinfo is None
-                        else attempt.created_at
-                    ) >= cutoff
+                    or _utc_datetime(attempt.created_at) >= cutoff
                     for attempt in attempts
                 ):
                     logger.info("UPI expiry deferred for order_id=%s: recent payment attempt", order.id)
