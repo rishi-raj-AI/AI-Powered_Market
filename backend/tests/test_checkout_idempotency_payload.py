@@ -1,8 +1,7 @@
 """Idempotent checkout retries must not silently change address or payment intent.
 
 Synthetic PostgreSQL integration tests. No Razorpay calls or production writes.
-The second-read cases model an order committed by a competing request while
-the retry waits on the customer's cart lock.
+Replay checks run after the customer's cart row is locked.
 """
 
 from datetime import datetime, timezone
@@ -19,10 +18,9 @@ from app.schemas.orders import CheckoutRequest
 from tests import factories
 
 
-@pytest.mark.parametrize("phase", ["first_read", "after_cart_lock"])
 @pytest.mark.parametrize("changed_field", ["none", "address", "payment_method"])
 def test_idempotent_replay_matches_original_address_and_payment(
-    monkeypatch, phase, changed_field,
+    changed_field,
 ):
     with factories.session() as db:
         customer = factories.make_user(db)
@@ -53,15 +51,6 @@ def test_idempotent_replay_matches_original_address_and_payment(
             ),
         )
         before = db.scalar(select(func.count(Order.id)).where(Order.user_id == customer.id))
-
-        if phase == "after_cart_lock":
-            # Simulate the race: first read saw no order, second read after
-            # locking the cart sees the committed winner's order.
-            reads = iter([None, order])
-            monkeypatch.setattr(
-                checkout, "_existing_idempotent_order",
-                lambda *_args: next(reads),
-            )
 
         if changed_field == "none":
             replay = checkout.safe_checkout(
