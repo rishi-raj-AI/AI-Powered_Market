@@ -50,7 +50,7 @@ def test_confirmed_inside_checkout_payment_pending_and_idempotent_replay(
         factories._track(item)
         db.commit()
         customer_id, address_id = customer.id, address.id
-        listing_id, cart_id = listing.id, cart.id
+        listing_id, cart_id, store_id = listing.id, cart.id, store.id
 
     headers = {
         "Authorization": f"Bearer {create_access_token(str(customer_id))}",
@@ -77,6 +77,19 @@ def test_confirmed_inside_checkout_payment_pending_and_idempotent_replay(
     assert replay.status_code == 201, replay.text
     assert UUID(replay.json()["id"]) == order_id
 
+    # A new active cart must never silently replay the previous order.
+    # The original successful checkout has already emptied this cart.
+    with factories.session() as db:
+        cart = db.get(Cart, cart_id)
+        cart.store_id = store_id
+        db.add(CartItem(cart_id=cart_id, store_product_id=listing_id, quantity=2))
+        db.commit()
+
+    changed_cart_replay = client.post(
+        "/api/v1/orders/checkout", json=payload, headers=headers,
+    )
+    assert changed_cart_replay.status_code == 409, changed_cart_replay.text
+
     other_method = "upi" if payment_method == "cod" else "cod"
     conflict = client.post(
         "/api/v1/orders/checkout",
@@ -93,3 +106,4 @@ def test_confirmed_inside_checkout_payment_pending_and_idempotent_replay(
         ) == 1
         assert db.get(StoreProduct, listing_id).stock_quantity == 7
         assert db.get(Order, order_id).payment_status == PaymentStatus.PENDING
+        assert db.scalar(select(func.count()).select_from(CartItem).where(CartItem.cart_id == cart_id)) == 1
