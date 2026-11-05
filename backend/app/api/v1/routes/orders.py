@@ -182,6 +182,8 @@ def add_cart_item(
     if store is None or not store.is_active or merchant is None or merchant.status != MerchantStatus.APPROVED:
         raise HTTPException(status_code=409, detail="Store is currently unavailable")
     cart = _get_or_create_cart(db, user.id)
+    # Serialize cart edits with checkout replay/consumption using the parent row.
+    cart = db.scalar(select(Cart).where(Cart.id == cart.id).with_for_update())
     if cart.store_id and cart.store_id != listing.store_id:
         raise HTTPException(status_code=409, detail="Cart can contain products from only one store")
     cart.store_id = listing.store_id
@@ -207,6 +209,8 @@ def remove_cart_item(
     user: User = Depends(get_current_user),
 ):
     cart = _get_or_create_cart(db, user.id)
+    # Lock parent before mutating items; checkout locks the same row first.
+    cart = db.scalar(select(Cart).where(Cart.id == cart.id).with_for_update())
     db.execute(
         delete(CartItem).where(
             CartItem.cart_id == cart.id,
@@ -224,6 +228,8 @@ def remove_cart_item(
 @router.delete("/cart", response_model=CartRead)
 def clear_cart(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     cart = _get_or_create_cart(db, user.id)
+    # Lock parent before mutating items; checkout locks the same row first.
+    cart = db.scalar(select(Cart).where(Cart.id == cart.id).with_for_update())
     db.execute(delete(CartItem).where(CartItem.cart_id == cart.id))
     cart.store_id = None
     db.commit()
