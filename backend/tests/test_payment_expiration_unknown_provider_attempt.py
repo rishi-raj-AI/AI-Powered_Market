@@ -3,6 +3,7 @@
 The provider-history mock is intentionally empty: a Razorpay-only lookup cannot
 prove that an unexpected second payment provider did not move money.
 """
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4
 
@@ -24,6 +25,7 @@ def test_unknown_provider_attempt_defers_expiry_despite_empty_razorpay_history(m
             status="attempted",
             amount=Decimal("120.00"),
             currency="INR",
+            created_at=datetime.now(timezone.utc) - timedelta(minutes=40),
         ))
         db.commit()
         calls = []
@@ -45,4 +47,4 @@ def test_unknown_provider_attempt_defers_expiry_despite_empty_razorpay_history(m
         assert order.stock_restored_at is None
         assert db.get(StoreProduct, listing_id).stock_quantity == 9
         # No single provider's empty history can establish global nonpayment.
-        assert not calls
+        assert len(calls) == 1
