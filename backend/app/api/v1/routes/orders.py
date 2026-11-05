@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import delete, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.api.deps import ensure_capability, get_current_user, get_db, require_roles
@@ -53,9 +54,20 @@ router = APIRouter(tags=["Orders & Delivery"])
 def _get_or_create_cart(db: Session, user_id: uuid.UUID) -> Cart:
     cart = db.scalar(select(Cart).where(Cart.user_id == user_id))
     if cart is None:
-        cart = Cart(user_id=user_id)
-        db.add(cart)
-        db.flush()
+        if db.get_bind().dialect.name == "postgresql":
+            # Two first-cart requests may both observe no row. Let the unique
+            # user_id index arbitrate without aborting the losing transaction.
+            db.execute(
+                pg_insert(Cart)
+                .values(id=uuid.uuid4(), user_id=user_id)
+                .on_conflict_do_nothing(index_elements=[Cart.user_id])
+            )
+            cart = db.scalar(select(Cart).where(Cart.user_id == user_id))
+        else:
+            # Preserve existing behavior for lightweight non-Postgres tests.
+            cart = Cart(user_id=user_id)
+            db.add(cart)
+            db.flush()
     return cart
 
 
