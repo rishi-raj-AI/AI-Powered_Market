@@ -172,6 +172,21 @@ def expire_unpaid_orders(
                         uncertain = True
                         continue
                     seen_provider_order_ids.add(attempt.provider_order_id)
+                    # A provider intent shared with another commercial order is
+                    # not exclusive evidence for this reservation. Even an empty
+                    # provider history must not automatically release its stock.
+                    other_order_id = db.scalar(
+                        select(PaymentAttempt.order_id)
+                        .where(
+                            PaymentAttempt.provider == "razorpay",
+                            PaymentAttempt.provider_order_id == attempt.provider_order_id,
+                            PaymentAttempt.order_id != order.id,
+                        )
+                        .limit(1)
+                    )
+                    if other_order_id is not None:
+                        uncertain = True
+                        continue
                     payments = list_razorpay_order_payments(
                         provider_order_id=attempt.provider_order_id,
                     )
