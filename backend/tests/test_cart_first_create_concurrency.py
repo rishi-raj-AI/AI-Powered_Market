@@ -1,14 +1,13 @@
-"""PostgreSQL two-session regression for first-cart creation.
+"""Deterministic PostgreSQL unique-index conflict regression for first carts.
 
-Requires the disposable PostGIS integration database used by backend CI.
-No production database, external payment service, or territory mutation.
+Uses disposable integration database only; never production.
 """
 
 from concurrent.futures import ThreadPoolExecutor
-from threading import Barrier
-from time import sleep
+from threading import Event
+from time import monotonic, sleep
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 
 from app.api.v1.routes.orders import _get_or_create_cart
 from app.db.session import SessionLocal
@@ -22,24 +21,58 @@ def test_simultaneous_first_cart_requests_share_one_cart():
         user_id = user.id
         db.commit()
 
-    barrier = Barrier(2)
+    winner_inserted = Event()
+    release_winner = Event()
+    loser_started = Event()
+    loser_pid = []
 
-    def create_cart(delay_before_commit: float):
+    def winner():
         with SessionLocal() as db:
             assert db.get_bind().dialect.name == "postgresql"
-            barrier.wait(timeout=10)
             cart = _get_or_create_cart(db, user_id)
             cart_id = cart.id
-            # Keep one transaction open long enough to exercise the unique
-            # index's conflict-wait path in the competing transaction.
-            sleep(delay_before_commit)
+            winner_inserted.set()
+            if not release_winner.wait(timeout=15):
+                raise AssertionError("Timed out waiting to release first-cart transaction")
+            db.commit()
+            return cart_id
+
+    def loser():
+        with SessionLocal() as db:
+            assert db.get_bind().dialect.name == "postgresql"
+            assert winner_inserted.wait(timeout=10)
+            loser_pid.append(db.scalar(text("SELECT pg_backend_pid()")))
+            loser_started.set()
+            cart = _get_or_create_cart(db, user_id)
+            cart_id = cart.id
             db.commit()
             return cart_id
 
     try:
         with ThreadPoolExecutor(max_workers=2) as pool:
-            first = pool.submit(create_cart, 0.2)
-            second = pool.submit(create_cart, 0.0)
+            first = pool.submit(winner)
+            second = pool.submit(loser)
+            try:
+                assert loser_started.wait(timeout=10)
+                # Observe the losing backend actually blocked by the winner's
+                # uncommitted unique-index insertion; no sleep-based race guess.
+                deadline = monotonic() + 10
+                blocked = False
+                with SessionLocal() as observer:
+                    while monotonic() < deadline:
+                        blockers = observer.scalar(
+                            text("SELECT cardinality(pg_blocking_pids(:pid))"),
+                            {"pid": loser_pid[0]},
+                        )
+                        if blockers and blockers > 0:
+                            blocked = True
+                            break
+                        if second.done():
+                            break
+                        sleep(0.02)
+                assert blocked, "Competing first-cart INSERT never observed waiting on a PostgreSQL lock"
+            finally:
+                release_winner.set()
             ids = (first.result(timeout=20), second.result(timeout=20))
         assert ids[0] == ids[1]
         with SessionLocal() as db:
@@ -47,8 +80,7 @@ def test_simultaneous_first_cart_requests_share_one_cart():
                 select(func.count(Cart.id)).where(Cart.user_id == user_id)
             ) == 1
     finally:
-        # Cart is not factory-tracked. Remove it before the user fixture's
-        # foreign-key-aware teardown, even when the assertion fails.
+        release_winner.set()
         with SessionLocal() as db:
             db.execute(delete(Cart).where(Cart.user_id == user_id))
             db.commit()
