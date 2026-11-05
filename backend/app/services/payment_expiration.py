@@ -240,6 +240,25 @@ def expire_unpaid_orders(
                             continue
                         captured.append((attempt, payment["id"]))
 
+                # Provider payment identities must also belong exclusively to this
+                # commercial order. A legacy/corrupt row can associate a capture
+                # with another order even when the provider order IDs differ.
+                # Do not mark either order paid or release stock automatically.
+                if captured:
+                    for _attempt, payment_id in captured:
+                        conflicting_order = db.scalar(
+                            select(PaymentAttempt.order_id)
+                            .where(
+                                PaymentAttempt.provider == "razorpay",
+                                PaymentAttempt.provider_payment_id == payment_id,
+                                PaymentAttempt.order_id != order.id,
+                            )
+                            .limit(1)
+                        )
+                        if conflicting_order is not None:
+                            uncertain = True
+                            break
+
                 # A second authorized payment may still capture. Do not release an
                 # order with ambiguous provider state or multiple money movements.
                 if len(captured) == 1 and not uncertain:
