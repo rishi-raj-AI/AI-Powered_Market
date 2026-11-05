@@ -105,6 +105,14 @@ def expire_unpaid_orders(
                     result["deferred"] += 1
                     continue
 
+                # Corrupt zero/negative totals are not valid payment obligations.
+                # Never infer nonpayment or reconcile a capture against them.
+                if order.total is None or order.total <= 0:
+                    logger.warning("UPI expiry deferred for order_id=%s: invalid total", order.id)
+                    db.rollback()
+                    result["deferred"] += 1
+                    continue
+
                 # Inspect every attempt, not just Razorpay attempts: an unknown
                 # provider or locally recorded capture must block stock release.
                 # Otherwise a stale order-level PENDING flag can conceal money.
