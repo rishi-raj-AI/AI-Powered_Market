@@ -72,6 +72,28 @@ def _validate_idempotent_checkout_replay(order: Order, payload: CheckoutRequest)
     return order
 
 
+def _reject_replay_with_active_cart(db: Session, user_id: uuid.UUID) -> None:
+    """Never return an old order when a customer has started a new cart.
+
+    A completed checkout clears its cart. A nonempty cart means a subsequent
+    request needs a fresh idempotency key, even when address/payment match.
+    This conservative guard needs no migration and keeps empty-cart retries
+    (including legacy orders) working. It does not replace a future durable
+    checkout-intent fingerprint.
+    """
+    active_cart = db.scalar(select(Cart).where(Cart.user_id == user_id))
+    if active_cart is None or active_cart.store_id is None:
+        return
+    has_items = db.scalar(
+        select(CartItem.id).where(CartItem.cart_id == active_cart.id).limit(1)
+    )
+    if has_items is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Idempotency-Key belongs to a previous order; use a new key for this cart",
+        )
+
+
 def _new_order_number() -> str:
     """Time-ordered and collision-resistant.
 
@@ -186,6 +208,7 @@ def safe_checkout(
             raise HTTPException(status_code=400, detail="Idempotency-Key must contain 1 to 128 characters")
         existing = _existing_idempotent_order(db, user.id, idempotency_key)
         if existing:
+            _reject_replay_with_active_cart(db, user.id)
             return _validate_idempotent_checkout_replay(existing, payload)
 
     address = db.get(Address, payload.address_id)
@@ -196,6 +219,7 @@ def safe_checkout(
 
     existing = _existing_idempotent_order(db, user.id, idempotency_key)
     if existing:
+        _reject_replay_with_active_cart(db, user.id)
         return _validate_idempotent_checkout_replay(existing, payload)
 
     if cart is None or cart.store_id is None:
