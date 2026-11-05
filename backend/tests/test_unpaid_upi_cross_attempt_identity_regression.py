@@ -22,7 +22,7 @@ def test_unpaid_audit_quarantines_reused_payment_id_across_retry_orders(
             db, payment_status=PaymentStatus.PENDING, with_paid_attempt=False
         )
         provider_orders = [f"order_{uuid4().hex}", f"order_{uuid4().hex}"]
-        for provider_order_id in provider_orders:
+        for provider_order_id in (reversed(provider_orders) if reverse_history else provider_orders):
             db.add(PaymentAttempt(
                 order_id=order.id,
                 provider="razorpay",
@@ -45,15 +45,6 @@ def test_unpaid_audit_quarantines_reused_payment_id_across_retry_orders(
                 "status": second_status, "amount": 12000, "currency": "INR",
             }],
         }
-        if reverse_history:
-            # Reverse the local attempt order, not the identity conflict.
-            attempts = db.query(PaymentAttempt).filter(
-                PaymentAttempt.order_id == order.id
-            ).all()
-            attempts[0].provider_order_id, attempts[1].provider_order_id = (
-                attempts[1].provider_order_id, attempts[0].provider_order_id
-            )
-            db.flush()
         monkeypatch.setattr(audit_upi_payments, "SessionLocal", lambda: db)
         monkeypatch.setattr(
             audit_upi_payments, "list_razorpay_order_payments",
