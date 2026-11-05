@@ -139,6 +139,7 @@ def expire_unpaid_orders(
 
                 captured: list[tuple[PaymentAttempt, str]] = []
                 seen_provider_payment_ids: set[str] = set()
+                seen_provider_order_ids: set[str] = set()
                 uncertain = False
                 for attempt in attempts:
                     if attempt.provider != "razorpay":
@@ -164,6 +165,13 @@ def expire_unpaid_orders(
                         # Never restore reserved stock on this basis.
                         uncertain = True
                         continue
+                    if attempt.provider_order_id in seen_provider_order_ids:
+                        # A retry must have its own provider order identity. Reused
+                        # intents are ambiguous even if provider history is empty;
+                        # never treat duplicated local records as proof of nonpayment.
+                        uncertain = True
+                        continue
+                    seen_provider_order_ids.add(attempt.provider_order_id)
                     payments = list_razorpay_order_payments(
                         provider_order_id=attempt.provider_order_id,
                     )
