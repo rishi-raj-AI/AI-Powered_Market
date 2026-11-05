@@ -2,8 +2,9 @@ name: Backend CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, fix/verify-upi-capture-before-paid, fix/temporary-delivery-zone-bypass]
   pull_request: {}
+  workflow_dispatch: {}
 
 jobs:
   backend-check:
