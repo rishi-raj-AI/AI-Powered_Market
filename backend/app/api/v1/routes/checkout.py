@@ -206,21 +206,19 @@ def safe_checkout(
         idempotency_key = idempotency_key.strip()
         if not idempotency_key or len(idempotency_key) > 128:
             raise HTTPException(status_code=400, detail="Idempotency-Key must contain 1 to 128 characters")
-        existing = _existing_idempotent_order(db, user.id, idempotency_key)
-        if existing:
-            _reject_replay_with_active_cart(db, user.id)
-            return _validate_idempotent_checkout_replay(existing, payload)
-
-    address = db.get(Address, payload.address_id)
-    if address is None or address.user_id != user.id or address.archived_at is not None:
-        raise HTTPException(status_code=404, detail="Address not found")
-
+    # Serialize replay decisions with checkout and cart mutations using the
+    # same cart-row lock. Keep this ahead of address validation so a legitimate
+    # retry can return an order whose original address was later archived.
     cart = db.scalar(select(Cart).where(Cart.user_id == user.id).with_for_update())
 
     existing = _existing_idempotent_order(db, user.id, idempotency_key)
     if existing:
         _reject_replay_with_active_cart(db, user.id)
         return _validate_idempotent_checkout_replay(existing, payload)
+
+    address = db.get(Address, payload.address_id)
+    if address is None or address.user_id != user.id or address.archived_at is not None:
+        raise HTTPException(status_code=404, detail="Address not found")
 
     if cart is None or cart.store_id is None:
         raise HTTPException(status_code=400, detail="Cart is empty")
