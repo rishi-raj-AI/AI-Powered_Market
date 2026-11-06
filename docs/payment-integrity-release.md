@@ -284,3 +284,30 @@ If a regression is found, revert this integrated application change using the
 previous approved artifact, leaving refund obligations, audit records, and
 territory configurations untouched. Review all unresolved refund obligations
 manually; never compensate by resubmitting a refund without provider proof.
+
+
+## P0 integrated release review — 2026-11-06 (PR #298)
+
+**Release decision: HOLD.** This section records verified repository evidence, not production or Razorpay sandbox acceptance.
+
+- Candidate: `release/gaonone-p0-integration-review-20261105` at `6935238fd614fbe630239167edb2e6a1d9d527dc`. GitHub Actions Backend, Web, Mobile and Production workflows all completed successfully on this exact SHA.
+- Payment source: PR #243 `fix/verify-upi-capture-before-paid` at `ffe1a401a31acaa20c66f699d487096bb344460c`; Backend CI succeeded. **This branch is not merged into the release candidate.** Its latest fixes must be assessed by file and behavior, rather than blindly merging divergent histories.
+- The release candidate is based on the stacked geography, checkout-idempotency and PostgreSQL cart-concurrency integration. Passing CI does not prove the separate payment head has been reconciled.
+
+### Mandatory evidence before lifting HOLD
+
+1. Produce a reviewed comparison of payment-sensitive paths (payment routes/services, refund dispatch, webhook ledger/replay, payment audit, migrations and tests) between PR #243 and PR #298. For every missing fix, either port it with focused regression tests or document why it is already covered/superseded. Do not merge divergent branches indiscriminately.
+2. Confirm that the temporary delivery-zone bypass is **not active** in the candidate, including serviceability checks at cart quote and COD/UPI POST checkout. Validate confirmed in-territory, unconfirmed and outside-territory coordinates.
+3. On a **disposable restored database**, capture Alembic current/heads/history; run forward migrations and the supported rollback rehearsal; verify existing orders, payment attempts, refund obligations, territories and address provenance remain readable. Never run this rehearsal on live production data.
+4. Execute PostgreSQL concurrent first-cart creation, cart mutation, idempotent checkout replay and stock consistency tests against the final exact release SHA. Re-run Backend, Web, Mobile and Production CI after every integration change.
+5. In Razorpay **test mode only**, validate success, failure, abandonment, provider outage, webhook-first/callback-first, duplicate webhook/payment, late capture after cancellation, refund association and historical read-only audit. Record test identifiers and outcomes without storing secrets or customer data in this document.
+6. Before deployment, obtain a verified backup/restore point and an operator-approved rollout plan. Keep `PAYMENT_WEBHOOK_REPLAY_ENABLED=false` and `PAYMENT_EXPIRY_ENABLED=false` unless explicitly approved following backlog review. Do not mark an order paid from client callbacks alone.
+
+### Rollout and rollback decision points
+
+- **Preflight:** record immutable release SHA, review all migration revisions and deployment configuration changes, verify secrets are available to the deployment environment without printing them, verify backups are restorable, and confirm the bypass is absent.
+- **Deploy (only after explicit authorization):** use the project's existing production deployment workflow, apply approved migrations with a maintenance/rollback plan, verify health and database connectivity, then run non-mutating checkout/serviceability and payment-state smoke checks.
+- **Stop/rollback triggers:** any failed migration, unexpected paid state for failed UPI, accepted out-of-territory order, duplicate settlement, unresolved refund anomaly or elevated checkout error rate. Stop traffic or disable affected capabilities using approved operational controls; restore the previous application image. **Do not automatically downgrade a database with financial writes**: assess schema/data compatibility and use a reviewed forward-fix or restore procedure with a reconciliation plan.
+- **Post-rollout:** inspect durable webhook backlog, provider reconciliation discrepancies, checkout errors and fulfilment gates before enabling optional payment workers.
+
+**Unverified as of this review:** sandbox acceptance, production-like migration rehearsal, actual bypass absence, full cross-branch payment parity, and production backup/restore readiness. No deployment or APK generation is authorized.
