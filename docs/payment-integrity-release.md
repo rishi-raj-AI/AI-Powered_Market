@@ -311,3 +311,18 @@ manually; never compensate by resubmitting a refund without provider proof.
 - **Post-rollout:** inspect durable webhook backlog, provider reconciliation discrepancies, checkout errors and fulfilment gates before enabling optional payment workers.
 
 **Unverified as of this review:** sandbox acceptance, production-like migration rehearsal, actual bypass absence, full cross-branch payment parity, and production backup/restore readiness. No deployment or APK generation is authorized.
+
+
+### Payment parity audit checkpoint — 2026-11-06
+
+The latest verified candidate head before this documentation update is `0dddebc99e`: Backend, Web, Mobile, and Production CI all completed successfully (GitHub Actions runs 42246854384, 42246854545, 42246854410, and 42246854649). These workflow successes do **not** constitute Razorpay sandbox or migration acceptance.
+
+A fresh GitHub comparison of PR #298 against PR #243 still reports diverged history (payment head 204 commits ahead and 177 behind the candidate, 6 November). This is a branch ancestry comparison, **not** a count of missing payment fixes. The payment-sensitive changed-file inventory includes `backend/app/api/v1/routes/{payments,payment_hardening}.py`, `backend/app/services/{payments,payment_expiration,refunds}.py`, `backend/app/scripts/audit_upi_payments.py`, payment/refund regression tests and mobile retry messaging. Each requires behavior-based disposition before release approval.
+
+Initial direct file comparison shows that the release candidate already has stronger validation in several places than the divergent payment branch:
+
+- `payments.py` checks every historical payment attempt for provider, currency, amount, status, provider-payment identity, nonblank provider-order identity and duplicates **before** provider-history I/O. Do not overwrite this with the older branch's narrower initial active-attempt guard.
+- `payment_hardening.py` checks the refund entity is a dictionary before reading its fields and explicitly requires a string provider status. Do not regress these checks when porting webhook changes.
+- `refunds.py` explicitly requires a string refund status before checking accepted values. Preserve this defensive type check.
+
+This is a **partial parity review**, not proof of complete parity. Next review the remaining behavioral differences and regression tests for capture binding, refund concurrency, payment history, webhook replay and late capture. Any changes must preserve the candidate's stronger existing guards. The temporary territory bypass, migration rehearsal, sandbox tests and production operator acceptance remain unverified.
