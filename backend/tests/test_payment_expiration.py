@@ -20,6 +20,7 @@ def _old_unpaid_order(db):
         order_id=order.id, provider="razorpay",
         provider_order_id=f"order_{uuid4().hex}", status="attempted",
         amount=Decimal("120.00"), currency="INR",
+        created_at=datetime.now(timezone.utc) - timedelta(minutes=40),
     )
     db.add(attempt)
     item = db.query(OrderItem).filter(OrderItem.order_id == order.id).one()
