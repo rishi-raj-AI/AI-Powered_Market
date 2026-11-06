@@ -96,6 +96,15 @@ def create_razorpay_refund(
     5xx or malformed response is nevertheless an uncertain money movement:
     the dispatcher must reconcile it rather than automatically resubmit.
     """
+    # Validate before interpolating a payment identity into the refund URL.
+    # A locally persisted identifier is not necessarily a canonical provider ID.
+    if (
+        not isinstance(provider_payment_id, str)
+        or not provider_payment_id.startswith("pay_")
+        or not provider_payment_id[4:]
+        or not all(ch.isascii() and (ch.isalnum() or ch == "_") for ch in provider_payment_id)
+    ):
+        raise PaymentProviderError("Invalid Razorpay payment identity")
     if not razorpay_enabled():
         raise PaymentProviderUnavailable("Razorpay credentials are not configured")
 
@@ -158,6 +167,15 @@ def verify_razorpay_webhook_signature(*, raw_body: bytes, received_signature: st
 
 def fetch_razorpay_payment(*, provider_payment_id: str) -> dict:
     """Fetch authoritative provider payment state; a valid callback signature alone is insufficient."""
+    # Reject malformed identifiers before constructing a provider URL. A signed
+    # callback does not make its payment identifier a safe URL path segment.
+    if (
+        not isinstance(provider_payment_id, str)
+        or not provider_payment_id.startswith("pay_")
+        or not provider_payment_id[4:]
+        or not all(ch.isascii() and (ch.isalnum() or ch == "_") for ch in provider_payment_id)
+    ):
+        raise PaymentProviderError("Invalid Razorpay payment identity")
     if not razorpay_enabled():
         raise PaymentProviderUnavailable("Razorpay credentials are not configured")
     try:
@@ -187,6 +205,15 @@ def list_razorpay_order_payments(*, provider_order_id: str) -> list[dict]:
     Refuse to treat a truncated provider response as proof that no capture
     exists. A provider outage must delay expiration, not silently lose money.
     """
+    # Never interpolate untrusted or legacy provider identifiers into a URL.
+    # A malformed identity cannot provide authoritative evidence for stock release.
+    if (
+        not isinstance(provider_order_id, str)
+        or not provider_order_id.startswith("order_")
+        or not provider_order_id[6:]
+        or not all(ch.isascii() and ch.isalnum() or ch == "_" for ch in provider_order_id)
+    ):
+        raise PaymentProviderError("Invalid Razorpay order identity")
     if not razorpay_enabled():
         raise PaymentProviderUnavailable("Razorpay credentials are not configured")
     try:
@@ -236,6 +263,9 @@ def list_razorpay_order_payments(*, provider_order_id: str) -> list[dict]:
             not isinstance(payment_id, str)
             or not payment_id
             or item.get("order_id") != provider_order_id
+            or not payment_id.startswith("pay_")
+            or not payment_id[4:]
+            or not all(ch.isascii() and (ch.isalnum() or ch == "_") for ch in payment_id)
             or payment_id in seen_payment_ids
         ):
             raise PaymentProviderError("Razorpay payment history is incomplete")
