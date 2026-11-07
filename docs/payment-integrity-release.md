@@ -179,8 +179,12 @@ issue refunds, or build APKs until the release owner approves.
 - [ ] Run the historical audit against a **staging copy**; reconcile discrepancies
       manually with Razorpay records and the refund ledger.
 - [ ] Confirm no production payment record is changed by staging tests.
-- [ ] Confirm the temporary geographic checkout bypass is tracked and is
-      replaced by the geography project before nationwide release.
+- [ ] Complete a repository-wide and staging-configuration audit proving the
+      temporary geographic checkout bypass from PR #243 is absent. The
+      integrated geography/serviceability checks have been source-reviewed
+      at quote and POST checkout, but full bypass absence remains unverified.
+      Test COD and UPI with confirmed in-territory, unconfirmed and
+      out-of-territory addresses before lifting HOLD.
 
 ## Deferred release steps
 
