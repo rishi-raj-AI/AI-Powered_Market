@@ -48,5 +48,10 @@ jobs:
         run: flutter analyze lib
       - working-directory: mobile
         run: flutter test
-      - working-directory: mobile
+      # Payment-integrity development is analysis/test only. APK generation is
+      # explicitly deferred until the release owner authorizes it; keep the
+      # existing debug smoke build for other PRs and main.
+      - name: Build Android debug APK (outside deferred payment PR)
+        if: github.event_name != 'pull_request' || github.head_ref != 'fix/verify-upi-capture-before-paid'
+        working-directory: mobile
         run: flutter build apk --debug --dart-define=API_URL=http://10.0.2.2:8000/api/v1 --dart-define=GAONONE_LEGACY_OTP_ENABLED=false

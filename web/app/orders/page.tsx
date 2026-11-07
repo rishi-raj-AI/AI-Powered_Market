@@ -57,8 +57,12 @@ function refundLine(refund: PaymentRefund) {
   return "Refund requested. It will reach your original payment method shortly.";
 }
 function paymentIntentError(error: unknown) {
-  if (error instanceof ApiError && error.status === 503)
-    return "Online payment is unavailable right now. Your order is still saved and payment is pending. Please try again later.";
+  if (error instanceof ApiError) {
+    if (error.status === 409)
+      return "A previous payment may still be processing or needs verification. Do not pay again yet. Refresh your order status or contact support if it stays pending.";
+    if (error.status === 502 || error.status === 503)
+      return "We could not safely check your previous payment right now. Your order is saved; please check its status before trying again to avoid paying twice.";
+  }
   return error instanceof Error ? error.message : "Unable to start online payment.";
 }
 export default function Orders() {
@@ -74,14 +78,19 @@ export default function Orders() {
   const paymentInFlight = useRef<string | null>(null);
   const confirmationPendingInFlight = useRef<string | null>(null);
   const confirmationRetryInFlight = useRef(false);
+  // A slow initial/manual refresh must not overwrite a newer provider-
+  // reconciled payment status with an older PENDING snapshot.
+  const latestOrderLoad = useRef(0);
   async function load(silent = false): Promise<Order[] | null> {
+    const loadId = ++latestOrderLoad.current;
     try {
       const nextOrders = await gaonApi.orders();
+      if (loadId !== latestOrderLoad.current) return null;
       setOrders(nextOrders);
       setError("");
       return nextOrders;
     } catch (e: any) {
-      if (!silent)
+      if (loadId === latestOrderLoad.current && !silent)
         setError(e.status === 401 ? "Please login to view orders" : e.message);
       return null;
     }
@@ -220,6 +229,7 @@ export default function Orders() {
     };
     setBusy(o.id);
     setError("");
+    setMsg("");
     try {
       const intent = await gaonApi.paymentIntent(o.id);
       let paymentCallbackReceived = false;
@@ -255,7 +265,17 @@ export default function Orders() {
       });
     } catch (e: unknown) {
       clearPayment();
-      setError(paymentIntentError(e));
+      // An intent request can fail after a delayed provider capture or a
+      // webhook update. Refresh before suggesting any retry so a stale
+      // PENDING card does not invite the customer to pay twice.
+      const latest = await load(true);
+      const current = latest?.find((order) => order.id === o.id);
+      if (current?.payment_status === "paid") {
+        setError("");
+        setMsg(`Payment verified for ${o.order_number}.`);
+      } else {
+        setError(paymentIntentError(e));
+      }
     }
   }
   return (
@@ -282,9 +302,11 @@ export default function Orders() {
             const current = stages.indexOf(o.status);
             const canPay =
               o.payment_method === "upi" &&
-              o.payment_status === "pending" &&
-              o.status !== "cancelled" &&
-              o.status !== "returned";
+              (o.payment_status === "pending" || o.payment_status === "failed") &&
+              // Mirror the backend intent gate: only PLACED orders can pay.
+              // Never offer a checkout button on a stale accepted/delivered
+              // order even if its payment status is inconsistent.
+              o.status === "placed";
             const confirmationPending = paymentConfirmation?.orderId === o.id;
             return (
               <div className="panel orderPanel" key={o.id}>
@@ -293,7 +315,7 @@ export default function Orders() {
                     <div className="row">
                       <strong>{o.order_number}</strong>
                       <span className={`badge status-${o.status}`}>
-                        {label(o.status)}
+                        {o.payment_method === "upi" && (o.payment_status === "pending" || o.payment_status === "failed") && o.status === "placed" ? "Awaiting payment" : label(o.status)}
                       </span>
                     </div>
                     <p className="muted">
@@ -319,7 +341,7 @@ export default function Orders() {
                           ? "Confirmation pending"
                           : busy === o.id
                             ? "Opening…"
-                            : "Pay now"}
+                            : o.payment_status === "failed" ? "Retry payment" : "Pay now"}
                       </button>
                     )}
                     {o.status === "placed" && (

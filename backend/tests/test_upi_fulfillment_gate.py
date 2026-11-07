@@ -273,3 +273,33 @@ def test_paid_upi_can_progress_through_ready_pickup_and_completion() -> None:
         assert order is not None
         assert order.status == OrderStatus.DELIVERED
         assert order.payment_status == PaymentStatus.PAID
+
+
+
+@pytest.mark.parametrize(
+    ("current_status", "next_status"),
+    [
+        (OrderStatus.PLACED, OrderStatus.ACCEPTED),
+        (OrderStatus.ACCEPTED, OrderStatus.PREPARING),
+    ],
+)
+def test_unpaid_upi_cannot_start_merchant_fulfillment(current_status, next_status) -> None:
+    with session() as db:
+        merchant, _rider, order, _delivery = _upi_order(
+            db, payment_status=PaymentStatus.PENDING, order_status=current_status,
+        )
+        db.commit()
+        merchant_phone, order_id = merchant.phone, order.id
+
+    response = client.patch(
+        f"/api/v1/merchant/orders/{order_id}/status",
+        headers=auth(token_for(merchant_phone)),
+        json={"status": next_status.value},
+    )
+    assert response.status_code == 409, response.text
+    assert "payment" in response.json()["detail"].lower()
+    with session() as db:
+        stored = db.get(Order, order_id)
+        assert stored is not None
+        assert stored.status == current_status
+        assert stored.payment_status == PaymentStatus.PENDING

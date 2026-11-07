@@ -179,6 +179,7 @@ def test_operational_controls_and_customer_cancellation() -> None:
             "directions": "Green gate",
             "latitude": village_latitude,
             "longitude": village_longitude,
+            "location_source": "map_pin",
             "is_default": True,
         },
     )

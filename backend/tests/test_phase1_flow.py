@@ -81,6 +81,7 @@ def test_complete_marketplace_flow() -> None:
             "directions": "Main road",
             "latitude": 18.5204,
             "longitude": 73.8567,
+            "location_source": "map_pin",
             "is_default": True,
         },
     )
