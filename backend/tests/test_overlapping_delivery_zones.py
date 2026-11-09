@@ -15,7 +15,7 @@ from app.services.spatial import point_is_in_service_area, serviceability_for_po
 from tests import factories
 
 
-def test_overlapping_zones_remain_correct_during_temporary_checkout_bypass() -> None:
+def test_overlapping_zones_require_store_assigned_covering_area() -> None:
     with factories.session() as db:
         near_hub = factories.make_village(db)
         near_hub.latitude, near_hub.longitude = 5.0, 5.001
@@ -66,12 +66,12 @@ def test_overlapping_zones_remain_correct_during_temporary_checkout_bypass() -> 
             assert quote.serviceable is True
             assert quote.checkout_ready is True
 
-            # PostGIS still rejects this store's smaller zone even while
-            # the temporary checkout bypass intentionally admits the order.
+            # The assigned non-covering area must reject checkout even when
+            # a different active service area covers the customer.
             store.service_area_id = near_zone.id
             db.flush()
             assert point_is_in_service_area(db, near_zone.id, 5.0, 5.0) is False
-            assert cart_quote(address.id, db=db, user=customer).serviceable is True
+            assert cart_quote(address.id, db=db, user=customer).serviceable is False
             store.service_area_id = covering_zone.id
             db.flush()
 
@@ -90,10 +90,8 @@ def test_overlapping_zones_remain_correct_during_temporary_checkout_bypass() -> 
                 )
             assert address_error.value.status_code == 422
             outside_quote = cart_quote(address.id, db=db, user=customer)
-            # Emergency bypass is checkout-only; geography still rejects
-            # out-of-zone pins and must be restored before normal release.
-            assert outside_quote.serviceable is True
-            assert outside_quote.checkout_ready is True
+            assert outside_quote.serviceable is False
+            assert outside_quote.checkout_ready is False
         finally:
             db.rollback()
             if saved_address is not None:

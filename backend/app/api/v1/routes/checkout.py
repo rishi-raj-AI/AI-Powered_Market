@@ -9,13 +9,13 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
 from app.models.commerce import Merchant, MerchantStatus, Store, StoreProduct
-from app.models.geography import Address, Village
+from app.models.geography import Address
 from app.models.orders import Cart, CartItem, Delivery, Order, OrderItem, PaymentMethod
 from app.models.user import User
 from app.schemas.orders import CheckoutQuoteRead, CheckoutRequest, OrderRead
 from app.services.notifications import enqueue_notification
 from app.services.pricing import order_total, resolve_delivery_fee
-from app.services.spatial import point_is_in_service_area
+from app.services.delivery_serviceability import evaluate_delivery
 from app.services.store_hours import describe_hours, store_is_open
 
 router = APIRouter(tags=["Orders & Checkout"])
@@ -88,15 +88,6 @@ def _address_snapshot(address: Address) -> dict:
     }
 
 
-def _address_point(db: Session, address: Address) -> tuple[float, float] | None:
-    if address.latitude is not None and address.longitude is not None:
-        return float(address.latitude), float(address.longitude)
-    village = db.get(Village, address.village_id)
-    if village and village.latitude is not None and village.longitude is not None:
-        return float(village.latitude), float(village.longitude)
-    return None
-
-
 @router.get("/cart/quote", response_model=CheckoutQuoteRead)
 def cart_quote(
     address_id: uuid.UUID,
@@ -140,23 +131,14 @@ def cart_quote(
             inventory_valid = False
         subtotal += row.price * row.quantity
 
-    point = _address_point(db, address)
-    serviceable = bool(
-        store.delivery_enabled
-        and store.service_area_id is not None
-        and point is not None
-        and point_is_in_service_area(db, store.service_area_id, point[0], point[1])
-    )
-    # Temporary: allow checkout for delivery-enabled stores regardless of geographic coverage.
-    serviceable = bool(store.delivery_enabled)
+    delivery_decision = evaluate_delivery(db, store, address, merchant=merchant)
+    serviceable = delivery_decision.serviceable
     open_now = store_is_open(store)
     blockers: list[str] = []
     if not inventory_valid:
         blockers.append("Cart inventory changed; review your cart")
-    if not store.delivery_enabled:
-        blockers.append("This store does not currently support delivery")
-    elif not serviceable:
-        blockers.append("This store does not deliver to the selected address")
+    if not serviceable:
+        blockers.append(delivery_decision.human_readable_message)
     if not open_now:
         blockers.append("Store is currently closed")
     delivery_fee = resolve_delivery_fee(db, store)
@@ -167,6 +149,7 @@ def cart_quote(
         delivery_fee=delivery_fee,
         total=order_total(subtotal, delivery_fee),
         serviceable=serviceable,
+        serviceability_reason_code=delivery_decision.reason_code,
         inventory_valid=inventory_valid,
         store_open=open_now,
         checkout_ready=serviceable and inventory_valid and open_now,
@@ -214,8 +197,9 @@ def safe_checkout(
     merchant = db.get(Merchant, store.merchant_id) if store else None
     if store is None or not store.is_active or merchant is None or merchant.status != MerchantStatus.APPROVED:
         raise HTTPException(status_code=409, detail="Store is currently unavailable")
-    if not store.delivery_enabled:
-        raise HTTPException(status_code=409, detail="This store does not currently support delivery")
+    delivery_decision = evaluate_delivery(db, store, address, merchant=merchant)
+    if not delivery_decision.serviceable:
+        raise HTTPException(status_code=409, detail=delivery_decision.human_readable_message)
     if not store_is_open(store):
         hours = describe_hours(store.opens_at, store.closes_at)
         raise HTTPException(
@@ -226,8 +210,6 @@ def safe_checkout(
                 else f"{store.name} is closed right now."
             ),
         )
-
-    # Temporary: geographic service-area restrictions are disabled for checkout.
 
     listing_ids = sorted((item.store_product_id for item in items), key=str)
     locked_listings = db.scalars(
