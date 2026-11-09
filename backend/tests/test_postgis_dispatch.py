@@ -84,6 +84,7 @@ def create_ready_order(customer_token: str, customer_phone: str, merchant_token:
             "landmark": "Dispatch Chowk",
             "latitude": village["latitude"],
             "longitude": village["longitude"],
+            "location_source": "map_pin",
             "is_default": True,
         },
     )

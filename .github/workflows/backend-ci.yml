@@ -66,6 +66,50 @@ jobs:
       - name: Import FastAPI application
         run: python -c "from app.main import app; print(app.title)"
 
+      - name: Validate payment/geography/territory migration paths (disposable CI databases)
+        run: |
+          set -euo pipefail
+          # Payment-first upgrade, in the normal CI database.
+          alembic upgrade 0027_webhook_retry_schedule
+          alembic upgrade head
+
+          # Geography-first upgrade in a separate disposable PostGIS database.
+          PGPASSWORD=gaonone_ci_password createdb -h localhost -U gaonone -T template_postgis gaonone_ci_geography_first
+          GEO_DB_URL="postgresql+psycopg://gaonone:gaonone_ci_password@localhost:5432/gaonone_ci_geography_first"
+          DATABASE_URL="$GEO_DB_URL" alembic upgrade 0027_address_location_provenance
+          DATABASE_URL="$GEO_DB_URL" alembic upgrade head
+
+          # Territory-first path: preserve existing 0028_delivery_territories
+          # and verify that the bridge adds payment scheduling without rewriting
+          # the territory migration or customer/order data.
+          PGPASSWORD=gaonone_ci_password createdb -h localhost -U gaonone -T template_postgis gaonone_ci_territory_first
+          TERRITORY_DB_URL="postgresql+psycopg://gaonone:gaonone_ci_password@localhost:5432/gaonone_ci_territory_first"
+          DATABASE_URL="$TERRITORY_DB_URL" alembic upgrade 0028_delivery_territories
+          DATABASE_URL="$TERRITORY_DB_URL" alembic upgrade head
+
+          # Every path must converge on payment, provenance and draft-only territory schema.
+          for db_url in "$DATABASE_URL" "$GEO_DB_URL" "$TERRITORY_DB_URL"; do
+            DATABASE_URL="$db_url" python -c '
+          from sqlalchemy import create_engine, inspect
+          from app.core.config import settings
+          engine = create_engine(settings.DATABASE_URL)
+          with engine.connect() as conn:
+              inspector = inspect(conn)
+              address_cols = {col["name"] for col in inspector.get_columns("addresses")}
+              webhook_cols = {col["name"] for col in inspector.get_columns("payment_webhook_events")}
+              assert {"location_source", "location_confirmed_at", "location_accuracy_meters", "place_id"} <= address_cols
+              assert {"attempt_count", "next_attempt_at"} <= webhook_cols
+              expected_tables = {
+                  "operating_regions", "delivery_hubs", "delivery_territories",
+                  "delivery_territory_exclusions", "store_delivery_territories",
+                  "delivery_territory_versions", "territory_change_audit",
+              }
+              assert expected_tables <= set(inspector.get_table_names())
+              assert conn.exec_driver_sql("SELECT COUNT(*) FROM delivery_territories").scalar_one() == 0
+          engine.dispose()
+          '
+          done
+
       - name: Apply database migrations
         run: alembic upgrade head
 

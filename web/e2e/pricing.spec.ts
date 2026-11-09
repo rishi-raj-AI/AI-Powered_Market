@@ -143,6 +143,7 @@ test('checkout serializes a pending address save',async({page})=>{
   await expect(page.getByText(/Pinned coordinates:/)).toBeVisible();
   await expect(page.getByText(/Delivery available in/)).toBeVisible();
   await page.locator('#checkout-landmark').fill('Temple gate');
+  await page.getByLabel(/I confirm this pin marks my exact delivery entrance/i).check();
   const serviceabilityBeforeSave=await page.evaluate(()=>((window as typeof window&{addressSaveServiceabilityRequests:number}).addressSaveServiceabilityRequests));
   const form=page.locator('form.formInset');
   const save=page.getByRole('button',{name:'Save address'});

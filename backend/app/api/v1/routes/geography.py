@@ -10,7 +10,7 @@ from app.api.deps import get_current_user, get_db, require_capability
 from app.core.capabilities import Capability
 from app.models.geography import Address, ServiceArea, Village
 from app.models.user import User
-from app.schemas.geography import AddressCreate, AddressRead, PlaceDetailsRead, PlaceSuggestion, ReverseGeocodeRead, ServiceAreaCreate, ServiceAreaRead, ServiceabilityRead, VillageCreate, VillageRead
+from app.schemas.geography import AddressCreate, AddressPinConfirm, AddressRead, PlaceDetailsRead, PlaceSuggestion, ReverseGeocodeRead, ServiceAreaCreate, ServiceAreaRead, ServiceabilityRead, VillageCreate, VillageRead
 from app.services.places import PlacesUnavailable, autocomplete, place_details, reverse_geocode
 from app.services.rate_limit import RateLimitExceeded, RateLimitUnavailable, rate_limiter
 from app.services.spatial import serviceability_for_point
@@ -146,6 +146,15 @@ def create_my_address(payload: AddressCreate, db: Session = Depends(get_db), use
         raise HTTPException(status_code=404, detail="Village not found")
     if (payload.latitude is None) != (payload.longitude is None):
         raise HTTPException(status_code=422, detail="Latitude and longitude must be supplied together")
+    # The NULL-provenance checkout exception is for existing historical rows,
+    # not a way for older or custom clients to mint newly trusted coordinates.
+    # Keep reads of historical addresses backward compatible; enforce this only
+    # on creation so existing AddressRead responses remain valid.
+    if payload.latitude is not None and payload.location_source is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Confirm your delivery location on the map before saving a pinned address",
+        )
     if payload.latitude is not None and payload.longitude is not None:
         coverage = _serviceability(db, payload.latitude, payload.longitude)
         if not coverage.serviceable:
@@ -156,11 +165,76 @@ def create_my_address(payload: AddressCreate, db: Session = Depends(get_db), use
             .where(Address.user_id == user.id, Address.archived_at.is_(None))
             .values(is_default=False)
         )
-    address = Address(user_id=user.id, **payload.model_dump())
+    address = Address(
+        user_id=user.id,
+        **payload.model_dump(),
+        location_confirmed_at=(
+            datetime.now(timezone.utc) if payload.location_source in {"gps", "map_pin"} else None
+        ),
+    )
     db.add(address)
     db.commit()
     db.refresh(address)
     return address
+
+
+@router.post(
+    "/addresses/me/{address_id}/confirm-pin",
+    response_model=AddressRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def confirm_my_address_pin(
+    address_id: uuid.UUID,
+    payload: AddressPinConfirm,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Replace an address with a confirmed pin without changing past orders.
+
+    Historical orders reference the original address row. Replacing rather
+    than mutating that row preserves the delivery record and original address
+    information while making the confirmed replacement available for checkout.
+    """
+    original = db.scalar(
+        select(Address)
+        .where(
+            Address.id == address_id,
+            Address.user_id == user.id,
+            Address.archived_at.is_(None),
+        )
+        .with_for_update()
+    )
+    if original is None:
+        raise HTTPException(status_code=404, detail="Address not found")
+    if not _serviceability(db, payload.latitude, payload.longitude).serviceable:
+        raise HTTPException(
+            status_code=422,
+            detail="Delivery address is outside the active GaonOne service area",
+        )
+
+    replacement = Address(
+        user_id=original.user_id,
+        village_id=original.village_id,
+        label=original.label,
+        recipient_name=original.recipient_name,
+        phone=original.phone,
+        house_details=original.house_details,
+        landmark=original.landmark,
+        directions=original.directions,
+        latitude=payload.latitude,
+        longitude=payload.longitude,
+        location_source=payload.location_source,
+        location_confirmed_at=datetime.now(timezone.utc),
+        location_accuracy_meters=payload.location_accuracy_meters,
+        place_id=payload.place_id,
+        is_default=original.is_default,
+    )
+    original.archived_at = datetime.now(timezone.utc)
+    original.is_default = False
+    db.add(replacement)
+    db.commit()
+    db.refresh(replacement)
+    return replacement
 
 
 @router.delete("/addresses/me/{address_id}", status_code=status.HTTP_204_NO_CONTENT)
