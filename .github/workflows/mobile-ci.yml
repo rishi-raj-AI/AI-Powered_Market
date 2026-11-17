@@ -44,8 +44,11 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      # New stable Flutter SDKs can introduce informational deprecations
+      # (e.g. material.dart in 3.50). Keep analyzer errors/warnings fatal,
+      # but do not fail the release on SDK-only info diagnostics.
       - working-directory: mobile
-        run: flutter analyze lib
+        run: flutter analyze lib --no-fatal-infos
       - working-directory: mobile
         run: flutter test
       # Release integration and payment-integrity PRs are analysis/test only.
