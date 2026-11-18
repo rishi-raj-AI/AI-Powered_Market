@@ -34,3 +34,10 @@ Status: **HOLD**. This document is a preparation checklist, not evidence that an
 | Backup and rollback rehearsal | Isolated restore report and operator approval | Unverified |
 
 This document does **not** authorize running the operator steps. Keep the PR in draft/HOLD until code-level gates pass; operator-only staging/production acceptance remains separate.
+
+## Verified repository checkpoint — 2026-11-18
+
+- Release branch HEAD: `190416d90e74376ef679ed63705f664b480bc501` **before this documentation-only update**. GitHub Actions reported success for Backend CI [run 44162523156](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/44162523156), Web CI [run 44162523154](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/44162523154), Mobile CI [run 44162523178](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/44162523178), and Production CI [run 44162523171](https://github.com/rishi-raj-AI/AI-Powered_Market/actions/runs/44162523171). These results **do not** certify the new documentation commit or a future corrected code SHA.
+- Direct comparison against PR #243 branch `fix/verify-upi-capture-before-paid`: **204 ahead / 194 behind** relative to release branch, with 65 changed files. The payment branch's `payment_expiration.py` also resets `cursor = None` per invocation; importing that version does **not** fix cross-run fairness. Selectively review payment-specific behavioral gaps and tests, not the branch history.
+- Release test `backend/tests/test_payment_expiration_cross_run_fairness.py` remains `xfail(strict=True)` with 501 older deferred orders. This is a known failing acceptance target, not a successful regression. No new PostgreSQL concurrency, Razorpay sandbox, territory negative-path, migration rollback, or isolated backup/restore evidence was collected in this checkpoint.
+- **HOLD remains in force.** The next engineering work is a durable cursor/retry schedule with safe multi-worker coordination, explicit restart behavior and passing PostgreSQL tests, followed by all four workflows on the exact corrected release SHA. Do not enable payment expiry based on the historical green runs.
