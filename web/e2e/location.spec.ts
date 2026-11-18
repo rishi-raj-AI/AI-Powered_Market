@@ -15,6 +15,25 @@ test('customer can discover and verify an exact delivery location',async({page})
   await expect(page.getByText(/Pinned coordinates:/i)).toBeVisible();
 });
 
+test('searched locality cannot be saved as a confirmed doorstep without explicit confirmation',async({page})=>{
+  await installApiMocks(page);
+  let created=0;
+  await page.route('http://localhost:8000/api/v1/addresses/me',route=>{
+    if(route.request().method()==='POST')created++;
+    return route.fulfill({json:[]});
+  });
+  await page.goto('/checkout');
+  await page.getByRole('button',{name:/Add address/i}).click();
+  await page.getByLabel('Area / locality *').selectOption('village-niphad');
+  await page.getByLabel('Search delivery location').fill('Niphad');
+  await page.getByRole('button',{name:/Niphad.*Maharashtra/i}).click();
+  await expect(page.getByText(/Pinned coordinates:/)).toBeVisible();
+  await page.locator('#checkout-landmark').fill('Temple gate');
+  await page.getByRole('button',{name:'Save address'}).click();
+  await expect(page.getByText('Move the pin to your exact entrance and confirm its position before saving.')).toBeVisible();
+  expect(created).toBe(0);
+});
+
 test('approved merchant can resolve a storefront with area-first location language',async({page})=>{
   await installApiMocks(page,merchantUser);
   await page.goto('/merchant');
@@ -209,7 +228,7 @@ test('selecting a locality does not silently use its hub as the delivery entranc
   await page.locator('#checkout-landmark').fill('Temple gate');
   await expect(page.getByText(/Pinned coordinates:/)).toHaveCount(0);
   await page.getByRole('button',{name:'Save address'}).click();
-  await expect(page.getByText('Pin the exact delivery location before saving.')).toBeVisible();
+  await expect(page.getByText('Move the pin to your exact entrance and confirm its position before saving.')).toBeVisible();
   expect(created).toBe(0);
 });
 
@@ -235,7 +254,7 @@ test('changing locality invalidates a previously pinned entrance',async({page})=
   await expect(page.getByText(/Pinned coordinates:/)).toHaveCount(0);
   await page.locator('#checkout-landmark').fill('New entrance');
   await page.getByRole('button',{name:'Save address'}).click();
-  await expect(page.getByText('Pin the exact delivery location before saving.')).toBeVisible();
+  await expect(page.getByText('Move the pin to your exact entrance and confirm its position before saving.')).toBeVisible();
   expect(created).toBe(0);
 });
 

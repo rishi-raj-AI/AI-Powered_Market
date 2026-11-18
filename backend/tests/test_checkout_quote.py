@@ -2,7 +2,6 @@ from decimal import Decimal
 
 from fastapi.testclient import TestClient
 
-from app.api.v1.routes import checkout
 from app.core.security import create_access_token
 from app.db.session import SessionLocal
 from app.main import app
@@ -36,7 +35,7 @@ def _quote_context():
 
 def test_quote_uses_backend_area_fee_and_current_inventory(monkeypatch):
     customer_id, address_id, _ = _quote_context()
-    monkeypatch.setattr(checkout, "point_is_in_service_area", lambda *args: True)
+    monkeypatch.setattr("app.services.delivery_serviceability.point_is_in_service_area", lambda *args: True)
     response = client.get(
         "/api/v1/cart/quote",
         params={"address_id": str(address_id)},
@@ -51,7 +50,7 @@ def test_quote_uses_backend_area_fee_and_current_inventory(monkeypatch):
 
 def test_quote_blocks_changed_inventory(monkeypatch):
     customer_id, address_id, listing_id = _quote_context()
-    monkeypatch.setattr(checkout, "point_is_in_service_area", lambda *args: True)
+    monkeypatch.setattr("app.services.delivery_serviceability.point_is_in_service_area", lambda *args: True)
     with SessionLocal() as db:
         listing = db.get(factories.StoreProduct, listing_id)
         listing.stock_quantity = 1

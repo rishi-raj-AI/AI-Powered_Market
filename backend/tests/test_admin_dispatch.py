@@ -78,7 +78,7 @@ def test_admin_can_assign_recover_and_reassign_ready_delivery() -> None:
     promote=client.patch(f"/api/v1/admin/users/{rider['id']}/role",headers=auth(admin_token),json={"role":"delivery","is_active":True})
     assert promote.status_code==200,promote.text
     store=seeded_store();listing_id=client.get(f"/api/v1/stores/{store['id']}/products").json()[0]["id"];village_id=seeded_village()["id"]
-    address=client.post("/api/v1/addresses/me",headers=auth(customer_token),json={"village_id":village_id,"label":"Home","landmark":"Dispatch Chowk","latitude":18.5208,"longitude":73.8572,"is_default":True})
+    address=client.post("/api/v1/addresses/me",headers=auth(customer_token),json={"village_id":village_id,"label":"Home","landmark":"Dispatch Chowk","latitude":18.5208,"longitude":73.8572,"location_source":"map_pin","is_default":True})
     assert address.status_code==201,address.text
     address_id=address.json()["id"]
 

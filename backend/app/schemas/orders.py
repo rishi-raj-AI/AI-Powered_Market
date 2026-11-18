@@ -36,6 +36,7 @@ class CheckoutQuoteRead(BaseModel):
     delivery_fee: Decimal
     total: Decimal
     serviceable: bool
+    serviceability_reason_code: str | None = None
     inventory_valid: bool
     store_open: bool
     checkout_ready: bool

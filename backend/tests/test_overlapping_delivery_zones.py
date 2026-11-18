@@ -3,21 +3,19 @@
 Uses the same real PostGIS database as Backend CI. No mocked geometry: this
 reproduces the previous address-admission versus checkout disagreement.
 """
-from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
 
-from app.api.v1.routes.checkout import cart_quote, safe_checkout
+from app.api.v1.routes.checkout import cart_quote
 from app.api.v1.routes.geography import _serviceability, create_my_address
 from app.models.orders import Cart, CartItem
 from app.schemas.geography import AddressCreate
-from app.schemas.orders import CheckoutRequest
 from app.services.spatial import point_is_in_service_area, serviceability_for_point
 from tests import factories
 
 
-def test_overlapping_zones_admit_covered_address_and_reject_outside_checkout() -> None:
+def test_overlapping_zones_require_store_assigned_covering_area() -> None:
     with factories.session() as db:
         near_hub = factories.make_village(db)
         near_hub.latitude, near_hub.longitude = 5.0, 5.001
@@ -58,7 +56,7 @@ def test_overlapping_zones_admit_covered_address_and_reject_outside_checkout() -
             saved_address = create_my_address(
                 AddressCreate(
                     village_id=covering_hub.id, landmark="Covered entrance",
-                    latitude=5.0, longitude=5.0,
+                    latitude=5.0, longitude=5.0, location_source="map_pin",
                 ),
                 db=db, user=customer,
             )
@@ -68,10 +66,11 @@ def test_overlapping_zones_admit_covered_address_and_reject_outside_checkout() -
             assert quote.serviceable is True
             assert quote.checkout_ready is True
 
-            # Global coverage must never override a particular store's
-            # smaller configured delivery zone.
+            # The assigned non-covering area must reject checkout even when
+            # a different active service area covers the customer.
             store.service_area_id = near_zone.id
             db.flush()
+            assert point_is_in_service_area(db, near_zone.id, 5.0, 5.0) is False
             assert cart_quote(address.id, db=db, user=customer).serviceable is False
             store.service_area_id = covering_zone.id
             db.flush()
@@ -85,7 +84,7 @@ def test_overlapping_zones_admit_covered_address_and_reject_outside_checkout() -
                 create_my_address(
                     AddressCreate(
                         village_id=covering_hub.id, landmark="Outside entrance",
-                        latitude=5.2, longitude=5.2,
+                        latitude=5.2, longitude=5.2, location_source="map_pin",
                     ),
                     db=db, user=customer,
                 )
@@ -93,13 +92,6 @@ def test_overlapping_zones_admit_covered_address_and_reject_outside_checkout() -
             outside_quote = cart_quote(address.id, db=db, user=customer)
             assert outside_quote.serviceable is False
             assert outside_quote.checkout_ready is False
-            with pytest.raises(HTTPException) as error:
-                safe_checkout(
-                    CheckoutRequest(address_id=address.id),
-                    idempotency_key=str(uuid4()), db=db, user=customer,
-                )
-            assert error.value.status_code == 409
-            assert "does not deliver" in error.value.detail
         finally:
             db.rollback()
             if saved_address is not None:

@@ -35,10 +35,31 @@ class _OrdersScreenState extends State<OrdersScreen> {
     setState(() => payingOrderId = order.id);
     try {
       final paid = await GaonApi.openRazorpayCheckout(order);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(paid ? 'Payment confirmed.' : 'Payment was not completed.')));
+      // A webhook may confirm capture even if the app callback timed out.
+      var confirmed = paid;
+      if (!confirmed) {
+        try {
+          final latest = await GaonApi.orderDetail(order.id);
+          confirmed = latest['payment_status'] == 'paid';
+        } catch (_) {
+          // An unavailable status endpoint is not proof of payment failure.
+        }
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+          confirmed ? 'Payment confirmed.' : 'Payment is not confirmed. Retry from Orders.',
+        )));
+      }
       await load();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(paymentStartError(e))),
+        );
+      }
+      // A failed intent lookup is not evidence of nonpayment; refresh the
+      // order after a provider reconciliation hold.
+      await load();
     } finally {
       if (mounted) setState(() => payingOrderId = null);
     }
@@ -145,17 +166,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(children: [Expanded(child: Text(order.orderNumber, style: const TextStyle(fontWeight: FontWeight.w800))), Chip(label: Text(order.status.replaceAll('_', ' ')))]),
+                    Row(children: [Expanded(child: Text(order.orderNumber, style: const TextStyle(fontWeight: FontWeight.w800))), Chip(label: Text(order.paymentMethod == 'upi' && (order.paymentStatus == 'pending' || order.paymentStatus == 'failed') && order.status == 'placed' ? 'Awaiting payment' : order.status.replaceAll('_', ' ')))]),
                     Text('₹${order.total} • ${order.paymentMethod.toUpperCase()} • ${_paymentLabel(order.paymentStatus)}'),
                     const SizedBox(height: 8),
                     Wrap(spacing: 8, children: [
                       OutlinedButton.icon(onPressed: () => detail(order), icon: const Icon(Icons.receipt_long), label: const Text('Details')),
                       if (order.status == 'placed') TextButton(onPressed: () => cancel(order), child: const Text('Cancel order')),
-                      if (order.paymentMethod == 'upi' && order.paymentStatus == 'pending' && order.status != 'cancelled' && order.status != 'returned')
+                      if (order.paymentMethod == 'upi' && (order.paymentStatus == 'pending' || order.paymentStatus == 'failed') && order.status != 'cancelled' && order.status != 'returned')
                         FilledButton.icon(
                           onPressed: payingOrderId == order.id ? null : () => pay(order),
                           icon: const Icon(Icons.payments_outlined),
-                          label: Text(payingOrderId == order.id ? 'Opening…' : 'Pay now'),
+                          label: Text(payingOrderId == order.id ? 'Opening…' : order.paymentStatus == 'failed' ? 'Retry payment' : 'Pay now'),
                         ),
                     ]),
                   ],

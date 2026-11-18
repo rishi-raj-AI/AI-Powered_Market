@@ -9,13 +9,13 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
 from app.models.commerce import Merchant, MerchantStatus, Store, StoreProduct
-from app.models.geography import Address, Village
-from app.models.orders import Cart, CartItem, Delivery, Order, OrderItem
+from app.models.geography import Address
+from app.models.orders import Cart, CartItem, Delivery, Order, OrderItem, PaymentMethod
 from app.models.user import User
 from app.schemas.orders import CheckoutQuoteRead, CheckoutRequest, OrderRead
 from app.services.notifications import enqueue_notification
 from app.services.pricing import order_total, resolve_delivery_fee
-from app.services.spatial import point_is_in_service_area
+from app.services.delivery_serviceability import evaluate_delivery
 from app.services.store_hours import describe_hours, store_is_open
 
 router = APIRouter(tags=["Orders & Checkout"])
@@ -56,6 +56,44 @@ def _existing_idempotent_order(db: Session, user_id: uuid.UUID, key: str | None)
     )
 
 
+def _validate_idempotent_checkout_replay(order: Order, payload: CheckoutRequest) -> Order:
+    """A retry may retrieve only the order created for the same checkout intent.
+
+    The cart may already have been cleared, and the original address may now
+    be archived; compare persisted order fields rather than current cart or
+    address state. Never silently return a COD order for a UPI request (or
+    another delivery address) using the same idempotency key.
+    """
+    if order.address_id != payload.address_id or order.payment_method != payload.payment_method:
+        raise HTTPException(
+            status_code=409,
+            detail="Idempotency-Key was already used for a different checkout request",
+        )
+    return order
+
+
+def _reject_replay_with_active_cart(db: Session, user_id: uuid.UUID) -> None:
+    """Never return an old order when a customer has started a new cart.
+
+    A completed checkout clears its cart. A nonempty cart means a subsequent
+    request needs a fresh idempotency key, even when address/payment match.
+    This conservative guard needs no migration and keeps empty-cart retries
+    (including legacy orders) working. It does not replace a future durable
+    checkout-intent fingerprint.
+    """
+    active_cart = db.scalar(select(Cart).where(Cart.user_id == user_id))
+    if active_cart is None or active_cart.store_id is None:
+        return
+    has_items = db.scalar(
+        select(CartItem.id).where(CartItem.cart_id == active_cart.id).limit(1)
+    )
+    if has_items is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Idempotency-Key belongs to a previous order; use a new key for this cart",
+        )
+
+
 def _new_order_number() -> str:
     """Time-ordered and collision-resistant.
 
@@ -86,15 +124,6 @@ def _address_snapshot(address: Address) -> dict:
         }.items()
         if value is not None
     }
-
-
-def _address_point(db: Session, address: Address) -> tuple[float, float] | None:
-    if address.latitude is not None and address.longitude is not None:
-        return float(address.latitude), float(address.longitude)
-    village = db.get(Village, address.village_id)
-    if village and village.latitude is not None and village.longitude is not None:
-        return float(village.latitude), float(village.longitude)
-    return None
 
 
 @router.get("/cart/quote", response_model=CheckoutQuoteRead)
@@ -140,21 +169,14 @@ def cart_quote(
             inventory_valid = False
         subtotal += row.price * row.quantity
 
-    point = _address_point(db, address)
-    serviceable = bool(
-        store.delivery_enabled
-        and store.service_area_id is not None
-        and point is not None
-        and point_is_in_service_area(db, store.service_area_id, point[0], point[1])
-    )
+    delivery_decision = evaluate_delivery(db, store, address, merchant=merchant)
+    serviceable = delivery_decision.serviceable
     open_now = store_is_open(store)
     blockers: list[str] = []
     if not inventory_valid:
         blockers.append("Cart inventory changed; review your cart")
-    if not store.delivery_enabled:
-        blockers.append("This store does not currently support delivery")
-    elif not serviceable:
-        blockers.append("This store does not deliver to the selected address")
+    if not serviceable:
+        blockers.append(delivery_decision.human_readable_message)
     if not open_now:
         blockers.append("Store is currently closed")
     delivery_fee = resolve_delivery_fee(db, store)
@@ -165,6 +187,7 @@ def cart_quote(
         delivery_fee=delivery_fee,
         total=order_total(subtotal, delivery_fee),
         serviceable=serviceable,
+        serviceability_reason_code=delivery_decision.reason_code,
         inventory_valid=inventory_valid,
         store_open=open_now,
         checkout_ready=serviceable and inventory_valid and open_now,
@@ -183,19 +206,19 @@ def safe_checkout(
         idempotency_key = idempotency_key.strip()
         if not idempotency_key or len(idempotency_key) > 128:
             raise HTTPException(status_code=400, detail="Idempotency-Key must contain 1 to 128 characters")
-        existing = _existing_idempotent_order(db, user.id, idempotency_key)
-        if existing:
-            return existing
-
-    address = db.get(Address, payload.address_id)
-    if address is None or address.user_id != user.id or address.archived_at is not None:
-        raise HTTPException(status_code=404, detail="Address not found")
-
+    # Serialize replay decisions with checkout and cart mutations using the
+    # same cart-row lock. Keep this ahead of address validation so a legitimate
+    # retry can return an order whose original address was later archived.
     cart = db.scalar(select(Cart).where(Cart.user_id == user.id).with_for_update())
 
     existing = _existing_idempotent_order(db, user.id, idempotency_key)
     if existing:
-        return existing
+        _reject_replay_with_active_cart(db, user.id)
+        return _validate_idempotent_checkout_replay(existing, payload)
+
+    address = db.get(Address, payload.address_id)
+    if address is None or address.user_id != user.id or address.archived_at is not None:
+        raise HTTPException(status_code=404, detail="Address not found")
 
     if cart is None or cart.store_id is None:
         raise HTTPException(status_code=400, detail="Cart is empty")
@@ -212,8 +235,9 @@ def safe_checkout(
     merchant = db.get(Merchant, store.merchant_id) if store else None
     if store is None or not store.is_active or merchant is None or merchant.status != MerchantStatus.APPROVED:
         raise HTTPException(status_code=409, detail="Store is currently unavailable")
-    if not store.delivery_enabled:
-        raise HTTPException(status_code=409, detail="This store does not currently support delivery")
+    delivery_decision = evaluate_delivery(db, store, address, merchant=merchant)
+    if not delivery_decision.serviceable:
+        raise HTTPException(status_code=409, detail=delivery_decision.human_readable_message)
     if not store_is_open(store):
         hours = describe_hours(store.opens_at, store.closes_at)
         raise HTTPException(
@@ -224,12 +248,6 @@ def safe_checkout(
                 else f"{store.name} is closed right now."
             ),
         )
-
-    address_point = _address_point(db, address)
-    if store.service_area_id is None or address_point is None:
-        raise HTTPException(status_code=409, detail="Delivery serviceability cannot be verified for this order")
-    if not point_is_in_service_area(db, store.service_area_id, address_point[0], address_point[1]):
-        raise HTTPException(status_code=409, detail="This store does not deliver to the selected address")
 
     listing_ids = sorted((item.store_product_id for item in items), key=str)
     locked_listings = db.scalars(
@@ -292,8 +310,20 @@ def safe_checkout(
     db.execute(delete(CartItem).where(CartItem.cart_id == cart.id))
     cart.store_id = None
 
-    _notify_customer(db, order)
-    _notify_merchant(db, order, store)
+    if order.payment_method == PaymentMethod.COD:
+        _notify_customer(db, order)
+        _notify_merchant(db, order, store)
+    else:
+        # An online order is only a payment reservation at this point.
+        # Do not alert the merchant to prepare goods before verified capture.
+        enqueue_notification(
+            db,
+            user_id=order.user_id,
+            event_type="order.payment_pending",
+            title="Payment pending",
+            body=f"Complete payment for order {order.order_number} to confirm it.",
+            data={"order_id": str(order.id), "order_number": order.order_number},
+        )
 
     db.commit()
     db.refresh(order)
