@@ -1,12 +1,10 @@
-"""Known cross-invocation fairness gap in the unpaid-UPI expiration scanner.
+"""Cross-invocation fairness checks for the unpaid-UPI expiration scanner.
 
-This is an executable acceptance target, deliberately marked xfail until a
-persisted, concurrency-safe scan cursor (or equivalent retry scheduling) exists.
+The no-attempt legacy backlog must not consume the bounded scan budget.
+Other kinds of deferred records still require durable retry scheduling.
 Provider I/O is mocked and all records are disposable.
 """
 from datetime import datetime, timedelta, timezone
-
-import pytest
 
 from app.models.orders import Order, OrderStatus, PaymentStatus
 from app.services import payment_expiration
@@ -14,10 +12,6 @@ from tests.factories import make_order, session
 from tests.test_payment_expiration import _old_unpaid_order
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Expiration scan cursor resets between invocations; old deferred rows starve later eligible rows",
-)
 def test_repeated_expiration_invocations_reach_order_beyond_deferred_scan_budget(monkeypatch):
     with session() as db:
         old = datetime.now(timezone.utc) - timedelta(hours=4)
