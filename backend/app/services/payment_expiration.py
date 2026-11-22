@@ -64,6 +64,13 @@ def expire_unpaid_orders(
             Order.payment_status.in_((PaymentStatus.PENDING, PaymentStatus.FAILED)),
             Order.status == OrderStatus.PLACED,
             Order.created_at < cutoff,
+            # Orders without a payment attempt can never be reconciled by this
+            # scanner. Exclude them from the bounded candidate window rather
+            # than repeatedly spending the entire budget on legacy records.
+            # Such orders remain untouched for manual reconciliation.
+            select(PaymentAttempt.id)
+            .where(PaymentAttempt.order_id == Order.id)
+            .exists(),
         ]
         if cursor is not None:
             filters.append(tuple_(Order.created_at, Order.id) > cursor)
