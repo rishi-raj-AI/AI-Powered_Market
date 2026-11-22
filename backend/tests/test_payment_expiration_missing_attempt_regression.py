@@ -25,7 +25,7 @@ def test_missing_payment_attempt_does_not_expire_or_restore_reserved_stock(monke
 
         monkeypatch.setattr(payment_expiration, "list_razorpay_order_payments", unexpected_provider_lookup)
         result = payment_expiration.expire_unpaid_orders(db, limit=10)
-        assert result["deferred"] >= 1
+        # No-attempt legacy orders are excluded from candidate scanning; they\n        # remain untouched for operator reconciliation without consuming budget.\n        assert result["considered"] == 0\n        assert result["deferred"] == 0
         assert result["expired"] == 0
         db.expire_all()
         current = db.get(Order, order_id)
