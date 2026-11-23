@@ -21,6 +21,8 @@ from app.db.session import SessionLocal
 from app.services.auto_dispatch import dispatch_ready_deliveries
 from app.services.fcm import flush_pending
 from app.services.refunds import dispatch_due_refunds
+from app.services.payment_expiration import expire_unpaid_orders
+from app.services.payment_webhook_replay import replay_pending_payment_webhooks
 from app.services.store_banners import process_due_banner_jobs
 from app.core.config import settings
 
@@ -33,6 +35,11 @@ logger = logging.getLogger("gaonone.worker")
 POLL_SECONDS = int(os.environ.get("WORKER_POLL_SECONDS", "20"))
 NOTIFICATION_BATCH = int(os.environ.get("WORKER_NOTIFICATION_BATCH", "100"))
 REFUND_BATCH = int(os.environ.get("WORKER_REFUND_BATCH", "25"))
+PAYMENT_WEBHOOK_REPLAY_ENABLED = os.environ.get("PAYMENT_WEBHOOK_REPLAY_ENABLED", "false").lower() == "true"
+PAYMENT_WEBHOOK_REPLAY_BATCH = int(os.environ.get("PAYMENT_WEBHOOK_REPLAY_BATCH", "25"))
+PAYMENT_EXPIRY_ENABLED = os.environ.get("PAYMENT_EXPIRY_ENABLED", "false").lower() == "true"
+PAYMENT_EXPIRY_BATCH = int(os.environ.get("PAYMENT_EXPIRY_BATCH", "25"))
+PAYMENT_EXPIRY_MINUTES = int(os.environ.get("PAYMENT_EXPIRY_MINUTES", "15"))
 BANNER_BATCH = int(os.environ.get("BANNER_JOB_BATCH", "25"))
 AUTO_DISPATCH_ENABLED = os.environ.get("AUTO_DISPATCH_ENABLED", "false").lower() == "true"
 AUTO_DISPATCH_BATCH = int(os.environ.get("AUTO_DISPATCH_BATCH", "25"))
@@ -69,6 +76,24 @@ def tick() -> dict[str, dict]:
     except Exception:
         logger.exception("Refund dispatch failed")
         result["refunds"] = {"error": 1}
+    if PAYMENT_WEBHOOK_REPLAY_ENABLED:
+        try:
+            with SessionLocal() as db:
+                result["payment_webhooks"] = replay_pending_payment_webhooks(
+                    db, limit=PAYMENT_WEBHOOK_REPLAY_BATCH,
+                )
+        except Exception:
+            logger.exception("Payment webhook replay tick failed")
+            result["payment_webhooks"] = {"error": 1}
+    if PAYMENT_EXPIRY_ENABLED:
+        try:
+            with SessionLocal() as db:
+                result["payment_expiration"] = expire_unpaid_orders(
+                    db, limit=PAYMENT_EXPIRY_BATCH, age_minutes=PAYMENT_EXPIRY_MINUTES,
+                )
+        except Exception:
+            logger.exception("UPI payment expiration tick failed")
+            result["payment_expiration"] = {"error": 1}
     try:
         with SessionLocal() as db:
             result["banners"] = process_due_banner_jobs(db, limit=BANNER_BATCH)

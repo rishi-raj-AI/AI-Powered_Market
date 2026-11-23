@@ -71,7 +71,7 @@ def test_customer_sees_only_active_assigned_rider_location(monkeypatch) -> None:
     assert customer_latitude is not None and customer_longitude is not None
     rider_latitude = customer_latitude + 0.0005; rider_longitude = customer_longitude + 0.0005
 
-    address = client.post("/api/v1/addresses/me", headers=auth(customer_token), json={"village_id": village["id"], "label": "Home", "recipient_name": "Tracking Customer", "phone": customer_phone, "house_details": "House 10", "landmark": "Tracking Chowk", "directions": "Blue gate", "latitude": customer_latitude, "longitude": customer_longitude, "is_default": True})
+    address = client.post("/api/v1/addresses/me", headers=auth(customer_token), json={"village_id": village["id"], "label": "Home", "recipient_name": "Tracking Customer", "phone": customer_phone, "house_details": "House 10", "landmark": "Tracking Chowk", "directions": "Blue gate", "latitude": customer_latitude, "longitude": customer_longitude, "location_source": "map_pin", "is_default": True})
     assert address.status_code == 201, address.text
     add = client.post("/api/v1/cart/items", headers=auth(customer_token), json={"store_product_id": listings[0]["id"], "quantity": 1})
     assert add.status_code == 200, add.text

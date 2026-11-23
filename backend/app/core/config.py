@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     RAZORPAY_KEY_ID:str|None=None; RAZORPAY_KEY_SECRET:str|None=None; RAZORPAY_WEBHOOK_SECRET:str|None=None
     FCM_PROJECT_ID:str|None=None; FCM_SERVICE_ACCOUNT_JSON_B64:str|None=None
     MAPS_PROVIDER:str="none"; MAPS_API_KEY:str|None=None
+    # Disabled-by-default, admin-only territory tools. No checkout authority.
+    TERRITORY_ADMIN_PREVIEW_ENABLED:bool=False
+    # Publishing immutable drafts does not activate delivery coverage.
+    TERRITORY_ADMIN_PUBLISH_ENABLED:bool=False
     # Template-only processing limits. They are provider-neutral defaults and
     # remain configurable before any external media-generation service exists.
     BANNER_REGEN_MAX_REQUESTS:int=3; BANNER_REGEN_WINDOW_SECONDS:int=86400

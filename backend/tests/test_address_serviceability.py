@@ -63,6 +63,7 @@ def test_address_pin_must_be_inside_active_service_area() -> None:
             "landmark": "Outside pilot area",
             "latitude": 28.6139,
             "longitude": 77.2090,
+            "location_source": "map_pin",
             "is_default": True,
         },
     )

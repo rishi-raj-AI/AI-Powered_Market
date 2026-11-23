@@ -60,6 +60,7 @@ def create_address(customer_token: str, phone: str) -> str:
             "landmark": "Safety Chowk",
             "latitude": village["latitude"],
             "longitude": village["longitude"],
+            "location_source": "map_pin",
             "is_default": True,
         },
     )

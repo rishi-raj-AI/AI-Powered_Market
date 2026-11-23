@@ -1,5 +1,10 @@
 from app.models.user import ExternalIdentity, User, UserRole
 from app.models.geography import Address, ServiceArea, Village
+from app.models.delivery_territories import (
+    DeliveryHub, DeliveryTerritory, DeliveryTerritoryExclusion,
+    DeliveryTerritoryVersion, OperatingRegion, StoreDeliveryTerritory,
+    TerritoryChangeAudit,
+)
 from app.models.commerce import Category, Merchant, MerchantStatus, Product, Store, StoreProduct
 from app.models.integrations import (
     CodCollection,
@@ -36,6 +41,13 @@ __all__ = [
     "Village",
     "ServiceArea",
     "Address",
+    "OperatingRegion",
+    "DeliveryHub",
+    "DeliveryTerritory",
+    "DeliveryTerritoryExclusion",
+    "StoreDeliveryTerritory",
+    "DeliveryTerritoryVersion",
+    "TerritoryChangeAudit",
     "Merchant",
     "MerchantStatus",
     "Store",
