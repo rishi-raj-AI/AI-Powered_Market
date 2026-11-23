@@ -4,8 +4,8 @@
 
 ## Exact candidate and CI
 - Draft PR #298: https://github.com/rishi-raj-AI/AI-Powered_Market/pull/298
-- Candidate inspected: `dbf0868a0c458e9a0c577506ff9cec7c6ad36c0a`
-- Backend, Web, Mobile and Production CI reported success on that SHA. Recheck the SHA and all required jobs after **any** commit; prior green CI is not transferable.
+- Current candidate verified: `548bb8170a99fa07ed778d5e4e510b558c214d3a`
+- Backend, Web, Mobile and Production CI reported success on that exact SHA (GitHub commit-associated workflow results checked 2026-11-23). This includes a strict expected-failure test and is not release acceptance. Recheck the SHA and all required jobs after **any** commit; prior green CI is not transferable.
 
 ## Blocking acceptance
 1. `backend/app/services/payment_expiration.py` initializes `cursor = None` on each invocation. The bounded scan can repeatedly revisit deferred provider states. Implement and prove fair progress across invocations, restarts and concurrent workers without skipping eligible orders; replace any strict expected-failure fairness test with a passing regression.
@@ -23,6 +23,8 @@
 - If acceptance fails after an authorized rollout: stop further rollout, preserve logs and audit trail, evaluate financial in-flight operations, revert application images to known-good digests **only if schema compatible**, and restore the database only under an approved data-reconciliation and recovery plan. Never overwrite production financial records to hide inconsistencies.
 
 ## Evidence log
+- 2026-11-23 later checkpoint: PR #298 at `548bb8170a99fa07ed778d5e4e510b558c214d3a`; commit-associated Backend, Web, Mobile and Production workflows all completed with `success`. New `test_provider_deferred_backlog_does_not_starve_later_unpaid_order` uses 501 actual payment attempts but is `xfail(strict=True)`: CI success does **not** prove provider-deferred cross-run fairness. Scanner still starts `cursor = None` on each invocation. Do not enable expiry or deploy. No new PostgreSQL, Razorpay sandbox, geography, migration or restore acceptance was executed in this checkpoint.
+
 - 2026-11-23: GitHub connector read PR #298 head `dbf0868a0c458e9a0c577506ff9cec7c6ad36c0a`; all four commit-associated workflow conclusions were `success`. PR #243 head `ffe1a401a31acaa20c66f699d487096bb344460c` compared as 204 ahead / 198 behind.
 - 2026-11-23: Source inspection confirmed the reset scan cursor and candidate budget. Fairness across repeated invocations remains **unverified**.
 - PostgreSQL concurrency, sandbox payment scenarios, geography audit, backup restore and rollback rehearsal: **not executed in this check**.
